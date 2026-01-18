@@ -6,7 +6,8 @@
       "Bash(pnpm test:*)",
       "Bash(pnpm typecheck:*)",
       "Bash(pnpm ci:*)",
-      "Bash(pnpm lint:*)"
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm run ci:*)"
     ]
   }
 }
