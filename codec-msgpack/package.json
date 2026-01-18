@@ -1,0 +1,39 @@
+{
+  "name": "@aspect-ipc/codec-msgpack",
+  "version": "0.0.0",
+  "description": "MessagePack codec for @aspect-ipc/transport.",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aspect-ipc/transport": "workspace:*"
+  },
+  "peerDependencies": {
+    "@msgpack/msgpack": "^3.0.0"
+  },
+  "devDependencies": {
+    "@msgpack/msgpack": "^3.0.0",
+    "@types/node": "workspace:^",
+    "rimraf": "workspace:^",
+    "typescript": "workspace:^",
+    "vitest": "workspace:^"
+  }
+}
