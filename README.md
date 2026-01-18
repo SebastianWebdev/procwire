@@ -256,7 +256,6 @@ MIT - See [LICENSE](LICENSE) for details.
 - Optional codecs: MessagePack, Protobuf, Arrow
 
 ### v0.2.0 (Planned)
-- HTTP/WebSocket transports
 - Streaming support
 - Compression layer
 - Metrics and monitoring

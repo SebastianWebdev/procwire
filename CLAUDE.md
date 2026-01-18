@@ -54,6 +54,28 @@ pnpm test                # Run Vitest tests
 pnpm clean               # Remove dist/ and build artifacts
 ```
 
+### Working with Examples
+
+Examples are located in the `examples/` directory and demonstrate real-world usage:
+
+```bash
+# Build all examples
+pnpm --filter "./examples/**" build
+
+# Run a specific example
+pnpm --filter ./examples/basic-stdio dev
+pnpm --filter ./examples/dual-channel dev
+
+# Rust worker example (requires Cargo)
+cd examples/rust-worker/rust && cargo build --release && cd ../../..
+pnpm --filter ./examples/rust-worker dev
+
+# Clean examples
+pnpm --filter "./examples/**" clean
+```
+
+Note: Examples are excluded from ESLint checks (see [eslint.config.js](eslint.config.js)).
+
 ## Architecture
 
 The library uses a **layered architecture** where each layer is independent and replaceable:
@@ -112,9 +134,17 @@ transport/
 │   ├── channel/
 │   │   ├── index.ts
 │   │   └── types.ts          # Channel interfaces
-│   └── process/
-│       ├── index.ts
-│       └── types.ts          # ProcessManager interfaces
+│   ├── process/
+│   │   ├── index.ts
+│   │   └── types.ts          # ProcessManager interfaces
+│   └── utils/                # Internal utilities
+│       ├── assert.ts         # Assertion helpers
+│       ├── disposables.ts    # Disposable pattern
+│       ├── errors.ts         # Error types and factories
+│       ├── events.ts         # Event emitter utilities
+│       ├── pipe-path.ts      # Cross-platform pipe path resolution
+│       ├── platform.ts       # Platform detection
+│       └── time.ts           # Timeout and timing utilities
 ├── test/
 │   └── sanity.test.ts
 └── package.json
@@ -145,8 +175,13 @@ The transport package uses subpath exports for selective imports:
 
 - **Module**: ESM (`"type": "module"` in package.json)
 - **Target**: ES2022+
+- **Module Resolution**: NodeNext (supports both ESM and CommonJS interop)
 - Uses TypeScript project references for incremental builds
-- Each package has `tsconfig.json` (for development) and `tsconfig.build.json` (for production builds)
+- Each package has two configs:
+  - `tsconfig.json` - Development config (includes tests, extends base config)
+  - `tsconfig.build.json` - Production build config (excludes tests, used by `pnpm build`)
+- Base config at [`tsconfig.base.json`](tsconfig.base.json) with strict type checking enabled
+- Path mappings allow importing packages via `@procwire/transport` during development
 
 ## Code Style
 
@@ -179,6 +214,17 @@ The transport package uses subpath exports for selective imports:
 ## Implementation Status
 
 The project is in **early development**. The architecture documentation in [`docs/procwire-transport-architecture.md`](docs/procwire-transport-architecture.md) is comprehensive but the implementation has only stub files with type definitions. Key files currently contain only interface definitions without implementations.
+
+### Implementation Patterns
+
+When implementing features in this codebase:
+
+1. **Each layer has a `types.ts`** - All interfaces and types are defined in separate `types.ts` files
+2. **Export via `index.ts`** - Each module exports its public API through an `index.ts` file
+3. **Utilities are internal** - The `utils/` directory contains shared internal utilities (events, errors, disposables, platform detection, etc.)
+4. **Cross-platform support** - Use `utils/platform.ts` for OS detection and `utils/pipe-path.ts` for path resolution
+5. **Error handling** - Use custom error types from `utils/errors.ts`
+6. **Resource cleanup** - Use the disposable pattern from `utils/disposables.ts` for cleanup
 
 ## CI/CD
 

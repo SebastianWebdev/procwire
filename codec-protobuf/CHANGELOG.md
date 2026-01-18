@@ -1,5 +1,14 @@
 # @procwire/codec-protobuf
 
+## 0.1.1
+
+### Patch Changes
+
+- Downgrade to 0.1.0 (initial development phase)
+
+- Updated dependencies []:
+  - @procwire/transport@0.1.1
+
 ## 1.0.0
 
 ### Major Changes

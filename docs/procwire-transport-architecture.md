@@ -949,7 +949,7 @@ const channel = ChannelBuilder
 // @procwire/transport/package.json
 {
   "name": "@procwire/transport",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "exports": {
     ".": "./dist/index.js",
     "./transport": "./dist/transport/index.js",
@@ -981,8 +981,8 @@ const channel = ChannelBuilder
 
 ### 12.2 Optional Codec Packages
 
-| Package                    | Peer Dependency  | Version |
-| -------------------------- | ---------------- | ------- |
+| Package                  | Peer Dependency  | Version |
+| ------------------------ | ---------------- | ------- |
 | @procwire/codec-msgpack  | @msgpack/msgpack | ^3.0.0  |
 | @procwire/codec-protobuf | protobufjs       | ^7.0.0  |
 | @procwire/codec-arrow    | apache-arrow     | ^15.0.0 |
@@ -1147,7 +1147,7 @@ fn main() {
 
 ## 14. Comparison with Alternatives
 
-| Feature           | @procwire/transport | node-ipc       | zeromq           | grpc      |
+| Feature           | @procwire/transport   | node-ipc       | zeromq           | grpc      |
 | ----------------- | --------------------- | -------------- | ---------------- | --------- |
 | **Transport**     | stdio, pipes, sockets | sockets, pipes | tcp, ipc, inproc | http/2    |
 | **Protocol**      | JSON-RPC, custom      | custom         | none (raw)       | protobuf  |
@@ -1179,14 +1179,14 @@ fn main() {
 
 ## Appendix A: Naming Alternatives
 
-| Option                    | Pros                             | Cons                  |
-| ------------------------- | -------------------------------- | --------------------- |
-| **@procwire/transport** | Clear purpose, modular namespace | Scope requires npm org |
-| **@procwire/core**       | Scoped, consistent naming        | Less explicit than transport |
-| **ipc-channels**          | Simple, descriptive              | May be taken          |
-| **node-ipc-transport**    | Clear Node.js focus              | Long name             |
-| **piped**                 | Short, memorable                 | Vague meaning         |
-| **proccom**               | Process communication            | Not intuitive         |
+| Option                  | Pros                             | Cons                         |
+| ----------------------- | -------------------------------- | ---------------------------- |
+| **@procwire/transport** | Clear purpose, modular namespace | Scope requires npm org       |
+| **@procwire/core**      | Scoped, consistent naming        | Less explicit than transport |
+| **ipc-channels**        | Simple, descriptive              | May be taken                 |
+| **node-ipc-transport**  | Clear Node.js focus              | Long name                    |
+| **piped**               | Short, memorable                 | Vague meaning                |
+| **proccom**             | Process communication            | Not intuitive                |
 
 **Recommended:** `@procwire/transport` or `@procwire/core`
 
