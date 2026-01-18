@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "../transport/src/index.ts",
+    "../codec-msgpack/src/index.ts",
+    "../codec-protobuf/src/index.ts",
+    "../codec-arrow/src/index.ts"
+  ]
+}
