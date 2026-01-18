@@ -1,0 +1,66 @@
+{
+  "name": "@procwire/codec-protobuf",
+  "version": "0.0.0",
+  "description": "Protocol Buffers codec for @procwire/transport.",
+  "keywords": [
+    "ipc",
+    "protobuf",
+    "protocol-buffers",
+    "serialization",
+    "codec",
+    "binary",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
+    "directory": "codec-protobuf"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
+  },
+  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/codec-protobuf#readme",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@procwire/transport": "workspace:*"
+  },
+  "peerDependencies": {
+    "protobufjs": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "protobufjs": "^8.0.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  }
+}

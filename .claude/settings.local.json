@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm ci:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm run ci:*)",
+      "Bash(git checkout:*)",
+      "Bash(perl:*)",
+      "Bash(node:*)",
+      "Bash(pnpm -r build:*)",
+      "Bash(pnpm -r test:*)",
+      "Bash(pnpm --filter:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(git remote:*)",
+      "Bash(npm pack:*)"
+    ]
+  }
+}

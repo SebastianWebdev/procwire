@@ -1,0 +1,85 @@
+{
+  "name": "@procwire/transport",
+  "version": "0.0.0",
+  "description": "Standalone IPC transport building blocks for Node.js (core; zero runtime dependencies).",
+  "keywords": [
+    "ipc",
+    "inter-process-communication",
+    "stdio",
+    "pipes",
+    "sockets",
+    "json-rpc",
+    "transport",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
+    "directory": "transport"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
+  },
+  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/transport#readme",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "default": "./dist/transport/index.js"
+    },
+    "./framing": {
+      "types": "./dist/framing/index.d.ts",
+      "default": "./dist/framing/index.js"
+    },
+    "./serialization": {
+      "types": "./dist/serialization/index.d.ts",
+      "default": "./dist/serialization/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "default": "./dist/protocol/index.js"
+    },
+    "./channel": {
+      "types": "./dist/channel/index.d.ts",
+      "default": "./dist/channel/index.js"
+    },
+    "./process": {
+      "types": "./dist/process/index.d.ts",
+      "default": "./dist/process/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  }
+}

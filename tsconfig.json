@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./transport" },
+    { "path": "./codec-msgpack" },
+    { "path": "./codec-protobuf" },
+    { "path": "./codec-arrow" }
+  ]
+}

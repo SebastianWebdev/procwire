@@ -1,0 +1,23 @@
+{
+  "name": "@procwire-examples/rust-worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cross-language IPC example - Node.js parent with Rust worker",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/parent.ts",
+    "build": "tsc -p tsconfig.json",
+    "build:rust": "cd rust && cargo build --release",
+    "start": "node dist/parent.js",
+    "clean": "rimraf dist \"*.tsbuildinfo\""
+  },
+  "dependencies": {
+    "@procwire/transport": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}
