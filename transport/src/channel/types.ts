@@ -3,7 +3,7 @@ import type { Unsubscribe } from "../utils/disposables.js";
 import type { Transport, TransportServer } from "../transport/types.js";
 import type { FramingCodec } from "../framing/types.js";
 import type { SerializationCodec } from "../serialization/types.js";
-import type { Protocol } from "../protocol/types.js";
+import type { Protocol, RequestId, ProtocolDataError } from "../protocol/types.js";
 
 /**
  * Request handler function.
@@ -19,6 +19,64 @@ export type RequestHandler<TReq = unknown, TRes = unknown> = (
  * @template TNotif - Notification data type
  */
 export type NotificationHandler<TNotif = unknown> = (notification: TNotif) => void;
+
+/**
+ * Response accessor for interpreting protocol-specific response messages.
+ * Abstracts away protocol differences for generic channel implementation.
+ */
+export interface ResponseAccessor {
+  /**
+   * Extracts request ID from a response message.
+   * @returns Request ID or undefined if message is not a response
+   */
+  getResponseId(message: unknown): RequestId | undefined;
+
+  /**
+   * Checks if response message represents an error.
+   */
+  isErrorResponse(message: unknown): boolean;
+
+  /**
+   * Extracts result data from success response.
+   */
+  getResult(message: unknown): unknown;
+
+  /**
+   * Extracts error data from error response.
+   */
+  getError(message: unknown): ProtocolDataError | unknown;
+}
+
+/**
+ * Middleware hook for channel operations.
+ * Useful for logging, metrics, debugging, and transformation.
+ */
+export interface ChannelMiddleware {
+  /**
+   * Called before sending a request.
+   */
+  onOutgoingRequest?(request: unknown): void | Promise<void>;
+
+  /**
+   * Called after receiving a response.
+   */
+  onIncomingResponse?(response: unknown): void | Promise<void>;
+
+  /**
+   * Called when receiving an incoming request.
+   */
+  onIncomingRequest?(request: unknown): void | Promise<void>;
+
+  /**
+   * Called before sending a response.
+   */
+  onOutgoingResponse?(response: unknown): void | Promise<void>;
+
+  /**
+   * Called when an error occurs.
+   */
+  onError?(error: Error): void | Promise<void>;
+}
 
 /**
  * Channel events map.
@@ -68,18 +126,34 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
   protocol: Protocol<TReq, TRes, TNotif>;
 
   /**
-   * Default request timeout in milliseconds (optional).
+   * Default request timeout in milliseconds (default: 30000).
    */
   timeout?: number;
+
+  /**
+   * Response accessor for interpreting response messages.
+   * If not provided, auto-detected based on protocol name.
+   */
+  responseAccessor?: ResponseAccessor;
+
+  /**
+   * Middleware hooks for logging, metrics, debugging.
+   */
+  middleware?: ChannelMiddleware[];
+
+  /**
+   * Maximum number of inbound frames to buffer before backpressure (optional).
+   */
+  maxInboundFrames?: number;
 }
 
 /**
  * High-level communication channel combining all layers.
  * Provides request/response and notification patterns.
  *
- * @template TReq - Request data type
- * @template TRes - Response data type
- * @template TNotif - Notification data type
+ * @template TReq - Request data type (wire format)
+ * @template TRes - Response data type (wire format)
+ * @template TNotif - Notification data type (wire format)
  */
 export interface Channel<TReq = unknown, TRes = unknown, TNotif = unknown> {
   /**
@@ -99,18 +173,21 @@ export interface Channel<TReq = unknown, TRes = unknown, TNotif = unknown> {
 
   /**
    * Sends a request and waits for response.
-   * @param request - Request data
+   * @param method - Method name
+   * @param params - Optional parameters
    * @param timeout - Optional timeout override (ms)
-   * @returns Promise resolving to response data
+   * @returns Promise resolving to response result
    * @throws {TimeoutError} if request times out
    * @throws {ProtocolError} if response is an error
    */
-  request(request: TReq, timeout?: number): Promise<TRes>;
+  request(method: string, params?: unknown, timeout?: number): Promise<unknown>;
 
   /**
    * Sends a notification (fire-and-forget, no response expected).
+   * @param method - Method name
+   * @param params - Optional parameters
    */
-  notify(notification: TNotif): Promise<void>;
+  notify(method: string, params?: unknown): Promise<void>;
 
   /**
    * Registers handler for incoming requests.
