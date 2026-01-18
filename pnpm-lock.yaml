@@ -47,7 +47,7 @@ importers:
 
   codec-arrow:
     dependencies:
-      '@aspect-ipc/transport':
+      '@procwire/transport':
         specifier: workspace:*
         version: link:../transport
     devDependencies:
@@ -69,7 +69,7 @@ importers:
 
   codec-msgpack:
     dependencies:
-      '@aspect-ipc/transport':
+      '@procwire/transport':
         specifier: workspace:*
         version: link:../transport
     devDependencies:
@@ -91,7 +91,7 @@ importers:
 
   codec-protobuf:
     dependencies:
-      '@aspect-ipc/transport':
+      '@procwire/transport':
         specifier: workspace:*
         version: link:../transport
     devDependencies:
@@ -113,7 +113,7 @@ importers:
 
   examples/basic-stdio:
     dependencies:
-      '@aspect-ipc/transport':
+      '@procwire/transport':
         specifier: workspace:*
         version: link:../../transport
     devDependencies:
@@ -132,15 +132,15 @@ importers:
 
   examples/dual-channel:
     dependencies:
-      '@aspect-ipc/codec-msgpack':
-        specifier: workspace:*
-        version: link:../../codec-msgpack
-      '@aspect-ipc/transport':
-        specifier: workspace:*
-        version: link:../../transport
       '@msgpack/msgpack':
         specifier: ^3.1.3
         version: 3.1.3
+      '@procwire/codec-msgpack':
+        specifier: workspace:*
+        version: link:../../codec-msgpack
+      '@procwire/transport':
+        specifier: workspace:*
+        version: link:../../transport
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -157,7 +157,7 @@ importers:
 
   examples/rust-worker:
     dependencies:
-      '@aspect-ipc/transport':
+      '@procwire/transport':
         specifier: workspace:*
         version: link:../../transport
     devDependencies:

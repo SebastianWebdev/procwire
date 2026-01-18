@@ -1,13 +1,13 @@
-# @aspect-ipc/codec-arrow
+# @procwire/codec-arrow
 
-Apache Arrow serialization codec for `@aspect-ipc/transport`.
+Apache Arrow serialization codec for `@procwire/transport`.
 
 Provides efficient columnar data serialization using [apache-arrow](https://github.com/apache/arrow/tree/main/js), ideal for analytical workloads and large datasets.
 
 ## Installation
 
 ```bash
-npm install @aspect-ipc/codec-arrow apache-arrow
+npm install @procwire/codec-arrow apache-arrow
 ```
 
 Note: `apache-arrow` is a peer dependency and must be installed separately.
@@ -18,8 +18,8 @@ Note: `apache-arrow` is a peer dependency and must be installed separately.
 
 ```ts
 import { tableFromArrays } from 'apache-arrow';
-import { ArrowCodec } from '@aspect-ipc/codec-arrow';
-import { ChannelBuilder } from '@aspect-ipc/transport';
+import { ArrowCodec } from '@procwire/codec-arrow';
+import { ChannelBuilder } from '@procwire/transport';
 
 const codec = new ArrowCodec();
 
@@ -46,7 +46,7 @@ await channel.request('processData', table);
 
 ```ts
 import { tableFromArrays } from 'apache-arrow';
-import { ArrowCodec } from '@aspect-ipc/codec-arrow';
+import { ArrowCodec } from '@procwire/codec-arrow';
 
 const codec = new ArrowCodec();
 
@@ -68,7 +68,7 @@ console.log(decoded.getChild('id')?.toArray()); // [1, 2, 3]
 
 ```ts
 import { tableFromArrays } from 'apache-arrow';
-import { ArrowCodec } from '@aspect-ipc/codec-arrow';
+import { ArrowCodec } from '@procwire/codec-arrow';
 
 const codec = new ArrowCodec();
 
@@ -96,7 +96,7 @@ console.log(`Deserialized table with ${decoded.numRows} rows`);
 - **Type Preservation**: Full type system support (integers, floats, strings, booleans, etc.)
 - **Null Handling**: Native support for null values
 - **Zero-Copy**: Efficient memory usage with zero-copy reads where possible
-- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@aspect-ipc/transport`
+- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@procwire/transport`
 - **IPC Stream Format**: Uses Arrow IPC streaming format for efficient transmission
 
 ## API

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import * as protobuf from "protobufjs";
 import { ProtobufCodec } from "../src/index.js";
-import { SerializationError } from "@aspect-ipc/transport";
+import { SerializationError } from "@procwire/transport";
 
-describe("@aspect-ipc/codec-protobuf", () => {
+describe("@procwire/codec-protobuf", () => {
   describe("ProtobufCodec", () => {
     interface User {
       id: number;

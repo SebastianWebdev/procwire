@@ -1,4 +1,4 @@
-# @aspect-ipc/* Monorepo
+# @procwire/* Monorepo
 
 Modular, type-safe IPC (Inter-Process Communication) building blocks for Node.js with **zero runtime dependencies**.
 
@@ -8,7 +8,7 @@ Build production-grade communication between Node.js processes with full control
 
 ### Core Transport
 
-- **[@aspect-ipc/transport](transport/)** - Core IPC library (zero runtime dependencies)
+- **[@procwire/transport](transport/)** - Core IPC library (zero runtime dependencies)
   - Multiple transports: stdio, named pipes, unix sockets
   - Pluggable framing: line-delimited, length-prefixed
   - Built-in serialization: JSON, raw binary
@@ -18,18 +18,18 @@ Build production-grade communication between Node.js processes with full control
 
 ### Optional Codecs
 
-- **[@aspect-ipc/codec-msgpack](codec-msgpack/)** - MessagePack serialization (20-50% smaller than JSON)
-- **[@aspect-ipc/codec-protobuf](codec-protobuf/)** - Protocol Buffers (schema validation, cross-language)
-- **[@aspect-ipc/codec-arrow](codec-arrow/)** - Apache Arrow (columnar data, analytics)
+- **[@procwire/codec-msgpack](codec-msgpack/)** - MessagePack serialization (20-50% smaller than JSON)
+- **[@procwire/codec-protobuf](codec-protobuf/)** - Protocol Buffers (schema validation, cross-language)
+- **[@procwire/codec-arrow](codec-arrow/)** - Apache Arrow (columnar data, analytics)
 
 ## Quick Start
 
 ```bash
-npm install @aspect-ipc/transport
+npm install @procwire/transport
 ```
 
 ```typescript
-import { createStdioChannel } from "@aspect-ipc/transport";
+import { createStdioChannel } from "@procwire/transport";
 
 // Parent process
 const channel = await createStdioChannel("node", {
@@ -43,6 +43,19 @@ await channel.close();
 ```
 
 See [transport README](transport/README.md) for complete documentation and API reference.
+
+## Package Naming
+
+This repo uses scoped packages by default: `@procwire/*`.
+
+If you need unscoped packages instead, use the `procwire-*` naming scheme:
+
+- `@procwire/transport` → `procwire-transport`
+- `@procwire/codec-msgpack` → `procwire-codec-msgpack`
+- `@procwire/codec-protobuf` → `procwire-codec-protobuf`
+- `@procwire/codec-arrow` → `procwire-codec-arrow`
+
+Then update your imports similarly (e.g. `@procwire/transport` → `procwire-transport`). Deep imports follow the same rule.
 
 ## Examples
 
@@ -96,7 +109,7 @@ Framing Layer (line-delimited, length-prefixed)
 Transport Layer (stdio, pipes, sockets)
 ```
 
-Each layer is independent and replaceable. See [architecture documentation](docs/aspect-ipc-transport-architecture.md) for details.
+Each layer is independent and replaceable. See [architecture documentation](docs/procwire-transport-architecture.md) for details.
 
 ## Development
 
@@ -180,7 +193,7 @@ Push to `main` with changesets to trigger automated release.
 ## Documentation
 
 - **[Transport README](transport/README.md)** - Complete API reference
-- **[Architecture Docs](docs/aspect-ipc-transport-architecture.md)** - Detailed design documentation
+- **[Architecture Docs](docs/procwire-transport-architecture.md)** - Detailed design documentation
 - **[Examples](examples/)** - Runnable code examples
 
 ### Codec Documentation

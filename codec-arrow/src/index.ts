@@ -1,5 +1,5 @@
 /**
- * Apache Arrow codec for @aspect-ipc/transport.
+ * Apache Arrow codec for @procwire/transport.
  * Provides columnar data serialization using apache-arrow.
  *
  * @module
@@ -7,8 +7,8 @@
 
 import type { Table } from "apache-arrow";
 import { tableFromIPC, tableToIPC } from "apache-arrow";
-import type { SerializationCodec } from "@aspect-ipc/transport/serialization";
-import { SerializationError } from "@aspect-ipc/transport";
+import type { SerializationCodec } from "@procwire/transport/serialization";
+import { SerializationError } from "@procwire/transport";
 
 /**
  * Apache Arrow serialization codec.
@@ -17,8 +17,8 @@ import { SerializationError } from "@aspect-ipc/transport";
  * @example
  * ```ts
  * import { tableFromArrays } from 'apache-arrow';
- * import { ArrowCodec } from '@aspect-ipc/codec-arrow';
- * import { ChannelBuilder } from '@aspect-ipc/transport';
+ * import { ArrowCodec } from '@procwire/codec-arrow';
+ * import { ChannelBuilder } from '@procwire/transport';
  *
  * const codec = new ArrowCodec();
  *

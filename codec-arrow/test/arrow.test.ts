@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { tableFromArrays } from "apache-arrow";
 import { ArrowCodec } from "../src/index.js";
-import { SerializationError } from "@aspect-ipc/transport";
+import { SerializationError } from "@procwire/transport";
 
-describe("@aspect-ipc/codec-arrow", () => {
+describe("@procwire/codec-arrow", () => {
   describe("ArrowCodec", () => {
     it("has correct metadata", () => {
       const codec = new ArrowCodec();

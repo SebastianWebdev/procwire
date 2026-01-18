@@ -2,8 +2,8 @@
  * Dual-channel IPC example - Parent process.
  */
 
-import { ProcessManager } from "@aspect-ipc/transport";
-import { MessagePackCodec } from "@aspect-ipc/codec-msgpack";
+import { ProcessManager } from "@procwire/transport";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 

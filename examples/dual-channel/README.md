@@ -232,7 +232,7 @@ ProcessManager handles this automatically via `PipePath.forModule()`.
 ### Manual Path Handling
 
 ```ts
-import { PipePath } from "@aspect-ipc/transport/utils";
+import { PipePath } from "@procwire/transport/utils";
 
 const path = PipePath.forModule("my-app", "worker-1");
 // Windows: \\.\pipe\my-app-worker-1

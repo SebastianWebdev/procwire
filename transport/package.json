@@ -1,5 +1,5 @@
 {
-  "name": "@aspect-ipc/transport",
+  "name": "@procwire/transport",
   "version": "0.0.0",
   "description": "Standalone IPC transport building blocks for Node.js (core; zero runtime dependencies).",
   "keywords": [
@@ -16,13 +16,13 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
     "directory": "transport"
   },
   "bugs": {
-    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/transport#readme",
+  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/transport#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",

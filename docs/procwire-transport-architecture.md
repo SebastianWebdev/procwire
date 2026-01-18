@@ -1,4 +1,4 @@
-# @aspec-ipc/transport
+# @procwire/transport
 
 **Standalone IPC Transport Library for Node.js**
 
@@ -27,7 +27,7 @@ A high-performance, protocol-agnostic Inter-Process Communication library for No
 
 ## 1. Overview
 
-### What is @aspec-ipc/transport?
+### What is @procwire/transport?
 
 A modular library providing building blocks for high-performance IPC in Node.js:
 
@@ -755,7 +755,7 @@ await manager.terminateAll();
 
 ```typescript
 // Simplest possible setup
-import { createStdioChannel, createPipeChannel } from '@aspect-ipc/transport';
+import { createStdioChannel, createPipeChannel } from '@procwire/transport';
 
 // Stdio with JSON-RPC (for simple child process)
 const channel = await createStdioChannel('./worker');
@@ -775,7 +775,7 @@ await dataChannel.request('bulkInsert', { items: [...] });
 ### 10.1 Custom Transport
 
 ```typescript
-import { Transport, TransportState } from '@aspect-ipc/transport';
+import { Transport, TransportState } from '@procwire/transport';
 
 class WebSocketTransport implements Transport {
   private ws: WebSocket | null = null;
@@ -809,7 +809,7 @@ class WebSocketTransport implements Transport {
 ### 10.2 Custom Serialization
 
 ```typescript
-import { SerializationCodec } from '@aspect-ipc/transport';
+import { SerializationCodec } from '@procwire/transport';
 import cbor from 'cbor';
 
 class CborCodec implements SerializationCodec {
@@ -832,7 +832,7 @@ CodecRegistry.register(new CborCodec());
 ### 10.3 Custom Protocol
 
 ```typescript
-import { Protocol, ParsedMessage } from '@aspect-ipc/transport';
+import { Protocol, ParsedMessage } from '@procwire/transport';
 
 interface MyRequest { type: 'request'; id: number; action: string; payload: unknown }
 interface MyResponse { type: 'response'; id: number; data: unknown; error?: string }
@@ -886,7 +886,7 @@ const channel = ChannelBuilder
 ### 11.1 Monorepo Structure
 
 ```
-@aspect-ipc/
+@procwire/
 ├── transport/                 # Core package (zero dependencies)
 │   ├── src/
 │   │   ├── index.ts          # Public API exports
@@ -946,9 +946,9 @@ const channel = ChannelBuilder
 ### 11.2 Package Exports
 
 ```json
-// @aspect-ipc/transport/package.json
+// @procwire/transport/package.json
 {
-  "name": "@aspect-ipc/transport",
+  "name": "@procwire/transport",
   "version": "1.0.0",
   "exports": {
     ".": "./dist/index.js",
@@ -983,9 +983,9 @@ const channel = ChannelBuilder
 
 | Package                    | Peer Dependency  | Version |
 | -------------------------- | ---------------- | ------- |
-| @aspect-ipc/codec-msgpack  | @msgpack/msgpack | ^3.0.0  |
-| @aspect-ipc/codec-protobuf | protobufjs       | ^7.0.0  |
-| @aspect-ipc/codec-arrow    | apache-arrow     | ^15.0.0 |
+| @procwire/codec-msgpack  | @msgpack/msgpack | ^3.0.0  |
+| @procwire/codec-protobuf | protobufjs       | ^7.0.0  |
+| @procwire/codec-arrow    | apache-arrow     | ^15.0.0 |
 
 ### 12.3 Node.js Requirements
 
@@ -1000,7 +1000,7 @@ const channel = ChannelBuilder
 ### 13.1 Basic Stdio Communication
 
 ```typescript
-import { createStdioChannel } from '@aspect-ipc/transport';
+import { createStdioChannel } from '@procwire/transport';
 
 async function main() {
   // Start worker process with JSON-RPC channel
@@ -1025,7 +1025,7 @@ async function main() {
 ### 13.2 Dual-Channel Setup
 
 ```typescript
-import { ProcessManager, MessagePackCodec } from '@aspect-ipc/transport';
+import { ProcessManager, MessagePackCodec } from '@procwire/transport';
 
 async function main() {
   const manager = new ProcessManager();
@@ -1053,7 +1053,7 @@ async function main() {
 ### 13.3 Server Mode (Multiple Clients)
 
 ```typescript
-import { PipeServer, RequestChannel, JsonRpcProtocol } from '@aspect-ipc/transport';
+import { PipeServer, RequestChannel, JsonRpcProtocol } from '@procwire/transport';
 
 async function startServer() {
   const server = new PipeServer({ path: '/tmp/my-service.sock' });
@@ -1083,7 +1083,7 @@ async function startServer() {
 
 ```typescript
 // Node.js side
-import { ProcessManager } from '@aspect-ipc/transport';
+import { ProcessManager } from '@procwire/transport';
 
 const manager = new ProcessManager();
 const handle = await manager.spawn('rust-worker', {
@@ -1147,7 +1147,7 @@ fn main() {
 
 ## 14. Comparison with Alternatives
 
-| Feature           | @aspect-ipc/transport | node-ipc       | zeromq           | grpc      |
+| Feature           | @procwire/transport | node-ipc       | zeromq           | grpc      |
 | ----------------- | --------------------- | -------------- | ---------------- | --------- |
 | **Transport**     | stdio, pipes, sockets | sockets, pipes | tcp, ipc, inproc | http/2    |
 | **Protocol**      | JSON-RPC, custom      | custom         | none (raw)       | protobuf  |
@@ -1159,7 +1159,7 @@ fn main() {
 | **Streaming**     | yes                   | partial        | yes              | yes       |
 | **Size**          | ~50KB                 | ~20KB          | ~5MB             | ~10MB     |
 
-### When to Use @aspect-ipc/transport
+### When to Use @procwire/transport
 
 ✅ **Use when:**
 - Building Electron apps with helper processes
@@ -1181,14 +1181,14 @@ fn main() {
 
 | Option                    | Pros                             | Cons                  |
 | ------------------------- | -------------------------------- | --------------------- |
-| **@aspect-ipc/transport** | Clear purpose, modular namespace | "aspect" may conflict |
-| **@aspec-ipc/core**       | Ties to aspec project            | Less generic          |
+| **@procwire/transport** | Clear purpose, modular namespace | Scope requires npm org |
+| **@procwire/core**       | Scoped, consistent naming        | Less explicit than transport |
 | **ipc-channels**          | Simple, descriptive              | May be taken          |
 | **node-ipc-transport**    | Clear Node.js focus              | Long name             |
 | **piped**                 | Short, memorable                 | Vague meaning         |
 | **proccom**               | Process communication            | Not intuitive         |
 
-**Recommended:** `@aspect-ipc/transport` or `@aspect-ipc/core`
+**Recommended:** `@procwire/transport` or `@procwire/core`
 
 - "aspect" suggests cross-cutting concerns (which IPC is)
 - Scoped package prevents npm name conflicts

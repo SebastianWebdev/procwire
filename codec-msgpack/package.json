@@ -1,7 +1,7 @@
 {
-  "name": "@aspect-ipc/codec-msgpack",
+  "name": "@procwire/codec-msgpack",
   "version": "0.0.0",
-  "description": "MessagePack codec for @aspect-ipc/transport.",
+  "description": "MessagePack codec for @procwire/transport.",
   "keywords": [
     "ipc",
     "msgpack",
@@ -15,13 +15,13 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
     "directory": "codec-msgpack"
   },
   "bugs": {
-    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/codec-msgpack#readme",
+  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/codec-msgpack#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -51,7 +51,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aspect-ipc/transport": "workspace:*"
+    "@procwire/transport": "workspace:*"
   },
   "peerDependencies": {
     "@msgpack/msgpack": "^3.1.3"

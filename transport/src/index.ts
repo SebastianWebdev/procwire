@@ -1,5 +1,5 @@
 /**
- * @aspect-ipc/transport
+ * @procwire/transport
  *
  * Core IPC transport library with zero runtime dependencies.
  * Provides modular, type-safe building blocks for inter-process communication.

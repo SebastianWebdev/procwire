@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MessagePackCodec } from "../src/index.js";
 
-describe("@aspect-ipc/codec-msgpack", () => {
+describe("@procwire/codec-msgpack", () => {
   it("serializes + deserializes", () => {
     const codec = new MessagePackCodec();
     const buf = codec.serialize({ a: 1 });

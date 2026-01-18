@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@aspect-ipc/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
+This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
 
 ### Packages
 
-- `@aspect-ipc/transport` - Core transport library (zero runtime dependencies)
-- `@aspect-ipc/codec-msgpack` - MessagePack codec (peer dep: `@msgpack/msgpack`)
-- `@aspect-ipc/codec-protobuf` - Protocol Buffers codec (peer dep: `protobufjs`)
-- `@aspect-ipc/codec-arrow` - Apache Arrow IPC codec (peer dep: `apache-arrow`)
+- `@procwire/transport` - Core transport library (zero runtime dependencies)
+- `@procwire/codec-msgpack` - MessagePack codec (peer dep: `@msgpack/msgpack`)
+- `@procwire/codec-protobuf` - Protocol Buffers codec (peer dep: `protobufjs`)
+- `@procwire/codec-arrow` - Apache Arrow IPC codec (peer dep: `apache-arrow`)
 
 ## Commands
 
@@ -84,7 +84,7 @@ OS Layer (child_process, net.Server/Socket)
 
 ### Key Design Principles
 
-- **Zero dependencies** in core package (`@aspect-ipc/transport`)
+- **Zero dependencies** in core package (`@procwire/transport`)
 - **Modular**: Each layer is independent and replaceable
 - **Type-safe**: Full TypeScript support with generics
 - **Cross-platform**: Windows (Named Pipes), macOS/Linux (Unix sockets)
@@ -124,17 +124,17 @@ transport/
 
 The transport package uses subpath exports for selective imports:
 
-- `@aspect-ipc/transport` - Main entry (re-exports all)
-- `@aspect-ipc/transport/transport` - Transport layer only
-- `@aspect-ipc/transport/framing` - Framing layer only
-- `@aspect-ipc/transport/serialization` - Serialization layer only
-- `@aspect-ipc/transport/protocol` - Protocol layer only
-- `@aspect-ipc/transport/channel` - Channel layer only
-- `@aspect-ipc/transport/process` - Process management only
+- `@procwire/transport` - Main entry (re-exports all)
+- `@procwire/transport/transport` - Transport layer only
+- `@procwire/transport/framing` - Framing layer only
+- `@procwire/transport/serialization` - Serialization layer only
+- `@procwire/transport/protocol` - Protocol layer only
+- `@procwire/transport/channel` - Channel layer only
+- `@procwire/transport/process` - Process management only
 
 ### Important Files
 
-- [`docs/aspect-ipc-transport-architecture.md`](docs/aspect-ipc-transport-architecture.md) - Comprehensive architecture documentation with diagrams, interfaces, and usage examples
+- [`docs/procwire-transport-architecture.md`](docs/procwire-transport-architecture.md) - Comprehensive architecture documentation with diagrams, interfaces, and usage examples
 - [`pnpm-workspace.yaml`](pnpm-workspace.yaml) - Workspace configuration
 - [`package.json`](package.json) - Root package with shared scripts
 - [`tsconfig.base.json`](tsconfig.base.json) - Base TypeScript config
@@ -178,7 +178,7 @@ The transport package uses subpath exports for selective imports:
 
 ## Implementation Status
 
-The project is in **early development**. The architecture documentation in [`docs/aspect-ipc-transport-architecture.md`](docs/aspect-ipc-transport-architecture.md) is comprehensive but the implementation has only stub files with type definitions. Key files currently contain only interface definitions without implementations.
+The project is in **early development**. The architecture documentation in [`docs/procwire-transport-architecture.md`](docs/procwire-transport-architecture.md) is comprehensive but the implementation has only stub files with type definitions. Key files currently contain only interface definitions without implementations.
 
 ## CI/CD
 

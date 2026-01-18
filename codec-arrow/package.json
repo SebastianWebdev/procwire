@@ -1,7 +1,7 @@
 {
-  "name": "@aspect-ipc/codec-arrow",
+  "name": "@procwire/codec-arrow",
   "version": "0.0.0",
-  "description": "Apache Arrow IPC codec for @aspect-ipc/transport.",
+  "description": "Apache Arrow IPC codec for @procwire/transport.",
   "keywords": [
     "ipc",
     "arrow",
@@ -16,13 +16,13 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
     "directory": "codec-arrow"
   },
   "bugs": {
-    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/codec-arrow#readme",
+  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/codec-arrow#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -52,7 +52,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aspect-ipc/transport": "workspace:*"
+    "@procwire/transport": "workspace:*"
   },
   "peerDependencies": {
     "apache-arrow": "^21.0.0"

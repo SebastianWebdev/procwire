@@ -1,13 +1,13 @@
-# @aspect-ipc/codec-protobuf
+# @procwire/codec-protobuf
 
-Protocol Buffers serialization codec for `@aspect-ipc/transport`.
+Protocol Buffers serialization codec for `@procwire/transport`.
 
 Provides type-safe binary serialization using [protobufjs](https://github.com/protobufjs/protobuf.js) with schema validation and automatic error handling.
 
 ## Installation
 
 ```bash
-npm install @aspect-ipc/codec-protobuf protobufjs
+npm install @procwire/codec-protobuf protobufjs
 ```
 
 Note: `protobufjs` is a peer dependency and must be installed separately.
@@ -18,8 +18,8 @@ Note: `protobufjs` is a peer dependency and must be installed separately.
 
 ```ts
 import * as protobuf from 'protobufjs';
-import { ProtobufCodec } from '@aspect-ipc/codec-protobuf';
-import { ChannelBuilder } from '@aspect-ipc/transport';
+import { ProtobufCodec } from '@procwire/codec-protobuf';
+import { ChannelBuilder } from '@procwire/transport';
 
 // Define your schema
 const root = protobuf.Root.fromJSON({
@@ -58,7 +58,7 @@ const channel = new ChannelBuilder()
 
 ```ts
 import * as protobuf from 'protobufjs';
-import { ProtobufCodec } from '@aspect-ipc/codec-protobuf';
+import { ProtobufCodec } from '@procwire/codec-protobuf';
 
 // Load from .proto file
 const root = await protobuf.load('path/to/schema.proto');
@@ -71,7 +71,7 @@ const codec = new ProtobufCodec<YourType>(MessageType);
 
 ```ts
 import * as protobuf from 'protobufjs';
-import { ProtobufCodec } from '@aspect-ipc/codec-protobuf';
+import { ProtobufCodec } from '@procwire/codec-protobuf';
 
 const root = protobuf.Root.fromJSON({
   nested: {
@@ -102,7 +102,7 @@ console.log(decoded); // { id: 123, name: 'Alice' }
 - **Schema Validation**: Automatic validation against protobuf schema during serialization/deserialization
 - **Compact Binary**: Highly efficient binary format with smaller payloads than JSON
 - **Plain Objects**: Returns plain JavaScript objects (not protobuf Message instances)
-- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@aspect-ipc/transport`
+- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@procwire/transport`
 - **Forward/Backward Compatible**: Protobuf's wire format supports schema evolution
 
 ## API

@@ -1,13 +1,13 @@
-# @aspect-ipc/codec-msgpack
+# @procwire/codec-msgpack
 
-MessagePack serialization codec for `@aspect-ipc/transport`.
+MessagePack serialization codec for `@procwire/transport`.
 
 Provides efficient binary serialization using [@msgpack/msgpack](https://github.com/msgpack/msgpack-javascript) with automatic error handling and optimized buffer management.
 
 ## Installation
 
 ```bash
-npm install @aspect-ipc/codec-msgpack @msgpack/msgpack
+npm install @procwire/codec-msgpack @msgpack/msgpack
 ```
 
 Note: `@msgpack/msgpack` is a peer dependency and must be installed separately.
@@ -17,8 +17,8 @@ Note: `@msgpack/msgpack` is a peer dependency and must be installed separately.
 ### Basic Usage
 
 ```ts
-import { MessagePackCodec } from '@aspect-ipc/codec-msgpack';
-import { ChannelBuilder, StdioTransport } from '@aspect-ipc/transport';
+import { MessagePackCodec } from '@procwire/codec-msgpack';
+import { ChannelBuilder, StdioTransport } from '@procwire/transport';
 
 const codec = new MessagePackCodec();
 
@@ -34,7 +34,7 @@ const channel = new ChannelBuilder()
 ### Standalone Usage
 
 ```ts
-import { MessagePackCodec } from '@aspect-ipc/codec-msgpack';
+import { MessagePackCodec } from '@procwire/codec-msgpack';
 
 const codec = new MessagePackCodec();
 
@@ -51,7 +51,7 @@ console.log(decoded); // { user: 'Alice', id: 123, tags: ['foo', 'bar'] }
 
 - **Efficient Binary Format**: More compact than JSON, especially for numeric data
 - **Type Support**: Handles all standard JavaScript types (objects, arrays, strings, numbers, booleans, null)
-- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@aspect-ipc/transport`
+- **Error Handling**: Wraps encoding/decoding errors in `SerializationError` from `@procwire/transport`
 - **Optimized**: Zero-copy buffer creation for better performance
 - **Type-Safe**: Full TypeScript support with `SerializationCodec<unknown>` interface
 

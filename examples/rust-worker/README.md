@@ -182,10 +182,10 @@ JSON-RPC 2.0 is language-agnostic. Both sides speak the same protocol:
 
 ### Node.js Side
 
-Uses `@aspect-ipc/transport` convenience helpers:
+Uses `@procwire/transport` convenience helpers:
 
 ```ts
-import { createStdioChannel } from "@aspect-ipc/transport";
+import { createStdioChannel } from "@procwire/transport";
 
 const channel = await createStdioChannel("/path/to/rust-worker", {
   timeout: 10000,
@@ -277,7 +277,7 @@ async fn main() {
 ### 2. Binary Protocol (MessagePack)
 
 Replace JSON with MessagePack for better performance:
-- Node.js: Use `MessagePackCodec` from `@aspect-ipc/codec-msgpack`
+- Node.js: Use `MessagePackCodec` from `@procwire/codec-msgpack`
 - Rust: Use `rmp-serde` crate
 
 ### 3. Shared Memory

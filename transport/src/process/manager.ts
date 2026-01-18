@@ -55,7 +55,7 @@ export class ProcessManager implements IProcessManager {
         backoffMs: 1000,
         maxBackoffMs: 30000,
       },
-      namespace: config.namespace ?? "aspect-ipc",
+      namespace: config.namespace ?? "procwire",
       gracefulShutdownMs: config.gracefulShutdownMs ?? 5000,
     };
   }

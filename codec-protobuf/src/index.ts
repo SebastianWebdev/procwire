@@ -1,13 +1,13 @@
 /**
- * Protocol Buffers codec for @aspect-ipc/transport.
+ * Protocol Buffers codec for @procwire/transport.
  * Provides type-safe binary serialization using protobufjs.
  *
  * @module
  */
 
 import type { Type } from "protobufjs";
-import type { SerializationCodec } from "@aspect-ipc/transport/serialization";
-import { SerializationError } from "@aspect-ipc/transport";
+import type { SerializationCodec } from "@procwire/transport/serialization";
+import { SerializationError } from "@procwire/transport";
 
 /**
  * Protocol Buffers serialization codec.
@@ -18,8 +18,8 @@ import { SerializationError } from "@aspect-ipc/transport";
  * @example
  * ```ts
  * import * as protobuf from 'protobufjs';
- * import { ProtobufCodec } from '@aspect-ipc/codec-protobuf';
- * import { ChannelBuilder } from '@aspect-ipc/transport';
+ * import { ProtobufCodec } from '@procwire/codec-protobuf';
+ * import { ChannelBuilder } from '@procwire/transport';
  *
  * // Define schema
  * const root = protobuf.Root.fromJSON({

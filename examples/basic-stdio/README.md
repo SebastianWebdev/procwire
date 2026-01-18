@@ -1,6 +1,6 @@
 # Basic Stdio IPC Example
 
-Demonstrates the simplest IPC pattern using `@aspect-ipc/transport`:
+Demonstrates the simplest IPC pattern using `@procwire/transport`:
 
 - Parent spawns child process via stdio
 - Line-delimited JSON-RPC protocol
@@ -133,10 +133,10 @@ console.log(JSON.stringify({ jsonrpc: "2.0", method, params }));
 You can customize the channel configuration:
 
 ```ts
-import { ChannelBuilder, StdioTransport } from "@aspect-ipc/transport";
-import { LineDelimitedFraming } from "@aspect-ipc/transport/framing";
-import { JsonCodec } from "@aspect-ipc/transport/serialization";
-import { JsonRpcProtocol } from "@aspect-ipc/transport/protocol";
+import { ChannelBuilder, StdioTransport } from "@procwire/transport";
+import { LineDelimitedFraming } from "@procwire/transport/framing";
+import { JsonCodec } from "@procwire/transport/serialization";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
 
 const transport = new StdioTransport({
   executablePath: "node",

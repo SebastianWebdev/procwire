@@ -1,4 +1,4 @@
-# @aspect-ipc/transport
+# @procwire/transport
 
 Standalone, modular IPC (Inter-Process Communication) transport library for Node.js with **zero runtime dependencies**.
 
@@ -19,20 +19,20 @@ Build production-grade IPC channels with full control over every layer: transpor
 ## Installation
 
 ```bash
-npm install @aspect-ipc/transport
+npm install @procwire/transport
 ```
 
 Or with optional codecs:
 
 ```bash
 # With MessagePack support
-npm install @aspect-ipc/transport @aspect-ipc/codec-msgpack @msgpack/msgpack
+npm install @procwire/transport @procwire/codec-msgpack @msgpack/msgpack
 
 # With Protocol Buffers support
-npm install @aspect-ipc/transport @aspect-ipc/codec-protobuf protobufjs
+npm install @procwire/transport @procwire/codec-protobuf protobufjs
 
 # With Apache Arrow support
-npm install @aspect-ipc/transport @aspect-ipc/codec-arrow apache-arrow
+npm install @procwire/transport @procwire/codec-arrow apache-arrow
 ```
 
 ## Quick Start
@@ -40,7 +40,7 @@ npm install @aspect-ipc/transport @aspect-ipc/codec-arrow apache-arrow
 ### Basic stdio IPC
 
 ```typescript
-import { createStdioChannel } from "@aspect-ipc/transport";
+import { createStdioChannel } from "@procwire/transport";
 
 // Parent process
 const channel = await createStdioChannel("node", {
@@ -63,8 +63,8 @@ await channel.close();
 ### ProcessManager with dual channels
 
 ```typescript
-import { ProcessManager } from "@aspect-ipc/transport";
-import { MessagePackCodec } from "@aspect-ipc/codec-msgpack";
+import { ProcessManager } from "@procwire/transport";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
 
 const manager = new ProcessManager({
   namespace: "my-app",
@@ -104,7 +104,7 @@ import {
   LineDelimitedFraming,
   JsonCodec,
   JsonRpcProtocol,
-} from "@aspect-ipc/transport";
+} from "@procwire/transport";
 
 const transport = TransportFactory.createStdio({
   executablePath: "node",
@@ -162,7 +162,7 @@ OS Layer (child_process, net.Server/Socket)
 Spawns child process and communicates via stdin/stdout.
 
 ```typescript
-import { StdioTransport } from "@aspect-ipc/transport";
+import { StdioTransport } from "@procwire/transport";
 
 const transport = new StdioTransport({
   executablePath: "node",
@@ -183,8 +183,8 @@ await transport.close();
 Connects to named pipe (Windows) or unix socket (Unix).
 
 ```typescript
-import { SocketTransport } from "@aspect-ipc/transport";
-import { isWindows } from "@aspect-ipc/transport/utils";
+import { SocketTransport } from "@procwire/transport";
+import { isWindows } from "@procwire/transport/utils";
 
 const path = isWindows() ? "\\\\.\\pipe\\my-pipe" : "/tmp/my-socket.sock";
 
@@ -201,7 +201,7 @@ await transport.connect();
 Creates named pipe/unix socket server.
 
 ```typescript
-import { SocketServer } from "@aspect-ipc/transport";
+import { SocketServer } from "@procwire/transport";
 
 const server = new SocketServer({
   unlinkOnListen: true, // Remove stale socket
@@ -222,7 +222,7 @@ await server.listen("/tmp/my-socket.sock");
 Convenience factory for creating transports.
 
 ```typescript
-import { TransportFactory } from "@aspect-ipc/transport";
+import { TransportFactory } from "@procwire/transport";
 
 // Stdio
 const stdio = TransportFactory.createStdio({
@@ -246,7 +246,7 @@ const server = TransportFactory.createPipeServer();
 Splits messages by newline characters.
 
 ```typescript
-import { LineDelimitedFraming } from "@aspect-ipc/transport/framing";
+import { LineDelimitedFraming } from "@procwire/transport/framing";
 
 const framing = new LineDelimitedFraming({
   maxLineLength: 100000, // Default: 100KB
@@ -267,7 +267,7 @@ const framing = new LineDelimitedFraming({
 Prefixes each message with 4-byte length (big-endian).
 
 ```typescript
-import { LengthPrefixedFraming } from "@aspect-ipc/transport/framing";
+import { LengthPrefixedFraming } from "@procwire/transport/framing";
 
 const framing = new LengthPrefixedFraming({
   maxMessageSize: 10 * 1024 * 1024, // Default: 10MB
@@ -288,7 +288,7 @@ const framing = new LengthPrefixedFraming({
 JSON serialization using native `JSON.parse`/`JSON.stringify`.
 
 ```typescript
-import { JsonCodec } from "@aspect-ipc/transport/serialization";
+import { JsonCodec } from "@procwire/transport/serialization";
 
 const codec = new JsonCodec();
 ```
@@ -301,7 +301,7 @@ const codec = new JsonCodec();
 Pass-through codec for binary data.
 
 ```typescript
-import { RawCodec } from "@aspect-ipc/transport/serialization";
+import { RawCodec } from "@procwire/transport/serialization";
 
 const codec = new RawCodec();
 ```
@@ -313,9 +313,9 @@ const codec = new RawCodec();
 Dynamically select codec based on content type.
 
 ```typescript
-import { CodecRegistry } from "@aspect-ipc/transport/serialization";
-import { JsonCodec } from "@aspect-ipc/transport/serialization";
-import { MessagePackCodec } from "@aspect-ipc/codec-msgpack";
+import { CodecRegistry } from "@procwire/transport/serialization";
+import { JsonCodec } from "@procwire/transport/serialization";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
 
 const registry = new CodecRegistry();
 registry.register(new JsonCodec());
@@ -327,7 +327,7 @@ registry.register(new MessagePackCodec());
 #### Custom Codecs
 
 ```typescript
-import type { SerializationCodec } from "@aspect-ipc/transport/serialization";
+import type { SerializationCodec } from "@procwire/transport/serialization";
 
 class MyCodec implements SerializationCodec<MyType> {
   readonly name = "my-codec";
@@ -352,7 +352,7 @@ class MyCodec implements SerializationCodec<MyType> {
 JSON-RPC 2.0 implementation with request/response and notifications.
 
 ```typescript
-import { JsonRpcProtocol } from "@aspect-ipc/transport/protocol";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
 
 const protocol = new JsonRpcProtocol();
 ```
@@ -377,7 +377,7 @@ const protocol = new JsonRpcProtocol();
 Minimal protocol with method and params.
 
 ```typescript
-import { SimpleProtocol } from "@aspect-ipc/transport/protocol";
+import { SimpleProtocol } from "@procwire/transport/protocol";
 
 const protocol = new SimpleProtocol();
 ```
@@ -390,7 +390,7 @@ const protocol = new SimpleProtocol();
 #### Custom Protocols
 
 ```typescript
-import type { Protocol } from "@aspect-ipc/transport/protocol";
+import type { Protocol } from "@procwire/transport/protocol";
 
 class MyProtocol implements Protocol {
   encodeRequest(method: string, params: unknown, id: number): unknown {
@@ -412,7 +412,7 @@ class MyProtocol implements Protocol {
 High-level channel for request/response communication.
 
 ```typescript
-import type { Channel } from "@aspect-ipc/transport/channel";
+import type { Channel } from "@procwire/transport/channel";
 
 // Send request
 const result = await channel.request<number>("add", { a: 2, b: 3 });
@@ -440,7 +440,7 @@ await channel.close();
 Fluent API for building channels.
 
 ```typescript
-import { ChannelBuilder } from "@aspect-ipc/transport";
+import { ChannelBuilder } from "@procwire/transport";
 
 const channel = new ChannelBuilder()
   .withTransport(transport)
@@ -458,7 +458,7 @@ const channel = new ChannelBuilder()
 Manages multiple child processes with restart policies.
 
 ```typescript
-import { ProcessManager } from "@aspect-ipc/transport";
+import { ProcessManager } from "@procwire/transport";
 
 const manager = new ProcessManager({
   defaultTimeout: 30000,
@@ -540,7 +540,7 @@ await handle.stop();
 Generate platform-specific pipe/socket paths.
 
 ```typescript
-import { PipePath } from "@aspect-ipc/transport/utils";
+import { PipePath } from "@procwire/transport/utils";
 
 // Auto-generated path
 const path = PipePath.forModule("my-app", "worker-1");
@@ -557,7 +557,7 @@ await PipePath.cleanup(path);
 ### Platform Detection
 
 ```typescript
-import { isWindows, getProcessId } from "@aspect-ipc/transport/utils";
+import { isWindows, getProcessId } from "@procwire/transport/utils";
 
 if (isWindows()) {
   // Windows-specific logic
@@ -719,7 +719,7 @@ channel.setMaxListeners(100);
 
 ```typescript
 // Set environment variable
-process.env.DEBUG = "@aspect-ipc:*";
+process.env.DEBUG = "@procwire:*";
 
 // Or programmatically (if debug package is used in future)
 ```
@@ -833,12 +833,12 @@ MIT - See [LICENSE](../LICENSE) for details.
 
 ## Related Packages
 
-- [@aspect-ipc/codec-msgpack](../codec-msgpack/) - MessagePack serialization
-- [@aspect-ipc/codec-protobuf](../codec-protobuf/) - Protocol Buffers serialization
-- [@aspect-ipc/codec-arrow](../codec-arrow/) - Apache Arrow serialization
+- [@procwire/codec-msgpack](../codec-msgpack/) - MessagePack serialization
+- [@procwire/codec-protobuf](../codec-protobuf/) - Protocol Buffers serialization
+- [@procwire/codec-arrow](../codec-arrow/) - Apache Arrow serialization
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/your-org/ipc-bridge-core/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/your-org/ipc-bridge-core/discussions)
-- **Documentation**: [Architecture Docs](../docs/aspect-ipc-transport-architecture.md)
+- **Documentation**: [Architecture Docs](../docs/procwire-transport-architecture.md)

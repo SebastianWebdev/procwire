@@ -9,7 +9,7 @@ import type { SerializationCodec } from "./types.js";
  *
  * @example
  * ```ts
- * import { CodecRegistry, JsonCodec } from '@aspect-ipc/transport';
+ * import { CodecRegistry, JsonCodec } from '@procwire/transport';
  *
  * CodecRegistry.register(new JsonCodec());
  * const codec = CodecRegistry.get('json');

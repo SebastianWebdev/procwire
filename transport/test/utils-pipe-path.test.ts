@@ -7,19 +7,19 @@ describe("PipePath", () => {
     it("should generate Windows pipe path on Windows", () => {
       vi.spyOn(platform, "isWindows").mockReturnValue(true);
 
-      const path = PipePath.forModule("aspect-ipc", "worker-1");
+      const path = PipePath.forModule("procwire", "worker-1");
 
-      expect(path).toBe("\\\\.\\pipe\\aspect-ipc-worker-1");
+      expect(path).toBe("\\\\.\\pipe\\procwire-worker-1");
     });
 
     it("should generate Unix socket path on Unix", () => {
       vi.spyOn(platform, "isWindows").mockReturnValue(false);
 
-      const path = PipePath.forModule("aspect-ipc", "worker-1");
+      const path = PipePath.forModule("procwire", "worker-1");
 
       expect(path).toContain("tmp");
-      expect(path).toContain("aspect-ipc-worker-1.sock");
-      expect(path).toMatch(/tmp.*aspect-ipc-worker-1\.sock$/);
+      expect(path).toContain("procwire-worker-1.sock");
+      expect(path).toMatch(/tmp.*procwire-worker-1\.sock$/);
     });
 
     it("should sanitize special characters", () => {
@@ -51,9 +51,9 @@ describe("PipePath", () => {
     it("should handle alphanumeric and dashes", () => {
       vi.spyOn(platform, "isWindows").mockReturnValue(false);
 
-      const path = PipePath.forModule("aspect-ipc-v2", "worker-123");
+      const path = PipePath.forModule("procwire-v2", "worker-123");
 
-      expect(path).toContain("aspect-ipc-v2-worker-123.sock");
+      expect(path).toContain("procwire-v2-worker-123.sock");
     });
   });
 

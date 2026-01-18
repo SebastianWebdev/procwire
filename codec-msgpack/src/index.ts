@@ -1,13 +1,13 @@
 /**
- * MessagePack codec for @aspect-ipc/transport.
+ * MessagePack codec for @procwire/transport.
  * Provides efficient binary serialization using @msgpack/msgpack.
  *
  * @module
  */
 
 import { decode, encode } from "@msgpack/msgpack";
-import type { SerializationCodec } from "@aspect-ipc/transport/serialization";
-import { SerializationError } from "@aspect-ipc/transport";
+import type { SerializationCodec } from "@procwire/transport/serialization";
+import { SerializationError } from "@procwire/transport";
 
 /**
  * MessagePack serialization codec.
@@ -15,8 +15,8 @@ import { SerializationError } from "@aspect-ipc/transport";
  *
  * @example
  * ```ts
- * import { MessagePackCodec } from '@aspect-ipc/codec-msgpack';
- * import { ChannelBuilder } from '@aspect-ipc/transport';
+ * import { MessagePackCodec } from '@procwire/codec-msgpack';
+ * import { ChannelBuilder } from '@procwire/transport';
  *
  * const channel = new ChannelBuilder()
  *   .withSerialization(new MessagePackCodec())

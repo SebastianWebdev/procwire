@@ -14,15 +14,15 @@ export class PipePath {
    * Windows: `\\.\pipe\<namespace>-<moduleId>`
    * Unix: `/tmp/<namespace>-<moduleId>.sock`
    *
-   * @param namespace - Application namespace (e.g., 'aspect-ipc')
+   * @param namespace - Application namespace (e.g., 'procwire')
    * @param moduleId - Module identifier (e.g., 'worker-1')
    * @returns Platform-specific pipe/socket path
    *
    * @example
    * ```ts
-   * // Windows: \\.\pipe\aspect-ipc-worker-1
-   * // Unix: /tmp/aspect-ipc-worker-1.sock
-   * const path = PipePath.forModule('aspect-ipc', 'worker-1');
+   * // Windows: \\.\pipe\procwire-worker-1
+   * // Unix: /tmp/procwire-worker-1.sock
+   * const path = PipePath.forModule('procwire', 'worker-1');
    * ```
    */
   static forModule(namespace: string, moduleId: string): string {

@@ -1,5 +1,5 @@
 {
-  "name": "@aspect-ipc-examples/rust-worker",
+  "name": "@procwire-examples/rust-worker",
   "version": "0.0.0",
   "private": true,
   "description": "Cross-language IPC example - Node.js parent with Rust worker",
@@ -12,7 +12,7 @@
     "clean": "rimraf dist \"*.tsbuildinfo\""
   },
   "dependencies": {
-    "@aspect-ipc/transport": "workspace:*"
+    "@procwire/transport": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -2,12 +2,12 @@
  * Dual-channel IPC example - Worker process.
  */
 
-import { ChannelBuilder, TransportFactory } from "@aspect-ipc/transport";
-import { LineDelimitedFraming, LengthPrefixedFraming } from "@aspect-ipc/transport/framing";
-import { JsonCodec } from "@aspect-ipc/transport/serialization";
-import { JsonRpcProtocol } from "@aspect-ipc/transport/protocol";
-import { MessagePackCodec } from "@aspect-ipc/codec-msgpack";
-import type { Channel } from "@aspect-ipc/transport/channel";
+import { ChannelBuilder, TransportFactory } from "@procwire/transport";
+import { LineDelimitedFraming, LengthPrefixedFraming } from "@procwire/transport/framing";
+import { JsonCodec } from "@procwire/transport/serialization";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+import type { Channel } from "@procwire/transport/channel";
 
 const startTime = Date.now();
 

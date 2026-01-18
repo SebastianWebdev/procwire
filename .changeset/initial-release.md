@@ -1,17 +1,17 @@
 ---
-"@aspect-ipc/transport": major
-"@aspect-ipc/codec-msgpack": major
-"@aspect-ipc/codec-protobuf": major
-"@aspect-ipc/codec-arrow": major
+"@procwire/transport": major
+"@procwire/codec-msgpack": major
+"@procwire/codec-protobuf": major
+"@procwire/codec-arrow": major
 ---
 
-Initial release of @aspect-ipc packages
+Initial release of @procwire packages
 
-This is the first public release of the @aspect-ipc monorepo, providing modular IPC building blocks for Node.js.
+This is the first public release of the @procwire monorepo, providing modular IPC building blocks for Node.js.
 
 **Core Package:**
 
-- `@aspect-ipc/transport` - Zero-dependency IPC transport library
+- `@procwire/transport` - Zero-dependency IPC transport library
   - Multiple transports: stdio, named pipes (Windows), Unix sockets (Linux/macOS)
   - Pluggable framing: line-delimited, length-prefixed
   - Built-in serialization: JSON, raw binary
@@ -21,9 +21,9 @@ This is the first public release of the @aspect-ipc monorepo, providing modular 
 
 **Codec Packages:**
 
-- `@aspect-ipc/codec-msgpack` - MessagePack serialization codec (20-50% smaller than JSON)
-- `@aspect-ipc/codec-protobuf` - Protocol Buffers codec with schema validation
-- `@aspect-ipc/codec-arrow` - Apache Arrow IPC codec for columnar data
+- `@procwire/codec-msgpack` - MessagePack serialization codec (20-50% smaller than JSON)
+- `@procwire/codec-protobuf` - Protocol Buffers codec with schema validation
+- `@procwire/codec-arrow` - Apache Arrow IPC codec for columnar data
 
 **Features:**
 

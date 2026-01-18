@@ -3,7 +3,7 @@ import protobuf from "protobufjs";
 
 import { ProtobufCodec } from "../src/index.js";
 
-describe("@aspect-ipc/codec-protobuf", () => {
+describe("@procwire/codec-protobuf", () => {
   it("serializes + deserializes", () => {
     const Message = new protobuf.Type("Message").add(new protobuf.Field("a", 1, "int32"));
     const codec = new ProtobufCodec<{ a: number }>(Message);

@@ -1,8 +1,8 @@
 {
-  "name": "@aspect-ipc-examples/basic-stdio",
+  "name": "@procwire-examples/basic-stdio",
   "version": "0.0.0",
   "private": true,
-  "description": "Basic stdio IPC example using @aspect-ipc/transport",
+  "description": "Basic stdio IPC example using @procwire/transport",
   "type": "module",
   "scripts": {
     "dev": "tsx src/parent.ts",
@@ -11,7 +11,7 @@
     "clean": "rimraf dist \"*.tsbuildinfo\""
   },
   "dependencies": {
-    "@aspect-ipc/transport": "workspace:*"
+    "@procwire/transport": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

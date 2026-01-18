@@ -1,5 +1,5 @@
 {
-  "name": "@aspect-ipc-examples/dual-channel",
+  "name": "@procwire-examples/dual-channel",
   "version": "0.0.0",
   "private": true,
   "description": "Dual-channel IPC example using control + data channels",
@@ -11,8 +11,8 @@
     "clean": "rimraf dist \"*.tsbuildinfo\""
   },
   "dependencies": {
-    "@aspect-ipc/codec-msgpack": "workspace:*",
-    "@aspect-ipc/transport": "workspace:*",
+    "@procwire/codec-msgpack": "workspace:*",
+    "@procwire/transport": "workspace:*",
     "@msgpack/msgpack": "^3.1.3"
   },
   "devDependencies": {

@@ -3,8 +3,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@aspect-ipc/transport": ["transport/src/index.ts"],
-      "@aspect-ipc/transport/*": ["transport/src/*"]
+      "@procwire/transport": ["transport/src/index.ts"],
+      "@procwire/transport/*": ["transport/src/*"]
     },
 
     "target": "ES2022",

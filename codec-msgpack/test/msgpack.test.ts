@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MessagePackCodec } from "../src/index.js";
-import { SerializationError } from "@aspect-ipc/transport";
+import { SerializationError } from "@procwire/transport";
 
-describe("@aspect-ipc/codec-msgpack", () => {
+describe("@procwire/codec-msgpack", () => {
   describe("MessagePackCodec", () => {
     it("has correct metadata", () => {
       const codec = new MessagePackCodec();

@@ -3,7 +3,7 @@ import { tableFromArrays } from "apache-arrow";
 
 import { ArrowCodec } from "../src/index.js";
 
-describe("@aspect-ipc/codec-arrow", () => {
+describe("@procwire/codec-arrow", () => {
   it("serializes + deserializes", () => {
     const codec = new ArrowCodec();
     const table = tableFromArrays({ a: [1, 2, 3] });

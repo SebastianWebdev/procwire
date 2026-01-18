@@ -1,6 +1,6 @@
 # Release Guide
 
-This guide explains how to release new versions of `@aspect-ipc/*` packages to npm.
+This guide explains how to release new versions of `@procwire/*` packages to npm.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ This monorepo uses [Changesets](https://github.com/changesets/changesets) for ve
 
 Before releasing, ensure:
 
-1. **You have npm publish access** to `@aspect-ipc/*` packages
+1. **You have npm publish access** to `@procwire/*` packages
 2. **All CI checks pass** - Run `pnpm ci` locally and verify CI passes on main
 3. **Changes are merged to `main`** - All release-ready changes are on main branch
 4. **NPM_TOKEN is configured** (for automated releases) - Set in GitHub Secrets
@@ -41,7 +41,7 @@ npm whoami
 npm access ls-packages
 ```
 
-You should see `@aspect-ipc/transport`, `@aspect-ipc/codec-msgpack`, `@aspect-ipc/codec-protobuf`, and `@aspect-ipc/codec-arrow` with `read-write` access.
+You should see `@procwire/transport`, `@procwire/codec-msgpack`, `@procwire/codec-protobuf`, and `@procwire/codec-arrow` with `read-write` access.
 
 ## Release Process
 
@@ -63,12 +63,12 @@ This interactive prompt will ask:
 
 ```
 🦋  Which packages would you like to include?
-◉ @aspect-ipc/transport
-◯ @aspect-ipc/codec-msgpack
-◯ @aspect-ipc/codec-protobuf
-◯ @aspect-ipc/codec-arrow
+◉ @procwire/transport
+◯ @procwire/codec-msgpack
+◯ @procwire/codec-protobuf
+◯ @procwire/codec-arrow
 
-🦋  What kind of change is this for @aspect-ipc/transport?
+🦋  What kind of change is this for @procwire/transport?
 ◉ minor - New features
 
 🦋  Please enter a summary for this change:
@@ -79,7 +79,7 @@ This creates a file in `.changeset/` with a random name like `.changeset/happy-p
 
 ```md
 ---
-"@aspect-ipc/transport": minor
+"@procwire/transport": minor
 ---
 
 Add Unix socket transport support
@@ -142,14 +142,14 @@ pnpm release
 This runs `changeset publish` which:
 
 1. Publishes all packages with new versions to npm
-2. Creates git tags for each version (e.g., `@aspect-ipc/transport@1.2.0`)
+2. Creates git tags for each version (e.g., `@procwire/transport@1.2.0`)
 3. Pushes tags to GitHub
 
 **Verify the publish:**
 
 ```bash
-npm view @aspect-ipc/transport version
-npm view @aspect-ipc/codec-msgpack version
+npm view @procwire/transport version
+npm view @procwire/codec-msgpack version
 ```
 
 ## Automated Release (CI)
@@ -268,10 +268,10 @@ If a publish fails partway through:
 
 ```bash
 # Check which packages were published
-npm view @aspect-ipc/transport version
-npm view @aspect-ipc/codec-msgpack version
-npm view @aspect-ipc/codec-protobuf version
-npm view @aspect-ipc/codec-arrow version
+npm view @procwire/transport version
+npm view @procwire/codec-msgpack version
+npm view @procwire/codec-protobuf version
+npm view @procwire/codec-arrow version
 
 # Re-run publish (changesets will skip already-published versions)
 pnpm release
@@ -292,7 +292,7 @@ If you must fix:
 
 ```bash
 # Option A: Deprecate the bad version
-npm deprecate @aspect-ipc/transport@1.2.3 "Deprecated due to critical bug, use 1.2.4 instead"
+npm deprecate @procwire/transport@1.2.3 "Deprecated due to critical bug, use 1.2.4 instead"
 
 # Option B: Publish a patch version
 pnpm changeset # Create patch changeset
@@ -328,8 +328,8 @@ pnpm release
 
 ### After Publishing
 
-- ✅ **Verify on npm** - Check https://www.npmjs.com/package/@aspect-ipc/transport
-- ✅ **Test installation** - Run `npm install @aspect-ipc/transport` in a test project
+- ✅ **Verify on npm** - Check https://www.npmjs.com/package/@procwire/transport
+- ✅ **Test installation** - Run `npm install @procwire/transport` in a test project
 - ✅ **Check GitHub Releases** - Verify git tags are pushed and GitHub Releases are created
 - ✅ **Update documentation** - If needed, update docs for new features
 
@@ -351,7 +351,7 @@ pnpm release
 
 ### "Package not found" when installing
 
-**Problem:** `npm install @aspect-ipc/transport` fails with 404
+**Problem:** `npm install @procwire/transport` fails with 404
 
 **Possible causes:**
 
@@ -378,7 +378,7 @@ pnpm release
 
 ### Workspace protocol (`workspace:*`) in published package
 
-**Problem:** Published package has `"@aspect-ipc/transport": "workspace:*"` in dependencies
+**Problem:** Published package has `"@procwire/transport": "workspace:*"` in dependencies
 
 **Solution:** This should be automatically converted by Changesets. Ensure:
 
@@ -395,4 +395,4 @@ pnpm release
 
 ## Questions?
 
-Open an issue on [GitHub](https://github.com/SebastianWebdev/aspect-ipc/issues) if you have questions about the release process.
+Open an issue on [GitHub](https://github.com/SebastianWebdev/procwire/issues) if you have questions about the release process.

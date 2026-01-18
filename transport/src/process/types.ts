@@ -170,7 +170,7 @@ export interface ProcessManagerConfig {
 
   /**
    * Namespace for auto-generated pipe paths.
-   * @default 'aspect-ipc'
+   * @default 'procwire'
    */
   namespace?: string;
 

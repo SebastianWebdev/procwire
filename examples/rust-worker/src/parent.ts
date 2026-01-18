@@ -8,7 +8,7 @@
  * - Performance comparison
  */
 
-import { createStdioChannel } from "@aspect-ipc/transport";
+import { createStdioChannel } from "@procwire/transport";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { platform } from "node:os";
