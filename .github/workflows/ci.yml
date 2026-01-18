@@ -33,4 +33,4 @@ jobs:
 
       # Uruchamia skrypt "ci" z package.json (lint + test + build)
       - name: Run CI Script
-        run: pnpm ci
+        run: pnpm run ci
