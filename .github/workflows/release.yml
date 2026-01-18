@@ -1,19 +1,21 @@
 name: Release
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
 
+# Zapobiega uruchomieniu dwóch release'ów jednocześnie
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
   release:
-    name: Version or publish
+    name: Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      id-token: write # Required for npm provenance
+      contents: write # Wymagane do tworzenia commitów/tagów
+      pull-requests: write # Wymagane do tworzenia PR "Version Packages"
+      id-token: write # <--- KLUCZOWE dla Trusted Publishing (NPM OIDC)
 
     steps:
       - name: Checkout
@@ -29,32 +31,27 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Run full CI pipeline before publishing
-      - name: Lint
-        run: pnpm lint
-
-      - name: Type check
-        run: pnpm typecheck
-
-      - name: Run tests
-        run: pnpm test
-
       - name: Build packages
         run: pnpm build
 
-      # Create version PR or publish to npm
+      # Changesets Action
+      # 1. Jeśli są changesety -> Tworzy PR "Version Packages"
+      # 2. Jeśli ich nie ma (zostały zmergowane) -> Publikuje do NPM
       - name: Create version PR or publish
+        id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
           publish: pnpm release
+          commit: "chore: version packages"
+          title: "Version Packages"
         env:
+          # Token GitHuba jest wymagany do tworzenia PR-ów i tagów
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
+          # UWAGA: Przy Trusted Publishing (OIDC) nie podajemy tutaj NPM_TOKEN.
+          # Autoryzacja dzieje się magicznie dzięki `id-token: write` i `registry-url`.

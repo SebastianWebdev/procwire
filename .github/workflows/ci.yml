@@ -30,9 +30,9 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Install
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: CI
+      # Uruchamia skrypt "ci" z package.json (lint + test + build)
+      - name: Run CI Script
         run: pnpm ci
-
