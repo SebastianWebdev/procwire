@@ -1,1 +1,1 @@
-export type { Channel, NotificationHandler, RequestHandler } from "./types.js";
+export * from "./types.js";

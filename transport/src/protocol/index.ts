@@ -1,1 +1,1 @@
-export type { Protocol, ParsedMessage, ProtocolError, RequestId } from "./types.js";
+export * from "./types.js";

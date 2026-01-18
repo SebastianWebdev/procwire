@@ -30,10 +30,10 @@
     "apache-arrow": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "workspace:^",
+    "@types/node": "^20.11.30",
     "apache-arrow": "^15.0.0",
-    "rimraf": "workspace:^",
-    "typescript": "workspace:^",
-    "vitest": "workspace:^"
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
   }
 }
