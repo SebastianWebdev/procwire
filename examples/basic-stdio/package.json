@@ -1,0 +1,22 @@
+{
+  "name": "@aspect-ipc-examples/basic-stdio",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Basic stdio IPC example using @aspect-ipc/transport",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/parent.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/parent.js",
+    "clean": "rimraf dist \"*.tsbuildinfo\""
+  },
+  "dependencies": {
+    "@aspect-ipc/transport": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

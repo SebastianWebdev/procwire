@@ -10,6 +10,7 @@
  * - Serialization: Object <-> binary conversion
  * - Protocol: Request/response messaging
  * - Channel: High-level communication API
+ * - Process: Child process lifecycle management
  *
  * @packageDocumentation
  */
@@ -20,6 +21,7 @@ export * from "./framing/index.js";
 export * from "./serialization/index.js";
 export * from "./protocol/index.js";
 export * from "./channel/index.js";
+export * from "./process/index.js";
 
 // Utilities
 export * from "./utils/index.js";
