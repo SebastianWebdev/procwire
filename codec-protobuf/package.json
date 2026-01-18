@@ -2,6 +2,26 @@
   "name": "@aspect-ipc/codec-protobuf",
   "version": "0.0.0",
   "description": "Protocol Buffers codec for @aspect-ipc/transport.",
+  "keywords": [
+    "ipc",
+    "protobuf",
+    "protocol-buffers",
+    "serialization",
+    "codec",
+    "binary",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "directory": "codec-protobuf"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+  },
+  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/codec-protobuf#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -16,7 +36,14 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",

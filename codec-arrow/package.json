@@ -2,6 +2,27 @@
   "name": "@aspect-ipc/codec-arrow",
   "version": "0.0.0",
   "description": "Apache Arrow IPC codec for @aspect-ipc/transport.",
+  "keywords": [
+    "ipc",
+    "arrow",
+    "apache-arrow",
+    "serialization",
+    "codec",
+    "columnar",
+    "binary",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "directory": "codec-arrow"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+  },
+  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/codec-arrow#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -16,7 +37,14 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",

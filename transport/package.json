@@ -2,6 +2,27 @@
   "name": "@aspect-ipc/transport",
   "version": "0.0.0",
   "description": "Standalone IPC transport building blocks for Node.js (core; zero runtime dependencies).",
+  "keywords": [
+    "ipc",
+    "inter-process-communication",
+    "stdio",
+    "pipes",
+    "sockets",
+    "json-rpc",
+    "transport",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/aspect-ipc.git",
+    "directory": "transport"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/aspect-ipc/issues"
+  },
+  "homepage": "https://github.com/SebastianWebdev/aspect-ipc/tree/main/transport#readme",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -40,7 +61,14 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
