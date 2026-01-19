@@ -1,39 +1,77 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Procwire Transport
+description: High-performance IPC transport library for Node.js with zero runtime dependencies
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
+  tagline: Modular, type-safe IPC building blocks for Node.js. <br/>Zero runtime dependencies in the core package.
   image:
     file: ../../assets/houston.webp
   actions:
-    - text: Example Guide
+    - text: Get Started
+      link: /guides/getting-started/
+      icon: rocket
+      variant: primary
+    - text: View API Reference
       link: /api/
-      icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
+      icon: document
       variant: minimal
 ---
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
 
-## Next steps
+<div className="landing-section">
 
-<CardGrid stagger>
-  <Card title="Update content" icon="pencil">
-    Edit `src/content/docs/index.mdx` to see this page change.
+## Why Procwire Transport?
+
+<CardGrid>
+  <Card title="Zero Dependencies" icon="puzzle">
+    The core `@procwire/transport` package has **zero runtime dependencies**. No bloat, no conflicts, just pure TypeScript.
   </Card>
-  <Card title="Change page layout" icon="document">
-    Delete `template: splash` in `src/content/docs/index.mdx` to display a sidebar on this page.
-  </Card>
-  <Card title="Add new content" icon="add-document">
-    Add Markdown or MDX files to `src/content/docs` to create new pages.
-  </Card>
-  <Card title="Configure your site" icon="setting">
-    Edit your `sidebar` and other config in `astro.config.mjs`.
-  </Card>
-  <Card title="Read the docs" icon="open-book">
-    Learn more in [the Starlight Docs](https://starlight.astro.build/).
-  </Card>
+
+<Card title="Modular Architecture" icon="setting">
+  Mix and match transport layers, framing strategies, serialization codecs, and protocols. Use what
+  you need, nothing more.
+</Card>
+
+<Card title="Type-Safe" icon="approve-check">
+  Full TypeScript support with generics throughout. Catch errors at compile-time, not runtime.
+</Card>
+
+<Card title="High Performance" icon="rocket">
+  Choose your performance trade-offs: JSON for simplicity, MessagePack for speed, Protobuf for
+  schemas, Arrow for analytics.
+</Card>
+
+<Card title="Cross-Platform" icon="laptop">
+  Automatic platform detection. Named Pipes on Windows, Unix Domain Sockets on Linux/macOS. One API,
+  all platforms.
+</Card>
+
+<Card title="Production Ready" icon="star">
+    Used in real-world applications. Comprehensive test suite, detailed documentation, and active maintenance.
+</Card>
 </CardGrid>
+
+</div>
+
+<div className="landing-section" />
+
+## Flexible & Modular
+
+Build your perfect IPC stack in seconds. The API is designed to be fluent and readable.
+
+```typescript
+import { ChannelBuilder } from "@procwire/transport/channel";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+import { LengthPrefixedFraming } from "@procwire/transport/framing";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
+
+// Create a highly optimized binary channel
+const channel = new ChannelBuilder()
+  .withTransport(myTransport)
+  .withFraming(new LengthPrefixedFraming())
+  .withSerialization(new MessagePackCodec())
+  .withProtocol(new JsonRpcProtocol())
+  .withTimeout(5000)
+  .build();
+```
