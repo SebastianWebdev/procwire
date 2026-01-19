@@ -7,7 +7,7 @@ title: "@procwire/monorepo"
 
 ## Modules
 
-- [Codec Arrow](/api/codec-arrow/index/)
-- [Codec MsgPack](/api/codec-msgpack/index/)
-- [Codec Protobuf](/api/codec-protobuf/index/)
-- [Transport](/api/transport/index/)
+- [codec-arrow/src](/api/codec-arrow/src/readme/)
+- [codec-msgpack/src](/api/codec-msgpack/src/readme/)
+- [codec-protobuf/src](/api/codec-protobuf/src/readme/)
+- [transport/src](/api/transport/src/readme/)
