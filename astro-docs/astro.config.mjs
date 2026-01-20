@@ -4,6 +4,7 @@ import starlight from "@astrojs/starlight";
 import starlightTypeDoc from "starlight-typedoc";
 import textPlugin from "astro-d2";
 import mermaid from "astro-mermaid";
+import starlightLlmsTxt from "starlight-llms-txt";
 
 export default defineConfig({
   site: "https://procwire.dev",
@@ -25,6 +26,11 @@ export default defineConfig({
         {
           label: "API Reference",
           autogenerate: { directory: "api" },
+        },
+        {
+          label: "LLM Context (.txt)",
+          link: "/llms.txt",
+          attrs: { target: "_blank" },
         },
       ],
       plugins: [
@@ -48,6 +54,29 @@ export default defineConfig({
             excludeProtected: true,
             flattenOutputFiles: false,
           },
+        }),
+        starlightLlmsTxt({
+          projectName: "Procwire",
+          description:
+            "Documentation for Procwire library (Transport, Codecs: MsgPack, Protobuf, Arrow).",
+          details: `
+Key Architectural Concepts:
+- Procwire focuses on type-safe communication.
+- It supports multiple codecs (MsgPack, Protobuf, Arrow).
+- Prefer using the defined types from 'api' section over raw objects.
+- All examples use TypeScript.
+          `,
+
+          minify: {
+            whitespace: true,
+            details: true,
+            note: true,
+            tip: true,
+          },
+
+          promote: ["guides/getting-started", "guides/core-concepts"],
+
+          exclude: ["changelog", "team"],
         }),
       ],
     }),
