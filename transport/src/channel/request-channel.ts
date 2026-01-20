@@ -156,12 +156,8 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       return;
     }
 
-    // Connect transport if not already connected (e.g., server-accepted connections)
-    if (this.transport.state !== "connected") {
-      await this.transport.connect();
-    }
-
-    // Subscribe to transport events
+    // Subscribe to transport events BEFORE connecting to avoid race conditions
+    // where the child process might emit data before we're listening
     this.transportDataUnsubscribe = this.transport.onData((chunk) => {
       this.handleChunk(chunk).catch((error) => {
         this.emitError(toError(error));
@@ -171,6 +167,11 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
     this.transportErrorUnsubscribe = this.transport.on("error", (error) => {
       this.emitError(error);
     });
+
+    // Connect transport if not already connected (e.g., server-accepted connections)
+    if (this.transport.state !== "connected") {
+      await this.transport.connect();
+    }
 
     this._isConnected = true;
     this.events.emit("start", undefined);
