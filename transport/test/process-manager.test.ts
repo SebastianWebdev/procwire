@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ProcessManager } from "../src/process/manager.js";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -342,8 +342,22 @@ describe("ProcessManager Integration Tests", () => {
         },
       });
 
-      // Wait for clean exit
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // ZMIANA: Zamiast sztywnego setTimeout, czekamy dynamicznie na zmianę stanu.
+      // Dajemy mu duży margines (2000ms), ale na Linuxie skończy się to w <100ms.
+      // Jeśli używasz Vitest, masz dostęp do `vi`:
+
+      await vi.waitUntil(() => handle.state === "stopped", {
+        timeout: 2000,
+        interval: 50,
+      });
+
+      // Alternatywa bez importowania `vi` (jeśli wolisz czysty JS):
+      /*
+      const start = Date.now();
+      while (handle.state !== "stopped" && Date.now() - start < 2000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      */
 
       expect(restartEvents).toHaveLength(0);
       expect(handle.state).toBe("stopped");
