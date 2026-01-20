@@ -35,7 +35,6 @@ jobs:
       # Zamiast 'pnpm run ci', uruchamiamy kroki osobno z wykluczeniem astro-docs
 
       - name: Lint
-        # Lint zazwyczaj działa na calym repozytorium (eslint .), więc zostawiamy bez zmian
         run: pnpm lint
 
       - name: Build
