@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/codec-protobuf#readme",
+  "homepage": "https://www.procwire.dev/guides/getting-started/",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
