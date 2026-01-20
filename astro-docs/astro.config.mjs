@@ -7,6 +7,7 @@ import mermaid from "astro-mermaid"; // Import dla Mermaid
 
 // https://astro.build/config
 export default defineConfig({
+  site: "https://procwire.dev",
   // ... sekcja site, base, integrations bez zmian ...
   integrations: [
     textPlugin({
