@@ -2,7 +2,7 @@
  * MessagePack codec for @procwire/transport.
  * Provides efficient binary serialization using @msgpack/msgpack.
  *
- * @module
+ * @module Codec MessagePack
  */
 
 import { decode, encode } from "@msgpack/msgpack";
@@ -39,11 +39,7 @@ export class MessagePackCodec implements SerializationCodec<unknown> {
     try {
       const uint8array = encode(value);
       // Optimize: avoid copying by wrapping the underlying ArrayBuffer
-      return Buffer.from(
-        uint8array.buffer,
-        uint8array.byteOffset,
-        uint8array.byteLength,
-      );
+      return Buffer.from(uint8array.buffer, uint8array.byteOffset, uint8array.byteLength);
     } catch (error) {
       throw new SerializationError(
         `Failed to encode MessagePack: ${error instanceof Error ? error.message : String(error)}`,

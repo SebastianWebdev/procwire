@@ -1,4 +1,6 @@
 /**
+ *
+ *
  * @procwire/transport
  *
  * Core IPC transport library with zero runtime dependencies.
@@ -13,6 +15,7 @@
  * - Process: Child process lifecycle management
  *
  * @packageDocumentation
+ * @module Transport
  */
 
 // Core types

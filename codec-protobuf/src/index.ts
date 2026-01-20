@@ -2,7 +2,7 @@
  * Protocol Buffers codec for @procwire/transport.
  * Provides type-safe binary serialization using protobufjs.
  *
- * @module
+ * @module Codec Protobuf
  */
 
 import type { Type } from "protobufjs";

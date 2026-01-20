@@ -2,7 +2,7 @@
  * Apache Arrow codec for @procwire/transport.
  * Provides columnar data serialization using apache-arrow.
  *
- * @module
+ * @module Codec Arrow
  */
 
 import type { Table } from "apache-arrow";
