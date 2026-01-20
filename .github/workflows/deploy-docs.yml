@@ -52,10 +52,8 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build Astro Docs
-        working-directory: ./astro-docs
-        run: |
-          pnpm install
-          pnpm run build
+        # Budujemy używając filtra z poziomu root - pnpm udostępni wtedy poprawnie binarkę 'astro' z głównego node_modules
+        run: pnpm --filter ./astro-docs build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
