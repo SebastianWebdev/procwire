@@ -2,3 +2,4 @@ packages:
   - "transport"
   - "codec-*"
   - "examples/*"
+  - "astro-docs"
