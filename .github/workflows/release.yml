@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
-        run: pnpm --filter "!astro-docs" build
+        run: pnpm --filter "!astro-docs" --filter "!." build
 
       - name: Create version PR or publish
         id: changesets

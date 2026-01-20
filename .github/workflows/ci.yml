@@ -40,7 +40,7 @@ jobs:
 
       - name: Build
         # Wykluczamy astro-docs z budowania (to najważniejsza zmiana naprawiająca błąd D2)
-        run: pnpm --filter "!astro-docs" build
+        run: pnpm --filter "!astro-docs" --filter "!." build
 
       - name: Typecheck
         # Sprawdzamy typy tylko w kodzie aplikacji
