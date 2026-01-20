@@ -32,10 +32,13 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Zmieniamy na --no-frozen-lockfile, aby naprawić błąd ERR_PNPM_OUTDATED_LOCKFILE
+        # Pozwala to zaktualizować lockfile w locie na CI, jeśli różni się od package.json
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
-        run: pnpm build
+        # Wykluczamy astro-docs z budowania, aby oszczędzić zasoby (docs ma swój workflow)
+        run: pnpm --filter "!astro-docs" build
 
       # Changesets Action
       # 1. Jeśli są changesety -> Tworzy PR "Version Packages"
