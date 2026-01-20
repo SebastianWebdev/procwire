@@ -246,26 +246,3 @@ Contributions are welcome! Please:
 ## License
 
 MIT - See [LICENSE](LICENSE) for details.
-
-## Roadmap
-
-### v0.1.0 (Current)
-- Core transport, framing, serialization, protocol layers
-- Stdio and pipe/socket transports
-- ProcessManager with restart policies
-- Optional codecs: MessagePack, Protobuf, Arrow
-
-### v0.2.0 (Planned)
-- Streaming support
-- Compression layer
-- Metrics and monitoring
-
-### v1.0.0 (Future)
-- Stable API
-- Production-tested
-- Performance optimizations
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/your-org/ipc-bridge-core/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/ipc-bridge-core/discussions)
