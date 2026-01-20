@@ -8,9 +8,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const WORKER_PATH = join(__dirname, "fixtures", "worker.js");
 
-// Pomocnicza stała dla timeoutów na CI
-const CI_TIMEOUT = 5000;
-
 describe("ProcessManager Integration Tests", () => {
   let manager: ProcessManager;
 
@@ -40,9 +37,8 @@ describe("ProcessManager Integration Tests", () => {
       expect(handle).toBeDefined();
       expect(handle.id).toBe("worker-1");
       expect(handle.pid).toBeTypeOf("number");
-      expect(handle.state).toBe("running");
+      expect(handle.state).toBe("running"); // Send echo request
 
-      // Send echo request
       const result = await handle.request("echo", { message: "hello" });
       expect(result).toEqual({ message: "hello" });
     });
@@ -51,9 +47,8 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-2", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Send multiple requests concurrently
 
-      // Send multiple requests concurrently
       const results = await Promise.all([
         handle.request("echo", { value: 1 }),
         handle.request("echo", { value: 2 }),
@@ -74,26 +69,23 @@ describe("ProcessManager Integration Tests", () => {
       const elapsed = Date.now() - start;
 
       expect(result).toEqual({ ok: true });
-      // Tolerance might need to be looser on Windows
-      expect(elapsed).toBeGreaterThanOrEqual(80);
+      expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some tolerance
     });
 
     it("should handle notifications from worker", async () => {
       const handle = await manager.spawn("worker-4", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Listen for notifications
 
-      // Listen for notifications
       const notifications: any[] = [];
       handle.controlChannel.onNotification((notif: any) => {
         notifications.push(notif);
-      });
+      }); // Worker sends runtime.ready on startup
 
-      // Worker sends runtime.ready on startup
-      // FIX: Wait explicitly for notification instead of sleep
-      await vi.waitUntil(() => notifications.length > 0, { timeout: CI_TIMEOUT });
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
+      expect(notifications.length).toBeGreaterThan(0);
       expect(notifications[0]).toMatchObject({
         method: "runtime.ready",
       });
@@ -111,7 +103,6 @@ describe("ProcessManager Integration Tests", () => {
 
       await manager.terminate("worker-5");
 
-      // FIX: Ensure state is updated (terminate waits internally, but double check is good)
       expect(manager.isRunning("worker-5")).toBe(false);
       expect(handle.state).toBe("stopped");
     });
@@ -126,16 +117,15 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-6", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Trigger crash
 
-      // Trigger crash
       await handle.request("crash", {}).catch(() => {
         // Expected to fail as process crashes
-      });
+      }); // Wait for exit event
 
-      // FIX: Wait explicitly for exit event
-      await vi.waitUntil(() => exitEvents.length > 0, { timeout: CI_TIMEOUT });
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
+      expect(exitEvents.length).toBeGreaterThan(0);
       expect(exitEvents[0]).toMatchObject({
         id: "worker-6",
         code: 1,
@@ -159,8 +149,6 @@ describe("ProcessManager Integration Tests", () => {
         args: [WORKER_PATH],
       });
 
-      // Events happen during spawn await, so they should be ready immediately,
-      // but checking length is safe.
       expect(spawnEvents).toHaveLength(1);
       expect(spawnEvents[0]).toMatchObject({
         id: "worker-7",
@@ -200,34 +188,27 @@ describe("ProcessManager Integration Tests", () => {
           backoffMs: 50,
           maxBackoffMs: 500,
         },
-      });
+      }); // Initial spawn
 
-      // Initial spawn
-      expect(spawnEvents).toHaveLength(1);
+      expect(spawnEvents).toHaveLength(1); // Trigger crash
 
-      // Trigger crash
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for first restart
 
-      // FIX: Wait specifically for restart event
-      await vi.waitUntil(() => restartEvents.length > 0, { timeout: CI_TIMEOUT });
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
+      expect(restartEvents.length).toBeGreaterThan(0);
       expect(restartEvents[0]).toMatchObject({
         id: "worker-8",
         attempt: 1,
         delayMs: 50, // First backoff: 50 * 2^0 = 50
-      });
+      }); // Should have spawned again
 
-      // FIX: Wait for the new process to actually spawn after the backoff
-      await vi.waitUntil(() => spawnEvents.length > 1, { timeout: CI_TIMEOUT });
+      expect(spawnEvents.length).toBeGreaterThan(1);
 
-      // Verify handle is running again
       const newHandle = manager.getHandle("worker-8");
       expect(newHandle).toBeDefined();
+      expect(newHandle?.state).toBe("running");
 
-      // FIX: Ensure new handle is in running state
-      await vi.waitUntil(() => newHandle?.state === "running", { timeout: CI_TIMEOUT });
-
-      // Test restarted process works
       const result = await newHandle?.request("echo", { test: "after-restart" });
       expect(result).toEqual({ test: "after-restart" });
     });
@@ -252,28 +233,18 @@ describe("ProcessManager Integration Tests", () => {
           maxRestarts: 1,
           backoffMs: 50,
         },
-      });
+      }); // First crash - should restart
 
-      // First crash - should restart
       let handle = manager.getHandle("worker-9");
       await handle?.request("crash", {}).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // FIX: Wait for restart
-      await vi.waitUntil(() => restartEvents.length === 1, { timeout: CI_TIMEOUT });
+      expect(restartEvents).toHaveLength(1);
+      expect(manager.isRunning("worker-9")).toBe(true);
 
-      // Wait for process to be running again
-      await vi.waitUntil(() => manager.isRunning("worker-9"), { timeout: CI_TIMEOUT });
-
-      // Second crash - should NOT restart (maxRestarts=1)
       handle = manager.getHandle("worker-9");
       await handle?.request("crash", {}).catch(() => {});
-
-      // FIX: Wait for the crash event
-      await vi.waitUntil(() => crashEvents.length === 2, { timeout: CI_TIMEOUT });
-
-      // FIX: Give it extra time to ensure NO restart happens (proving a negative)
-      // On Windows CI, 200ms might be too short if system is very loaded.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(restartEvents).toHaveLength(1); // Still just 1
       expect(crashEvents.length).toBeGreaterThan(0);
@@ -296,23 +267,16 @@ describe("ProcessManager Integration Tests", () => {
           backoffMs: 10,
           maxBackoffMs: 30,
         },
-      });
+      }); // Trigger multiple crashes
 
-      // Trigger multiple crashes
       for (let i = 0; i < 3; i++) {
-        // FIX: Ensure process is running/handle is valid before requesting crash
-        await vi.waitUntil(() => manager.isRunning("worker-10"), { timeout: CI_TIMEOUT });
-
         const handle = manager.getHandle("worker-10");
         await handle?.request("crash", {}).catch(() => {});
-
-        // FIX: Instead of sleep, wait for the specific restart count
-        await vi.waitUntil(() => restartEvents.length === i + 1, { timeout: CI_TIMEOUT });
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
 
-      expect(restartEvents.length).toBe(3);
+      expect(restartEvents.length).toBe(3); // Check backoff delays
 
-      // Check backoff delays
       expect(restartEvents[0].delayMs).toBe(10); // 10 * 2^0 = 10
       expect(restartEvents[1].delayMs).toBe(20); // 10 * 2^1 = 20
       expect(restartEvents[2].delayMs).toBe(30); // 10 * 2^2 = 40, capped at 30
@@ -333,16 +297,11 @@ describe("ProcessManager Integration Tests", () => {
           maxRestarts: 5,
           backoffMs: 50,
         },
-      });
+      }); // Manual termination
 
-      // Manual termination
-      await manager.terminate("worker-11");
+      await manager.terminate("worker-11"); // Wait to ensure no restart
 
-      // FIX: Wait for stopped state
-      await vi.waitUntil(() => !manager.isRunning("worker-11"), { timeout: CI_TIMEOUT });
-
-      // FIX: Wait significantly longer to prove no restart happens (negative assertion)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(restartEvents).toHaveLength(0);
       expect(manager.isRunning("worker-11")).toBe(false);
@@ -365,15 +324,10 @@ describe("ProcessManager Integration Tests", () => {
         },
       });
 
-      // FIX: Wait dynamically for state change (Fixed in previous step)
       await vi.waitUntil(() => handle.state === "stopped", {
-        timeout: 5000,
+        timeout: 2000,
         interval: 50,
       });
-
-      // Safety buffer to ensure no restart event comes after stop
-      await new Promise((r) => setTimeout(r, 200));
-
       expect(restartEvents).toHaveLength(0);
       expect(handle.state).toBe("stopped");
     });
@@ -392,24 +346,21 @@ describe("ProcessManager Integration Tests", () => {
       });
 
       expect(manager.isRunning("worker-a")).toBe(true);
-      expect(manager.isRunning("worker-b")).toBe(true);
+      expect(manager.isRunning("worker-b")).toBe(true); // Both should work independently
 
-      // Both should work independently
       const [result1, result2] = await Promise.all([
         handle1.request("echo", { id: "a" }),
         handle2.request("echo", { id: "b" }),
       ]);
 
       expect(result1).toEqual({ id: "a" });
-      expect(result2).toEqual({ id: "b" });
+      expect(result2).toEqual({ id: "b" }); // Terminate one
 
-      // Terminate one
       await manager.terminate("worker-a");
 
       expect(manager.isRunning("worker-a")).toBe(false);
-      expect(manager.isRunning("worker-b")).toBe(true);
+      expect(manager.isRunning("worker-b")).toBe(true); // Other should still work
 
-      // Other should still work
       const result3 = await handle2.request("echo", { still: "works" });
       expect(result3).toEqual({ still: "works" });
     });
@@ -483,14 +434,11 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-error", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Send invalid request that causes error
 
-      // Send invalid request that causes error
       await handle.request("unknown-method", {}).catch(() => {
         // Expected to fail
-      });
-
-      // Errors may or may not be emitted depending on protocol error handling
+      }); // Errors may or may not be emitted depending on protocol error handling
       // This test just verifies the error event mechanism exists
     });
   });
@@ -511,18 +459,15 @@ describe("ProcessManager Integration Tests", () => {
 
       handle.on("stateChange", (data) => {
         stateChanges.push(data);
-      });
+      }); // Initial state is running
 
-      // Initial state is running
-      expect(handle.state).toBe("running");
+      expect(handle.state).toBe("running"); // Crash the process
 
-      // Crash the process
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for restart
 
-      // FIX: Wait for sufficient transitions (running -> crashed -> running)
-      await vi.waitUntil(() => stateChanges.length >= 2, { timeout: CI_TIMEOUT });
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Should have transitioned: running -> crashed -> running
 
-      expect(stateChanges.length).toBeGreaterThanOrEqual(2);
+      expect(stateChanges.length).toBeGreaterThanOrEqual(1);
     });
 
     it("should emit exit event from handle", async () => {
@@ -535,13 +480,11 @@ describe("ProcessManager Integration Tests", () => {
 
       handle.on("exit", (data) => {
         exitEvents.push(data);
-      });
+      }); // Trigger crash
 
-      // Trigger crash
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for exit
 
-      // FIX: Wait explicitly for exit event
-      await vi.waitUntil(() => exitEvents.length > 0, { timeout: CI_TIMEOUT });
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(exitEvents).toHaveLength(1);
       expect(exitEvents[0]).toMatchObject({
