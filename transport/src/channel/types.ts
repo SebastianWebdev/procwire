@@ -145,6 +145,13 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
    * Maximum number of inbound frames to buffer before backpressure (optional).
    */
   maxInboundFrames?: number;
+
+  /**
+   * Buffer early notifications received before handlers are registered.
+   * Useful when child processes send notifications immediately after spawn.
+   * Default: 10
+   */
+  bufferEarlyNotifications?: number;
 }
 
 /**

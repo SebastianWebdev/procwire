@@ -73,16 +73,19 @@ describe("ProcessManager Integration Tests", () => {
     });
 
     it("should handle notifications from worker", async () => {
+      // Listen for notifications BEFORE spawning to avoid race condition
+      const notifications: any[] = [];
+
       const handle = await manager.spawn("worker-4", {
         executablePath: "node",
         args: [WORKER_PATH],
-      }); // Listen for notifications
+      });
 
-      const notifications: any[] = [];
       handle.controlChannel.onNotification((notif: any) => {
         notifications.push(notif);
-      }); // Worker sends runtime.ready on startup
+      });
 
+      // Worker sends runtime.ready on startup
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(notifications.length).toBeGreaterThan(0);
