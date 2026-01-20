@@ -117,11 +117,13 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   private readonly responseAccessor: ResponseAccessor;
   private readonly middleware: ChannelMiddleware[];
   private readonly maxInboundFrames: number | undefined;
+  private readonly bufferEarlyNotifications: number;
 
   private readonly events = new EventEmitter<ChannelEvents>();
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();
   private readonly requestHandlers: RequestHandler<TReq, TRes>[] = [];
   private readonly notificationHandlers: NotificationHandler<TNotif>[] = [];
+  private readonly bufferedNotifications: TNotif[] = [];
 
   private transportDataUnsubscribe: Unsubscribe | undefined;
   private transportErrorUnsubscribe: Unsubscribe | undefined;
@@ -136,6 +138,7 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
     this.defaultTimeout = options.timeout !== undefined ? options.timeout : 30000;
     this.middleware = options.middleware !== undefined ? options.middleware : [];
     this.maxInboundFrames = options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
+    this.bufferEarlyNotifications = options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
 
     // Auto-detect response accessor if not provided
     this.responseAccessor =
@@ -312,9 +315,21 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
 
   /**
    * Registers handler for incoming notifications.
+   * If notifications were buffered before this handler was registered,
+   * they will be delivered immediately.
    */
   onNotification(handler: NotificationHandler<TNotif>): Unsubscribe {
     this.notificationHandlers.push(handler);
+
+    // Deliver any buffered notifications to the new handler
+    for (const notification of this.bufferedNotifications) {
+      try {
+        handler(notification);
+      } catch (error) {
+        this.emitError(toError(error));
+      }
+    }
+
     return () => {
       const index = this.notificationHandlers.indexOf(handler);
       if (index !== -1) {
@@ -490,6 +505,14 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
    * Handles incoming notification message.
    */
   private async handleNotification(notification: TNotif): Promise<void> {
+    // If no handlers registered yet, buffer the notification for later delivery
+    if (this.notificationHandlers.length === 0) {
+      if (this.bufferedNotifications.length < this.bufferEarlyNotifications) {
+        this.bufferedNotifications.push(notification);
+      }
+      return;
+    }
+
     // Call all notification handlers
     for (const handler of this.notificationHandlers) {
       try {
