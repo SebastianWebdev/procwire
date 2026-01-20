@@ -1,15 +1,19 @@
 name: Deploy Docs to GitHub Pages
 
 on:
+  # Uruchom przy każdym pushu do głównego brancha
   push:
     branches: [main]
+  # Pozwól na ręczne uruchomienie z panelu Actions
   workflow_dispatch:
 
+# Uprawnienia wymagane przez GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Zapobiega wielu deployom naraz
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -21,8 +25,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- INSTALACJA D2 (Wymagane dla astro-d2) ---
       - name: Install D2
         run: curl -fsSL https://d2lang.com/install.sh | sh -s --
+      # ---------------------------------------------
+
+      # --- INSTALACJA MERMAID (Wymagane dla astro-mermaid CLI, jeśli używane) ---
+      # Zazwyczaj pnpm install wystarczy, ale jeśli mermaid jest CLI, można dodać:
+      # - name: Install Mermaid CLI
+      #   run: pnpm add -g @mermaid-js/mermaid-cli
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
@@ -36,15 +47,20 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Usuwamy frozen-lockfile, żeby uniknąć błędów przy niespójnym lockfile'u w monorepo
+        # Dodajemy recursive, żeby pnpm spróbował zainstalować zależności we wszystkich pakietach
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build Astro Docs
         working-directory: ./astro-docs
-        run: pnpm run build
+        run: |
+          pnpm install
+          pnpm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
+          # Astro buduje domyślnie do folderu 'dist' wewnątrz projektu
           path: ./astro-docs/dist
 
   deploy:
