@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://www.procwire.dev/guides/getting-started/",
+  "homepage": "https://www.procwire.dev",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
