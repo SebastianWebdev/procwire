@@ -29,6 +29,7 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   private responseAccessor?: ResponseAccessor;
   private middleware: ChannelMiddleware[] = [];
   private maxInboundFrames?: number;
+  private bufferEarlyNotifications?: number;
 
   /**
    * Sets the transport layer.
@@ -95,6 +96,15 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   }
 
   /**
+   * Sets the buffer size for early notifications.
+   * Notifications received before handlers are registered will be buffered.
+   */
+  withBufferEarlyNotifications(size: number): this {
+    this.bufferEarlyNotifications = size;
+    return this;
+  }
+
+  /**
    * Builds and returns the configured channel.
    * @throws {Error} if required configuration is missing
    */
@@ -130,6 +140,9 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
     }
     if (this.maxInboundFrames !== undefined) {
       options.maxInboundFrames = this.maxInboundFrames;
+    }
+    if (this.bufferEarlyNotifications !== undefined) {
+      options.bufferEarlyNotifications = this.bufferEarlyNotifications;
     }
 
     return new RequestChannel<TReq, TRes, TNotif>(options);

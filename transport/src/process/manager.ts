@@ -405,7 +405,10 @@ export class ProcessManager implements IProcessManager {
       .withTransport(transport)
       .withFraming(framing)
       .withSerialization(serialization)
-      .withProtocol(protocol);
+      .withProtocol(protocol)
+      // Enable early notification buffering for child processes that send
+      // notifications immediately after spawn (e.g., runtime.ready)
+      .withBufferEarlyNotifications(10);
 
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);
@@ -452,7 +455,10 @@ export class ProcessManager implements IProcessManager {
       .withTransport(transport)
       .withFraming(framing)
       .withSerialization(serialization)
-      .withProtocol(protocol);
+      .withProtocol(protocol)
+      // Enable early notification buffering for child processes that send
+      // notifications immediately after spawn (e.g., runtime.ready)
+      .withBufferEarlyNotifications(10);
 
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);
