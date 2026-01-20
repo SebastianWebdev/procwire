@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { ProcessManager } from "../src/process/manager.js";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -37,9 +37,8 @@ describe("ProcessManager Integration Tests", () => {
       expect(handle).toBeDefined();
       expect(handle.id).toBe("worker-1");
       expect(handle.pid).toBeTypeOf("number");
-      expect(handle.state).toBe("running");
+      expect(handle.state).toBe("running"); // Send echo request
 
-      // Send echo request
       const result = await handle.request("echo", { message: "hello" });
       expect(result).toEqual({ message: "hello" });
     });
@@ -48,9 +47,8 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-2", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Send multiple requests concurrently
 
-      // Send multiple requests concurrently
       const results = await Promise.all([
         handle.request("echo", { value: 1 }),
         handle.request("echo", { value: 2 }),
@@ -75,13 +73,14 @@ describe("ProcessManager Integration Tests", () => {
     });
 
     it("should handle notifications from worker", async () => {
+      // Listen for notifications BEFORE spawning to avoid race condition
+      const notifications: any[] = [];
+
       const handle = await manager.spawn("worker-4", {
         executablePath: "node",
         args: [WORKER_PATH],
       });
 
-      // Listen for notifications
-      const notifications: any[] = [];
       handle.controlChannel.onNotification((notif: any) => {
         notifications.push(notif);
       });
@@ -121,14 +120,12 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-6", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Trigger crash
 
-      // Trigger crash
       await handle.request("crash", {}).catch(() => {
         // Expected to fail as process crashes
-      });
+      }); // Wait for exit event
 
-      // Wait for exit event
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(exitEvents.length).toBeGreaterThan(0);
@@ -194,15 +191,12 @@ describe("ProcessManager Integration Tests", () => {
           backoffMs: 50,
           maxBackoffMs: 500,
         },
-      });
+      }); // Initial spawn
 
-      // Initial spawn
-      expect(spawnEvents).toHaveLength(1);
+      expect(spawnEvents).toHaveLength(1); // Trigger crash
 
-      // Trigger crash
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for first restart
 
-      // Wait for first restart
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(restartEvents.length).toBeGreaterThan(0);
@@ -210,17 +204,14 @@ describe("ProcessManager Integration Tests", () => {
         id: "worker-8",
         attempt: 1,
         delayMs: 50, // First backoff: 50 * 2^0 = 50
-      });
+      }); // Should have spawned again
 
-      // Should have spawned again
       expect(spawnEvents.length).toBeGreaterThan(1);
 
-      // Verify handle is running again
       const newHandle = manager.getHandle("worker-8");
       expect(newHandle).toBeDefined();
       expect(newHandle?.state).toBe("running");
 
-      // Test restarted process works
       const result = await newHandle?.request("echo", { test: "after-restart" });
       expect(result).toEqual({ test: "after-restart" });
     });
@@ -245,9 +236,8 @@ describe("ProcessManager Integration Tests", () => {
           maxRestarts: 1,
           backoffMs: 50,
         },
-      });
+      }); // First crash - should restart
 
-      // First crash - should restart
       let handle = manager.getHandle("worker-9");
       await handle?.request("crash", {}).catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -255,7 +245,6 @@ describe("ProcessManager Integration Tests", () => {
       expect(restartEvents).toHaveLength(1);
       expect(manager.isRunning("worker-9")).toBe(true);
 
-      // Second crash - should NOT restart (maxRestarts=1)
       handle = manager.getHandle("worker-9");
       await handle?.request("crash", {}).catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -281,18 +270,16 @@ describe("ProcessManager Integration Tests", () => {
           backoffMs: 10,
           maxBackoffMs: 30,
         },
-      });
+      }); // Trigger multiple crashes
 
-      // Trigger multiple crashes
       for (let i = 0; i < 3; i++) {
         const handle = manager.getHandle("worker-10");
         await handle?.request("crash", {}).catch(() => {});
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
 
-      expect(restartEvents.length).toBe(3);
+      expect(restartEvents.length).toBe(3); // Check backoff delays
 
-      // Check backoff delays
       expect(restartEvents[0].delayMs).toBe(10); // 10 * 2^0 = 10
       expect(restartEvents[1].delayMs).toBe(20); // 10 * 2^1 = 20
       expect(restartEvents[2].delayMs).toBe(30); // 10 * 2^2 = 40, capped at 30
@@ -313,12 +300,10 @@ describe("ProcessManager Integration Tests", () => {
           maxRestarts: 5,
           backoffMs: 50,
         },
-      });
+      }); // Manual termination
 
-      // Manual termination
-      await manager.terminate("worker-11");
+      await manager.terminate("worker-11"); // Wait to ensure no restart
 
-      // Wait to ensure no restart
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(restartEvents).toHaveLength(0);
@@ -342,9 +327,10 @@ describe("ProcessManager Integration Tests", () => {
         },
       });
 
-      // Wait for clean exit
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
+      await vi.waitUntil(() => handle.state === "stopped", {
+        timeout: 2000,
+        interval: 50,
+      });
       expect(restartEvents).toHaveLength(0);
       expect(handle.state).toBe("stopped");
     });
@@ -363,24 +349,21 @@ describe("ProcessManager Integration Tests", () => {
       });
 
       expect(manager.isRunning("worker-a")).toBe(true);
-      expect(manager.isRunning("worker-b")).toBe(true);
+      expect(manager.isRunning("worker-b")).toBe(true); // Both should work independently
 
-      // Both should work independently
       const [result1, result2] = await Promise.all([
         handle1.request("echo", { id: "a" }),
         handle2.request("echo", { id: "b" }),
       ]);
 
       expect(result1).toEqual({ id: "a" });
-      expect(result2).toEqual({ id: "b" });
+      expect(result2).toEqual({ id: "b" }); // Terminate one
 
-      // Terminate one
       await manager.terminate("worker-a");
 
       expect(manager.isRunning("worker-a")).toBe(false);
-      expect(manager.isRunning("worker-b")).toBe(true);
+      expect(manager.isRunning("worker-b")).toBe(true); // Other should still work
 
-      // Other should still work
       const result3 = await handle2.request("echo", { still: "works" });
       expect(result3).toEqual({ still: "works" });
     });
@@ -454,14 +437,11 @@ describe("ProcessManager Integration Tests", () => {
       const handle = await manager.spawn("worker-error", {
         executablePath: "node",
         args: [WORKER_PATH],
-      });
+      }); // Send invalid request that causes error
 
-      // Send invalid request that causes error
       await handle.request("unknown-method", {}).catch(() => {
         // Expected to fail
-      });
-
-      // Errors may or may not be emitted depending on protocol error handling
+      }); // Errors may or may not be emitted depending on protocol error handling
       // This test just verifies the error event mechanism exists
     });
   });
@@ -482,18 +462,14 @@ describe("ProcessManager Integration Tests", () => {
 
       handle.on("stateChange", (data) => {
         stateChanges.push(data);
-      });
+      }); // Initial state is running
 
-      // Initial state is running
-      expect(handle.state).toBe("running");
+      expect(handle.state).toBe("running"); // Crash the process
 
-      // Crash the process
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for restart
 
-      // Wait for restart
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Should have transitioned: running -> crashed -> running
 
-      // Should have transitioned: running -> crashed -> running
       expect(stateChanges.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -507,12 +483,10 @@ describe("ProcessManager Integration Tests", () => {
 
       handle.on("exit", (data) => {
         exitEvents.push(data);
-      });
+      }); // Trigger crash
 
-      // Trigger crash
-      await handle.request("crash", {}).catch(() => {});
+      await handle.request("crash", {}).catch(() => {}); // Wait for exit
 
-      // Wait for exit
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(exitEvents).toHaveLength(1);

@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
-  "homepage": "https://github.com/SebastianWebdev/procwire/tree/main/codec-msgpack#readme",
+  "homepage": "https://www.procwire.dev",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",

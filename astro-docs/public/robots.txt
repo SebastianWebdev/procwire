@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Disallow: /llms-small.txt
+Disallow: /llms-full.txt
+Allow: /llms.txt
+
+Sitemap: https://www.procwire.dev/sitemap-index.xml

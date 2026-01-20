@@ -35,12 +35,11 @@ jobs:
       # Zamiast 'pnpm run ci', uruchamiamy kroki osobno z wykluczeniem astro-docs
 
       - name: Lint
-        # Lint zazwyczaj działa na calym repozytorium (eslint .), więc zostawiamy bez zmian
         run: pnpm lint
 
       - name: Build
         # Wykluczamy astro-docs z budowania (to najważniejsza zmiana naprawiająca błąd D2)
-        run: pnpm --filter "!astro-docs" build
+        run: pnpm --filter "!astro-docs" --filter "!." build
 
       - name: Typecheck
         # Sprawdzamy typy tylko w kodzie aplikacji

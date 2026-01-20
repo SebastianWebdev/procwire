@@ -5,7 +5,6 @@ on:
     branches:
       - main
 
-# Zapobiega uruchomieniu dwóch release'ów jednocześnie
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
@@ -13,9 +12,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Wymagane do tworzenia commitów/tagów
-      pull-requests: write # Wymagane do tworzenia PR "Version Packages"
-      id-token: write # <--- KLUCZOWE dla Trusted Publishing (NPM OIDC)
+      contents: write
+      pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -32,17 +31,11 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        # Zmieniamy na --no-frozen-lockfile, aby naprawić błąd ERR_PNPM_OUTDATED_LOCKFILE
-        # Pozwala to zaktualizować lockfile w locie na CI, jeśli różni się od package.json
         run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
-        # Wykluczamy astro-docs z budowania, aby oszczędzić zasoby (docs ma swój workflow)
-        run: pnpm --filter "!astro-docs" build
+        run: pnpm --filter "!astro-docs" --filter "!." build
 
-      # Changesets Action
-      # 1. Jeśli są changesety -> Tworzy PR "Version Packages"
-      # 2. Jeśli ich nie ma (zostały zmergowane) -> Publikuje do NPM
       - name: Create version PR or publish
         id: changesets
         uses: changesets/action@v1
@@ -52,7 +45,4 @@ jobs:
           commit: "chore: version packages"
           title: "Version Packages"
         env:
-          # Token GitHuba jest wymagany do tworzenia PR-ów i tagów
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # UWAGA: Przy Trusted Publishing (OIDC) nie podajemy tutaj NPM_TOKEN.
-          # Autoryzacja dzieje się magicznie dzięki `id-token: write` i `registry-url`.
