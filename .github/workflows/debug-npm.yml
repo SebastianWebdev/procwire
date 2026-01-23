@@ -20,7 +20,7 @@ jobs:
                   # To wymusi wymianę tokenów OIDC
                   echo "Test authentication..."
                   npm publish --dry-run --provenance --access public
-              working-directory: packages/transport
+              working-directory: transport
               env:
                   # setup-node automatycznie konfiguruje token, ale przy OIDC
                   # npm musi wiedzieć, że ma użyć provenance.
