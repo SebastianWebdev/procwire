@@ -1,0 +1,28 @@
+name: Debug NPM Access
+on: workflow_dispatch
+
+jobs:
+    debug:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # Wymagane do OIDC
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  registry-url: "https://registry.npmjs.org"
+
+            - name: Verify NPM Auth
+              run: |
+                  # Próbujemy opublikować "na sucho" z flagą provenance
+                  # To wymusi wymianę tokenów OIDC
+                  echo "Test authentication..."
+                  npm publish --dry-run --provenance --access public
+              working-directory: packages/transport
+              env:
+                  # setup-node automatycznie konfiguruje token, ale przy OIDC
+                  # npm musi wiedzieć, że ma użyć provenance.
+                  # Dry-run może nie przejść pełnej autoryzacji, ale zobaczymy inny błąd.
+                  CI: true
