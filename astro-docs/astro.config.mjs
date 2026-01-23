@@ -36,10 +36,10 @@ export default defineConfig({
       plugins: [
         starlightTypeDoc({
           entryPoints: [
-            "../transport/src/index.ts",
-            "../codec-msgpack/src/index.ts",
-            "../codec-protobuf/src/index.ts",
-            "../codec-arrow/src/index.ts",
+            "../packages/transport/src/index.ts",
+            "../packages/codec-msgpack/src/index.ts",
+            "../packages/codec-protobuf/src/index.ts",
+            "../packages/codec-arrow/src/index.ts",
           ],
           tsconfig: "./tsconfig.typedoc.json",
 

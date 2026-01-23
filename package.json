@@ -20,11 +20,6 @@
     "node": ">=18"
   },
   "packageManager": "pnpm@10.28.1",
-  "workspaces": [
-    "transport",
-    "codec-*",
-    "examples/*"
-  ],
   "keywords": [
     "ipc",
     "node",
