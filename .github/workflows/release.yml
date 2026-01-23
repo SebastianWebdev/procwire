@@ -1,42 +1,22 @@
-name: Release
-
-on:
-  push:
-    branches:
-      - main
-
-concurrency: ${{ github.workflow }}-${{ github.ref }}
-
-jobs:
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write # Niezbędne dla OIDC
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+# ... poprzednie kroki ...
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-          # WAŻNE: Nie ustawiaj tutaj registry-url, bo to wymusi auth-token!
+          # registry-url MUSI być wyłączone
           # registry-url: "https://registry.npmjs.org"
 
-      # WAŻNE: Ręcznie wskazujemy rejestr dla Twojego scope'a, ale BEZ tokena.
-      # To pozwoli pnpm/npm znaleźć paczki, a autoryzacja pójdzie przez OIDC (provenance).
-      - name: Setup .npmrc for OIDC
+      - name: Setup .npmrc for OIDC (Bypass Local Check)
         run: |
-          echo "@procwire:registry=https://registry.npmjs.org" > .npmrc
-          echo "registry=https://registry.npmjs.org" >> .npmrc
+          # Ustawiamy rejestr
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          # Mapujemy scope
+          echo "@procwire:registry=https://registry.npmjs.org/" >> .npmrc
+          # CRITICAL: "Dummy token" oszukuje klienta npm, żeby wysłał żądanie.
+          # Rejestr zignoruje ten ciąg znaków na rzecz weryfikacji OIDC.
+          echo "//registry.npmjs.org/:_authToken=dummy-token-bypass" >> .npmrc
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -44,14 +24,16 @@ jobs:
       - name: Build packages
         run: pnpm --filter "!astro-docs" --filter "!." build
 
+      # Zmodyfikuj sekcję Changesets
       - name: Create version PR or publish
         id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
+          # Upewnij się, że skrypt release w package.json ma flagę --provenance
           publish: pnpm release
           commit: "chore: version packages"
           title: "Version Packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # BRAK NODE_AUTH_TOKEN - idziemy czystym OIDC
+          # Nadal NIE podajemy NODE_AUTH_TOKEN, bo mamy dummy w .npmrc
