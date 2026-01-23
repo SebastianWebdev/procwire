@@ -15,11 +15,11 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SebastianWebdev/procwire.git",
+    "url": "https://github.com/sebastianwebdev/procwire.git",
     "directory": "packages/codec-msgpack"
   },
   "bugs": {
-    "url": "https://github.com/SebastianWebdev/procwire/issues"
+    "url": "https://github.com/sebastianwebdev/procwire/issues"
   },
   "homepage": "https://www.procwire.dev",
   "type": "module",
