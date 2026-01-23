@@ -19,8 +19,10 @@ describe("Channel Integration Tests", () => {
   let socketPath: string;
 
   beforeEach(() => {
-    // Use a unique path for each test
-    const baseName = `test-channel-${Date.now()}`;
+    // Use high-resolution unique identifier to prevent conflicts in fast CI environments
+    // Date.now() alone has millisecond precision which can generate duplicates on fast hardware
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const baseName = `test-channel-${uniqueId}`;
     socketPath = PipePath.forModule("test", baseName);
   });
 
@@ -35,6 +37,11 @@ describe("Channel Integration Tests", () => {
     if (server) {
       await server.close().catch(() => {});
     }
+
+    // Small delay to allow Windows kernel to release pipe resources
+    // This prevents EADDRINUSE errors in fast CI environments where tests
+    // run back-to-back faster than the OS can release named pipe handles
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 
   describe("Request/Response with JSON-RPC", () => {

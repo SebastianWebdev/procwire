@@ -124,13 +124,14 @@ export class ProcessManager implements IProcessManager {
 
     // Start transport and channels
     try {
-      await transport.connect();
+      // IMPORTANT: Start control channel BEFORE connecting transport
+      // This ensures the channel subscribes to transport events before
+      // the child process starts sending data
+      await controlChannel.start();
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pid = (transport as any).process?.pid ?? null;
       handle.setPid(pid);
-
-      await controlChannel.start();
 
       if (dataChannel) {
         await dataChannel.start();
@@ -332,14 +333,14 @@ export class ProcessManager implements IProcessManager {
       newHandle.emitError(error);
     });
 
-    // Start
-    await transport.connect();
+    // Start control channel BEFORE connecting transport (same as spawn())
+    // This ensures the channel subscribes to transport events before
+    // the child process starts sending data
+    await controlChannel.start();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pid = (transport as any).process?.pid ?? null;
     newHandle.setPid(pid);
-
-    await controlChannel.start();
 
     if (dataChannel) {
       await dataChannel.start();
