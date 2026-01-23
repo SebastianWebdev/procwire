@@ -17,6 +17,9 @@ jobs:
       id-token: write
 
     steps:
+      - name: Setup clean .npmrc
+        run: echo "//registry.npmjs.org/:_authToken=" > .npmrc
+        
       - name: Checkout
         uses: actions/checkout@v4
 
