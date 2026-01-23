@@ -1,5 +1,11 @@
 # @procwire/transport
 
+## 0.1.3
+
+### Patch Changes
+
+- [#8](https://github.com/SebastianWebdev/procwire/pull/8) [`4317aa6`](https://github.com/SebastianWebdev/procwire/commit/4317aa68c2026d0f31789eeaf219a9edcadcfec0) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Added `provenance: true` to publish configuration to support npm Trusted Publishing.
+
 ## 0.1.2
 
 ### Patch Changes

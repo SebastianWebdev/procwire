@@ -1,6 +1,6 @@
 {
   "name": "@procwire/codec-arrow",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Apache Arrow IPC codec for @procwire/transport.",
   "keywords": [
     "ipc",
