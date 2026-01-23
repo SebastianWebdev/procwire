@@ -16,7 +16,7 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sebastianwebdev/procwire.git",
+    "url": "git+https://github.com/sebastianwebdev/procwire.git",
     "directory": "packages/transport"
   },
   "bugs": {
