@@ -5,26 +5,21 @@
   "description": "Monorepo for @procwire/* packages.",
   "scripts": {
     "clean": "pnpm -r --if-present run clean && rimraf \"**/dist\" \"**/*.tsbuildinfo\" \"**/coverage\"",
-    "typecheck": "pnpm -r --if-present run typecheck",
-    "build": "pnpm -r --if-present run build",
-    "test": "pnpm -r --if-present run test",
+    "typecheck": "pnpm --filter \"!astro-docs\" --if-present run typecheck",
+    "build": "pnpm --filter \"!astro-docs\" --filter \"!.\" build",
+    "test": "pnpm --filter \"!astro-docs\" --if-present run test",
     "lint": "eslint .",
     "format": "prettier -w .",
     "ci": "pnpm lint && pnpm build && pnpm typecheck && pnpm test",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish"
+    "release": "pnpm -r publish --access public --no-git-checks"
   },
   "type": "module",
   "engines": {
     "node": ">=18"
   },
   "packageManager": "pnpm@10.28.1",
-  "workspaces": [
-    "transport",
-    "codec-*",
-    "examples/*"
-  ],
   "keywords": [
     "ipc",
     "node",
