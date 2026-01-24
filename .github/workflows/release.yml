@@ -4,51 +4,117 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # Allow manual trigger
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Only one release at a time
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # Don't cancel releases in progress
 
 jobs:
+  # ============================================
+  # CI verification - ensure tests pass
+  # ============================================
+  ci:
+    name: Verify CI
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.check.outputs.should-release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history for changesets
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run lint
+        run: pnpm lint
+
+      - name: Build packages
+        run: pnpm --filter "!astro-docs" --filter "!." build
+
+      - name: Typecheck
+        run: pnpm --filter "!astro-docs" --if-present typecheck
+
+      - name: Run tests
+        run: pnpm --filter "!astro-docs" --if-present test
+
+      - name: Check for changesets
+        id: check
+        run: |
+          if [ -d ".changeset" ] && [ "$(ls -A .changeset/*.md 2>/dev/null | grep -v README.md | wc -l)" -gt 0 ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "📦 Changesets found - release will proceed"
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No changesets found - skipping release"
+          fi
+
+  # ============================================
+  # Release job - only runs after CI passes
+  # ============================================
   release:
     name: Release
     runs-on: ubuntu-latest
+    needs: ci
+    # Only run if CI passed (implicit) and we're on main branch
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
       pull-requests: write
-      id-token: write # Wymagane dla OIDC
+      id-token: write # Required for OIDC
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history for changesets
 
-      - name: Install pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
-          # NIE ustawiamy NODE_AUTH_TOKEN - to pozwoli na OIDC
-
-      - name: Update npm to latest
-        run: npm install -g npm@latest
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build packages
         run: pnpm --filter "!astro-docs" --filter "!." build
 
-      - name: Create version PR or publish
+      - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
           publish: pnpm release
           commit: "chore: version packages"
-          title: "Version Packages"
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-          # BRAK NODE_AUTH_TOKEN - OIDC automatycznie
+          # No NODE_AUTH_TOKEN - using OIDC Trusted Publishing
+
+      - name: Release summary
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          echo "## 🚀 Packages Released" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following packages were published to npm:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -r '.[] | "- **\(.name)** @ `\(.version)`"' >> $GITHUB_STEP_SUMMARY
