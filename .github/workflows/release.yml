@@ -91,6 +91,10 @@ jobs:
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
+      # CRITICAL: Update npm to latest for OIDC Trusted Publishing support
+      - name: Update npm to latest
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
