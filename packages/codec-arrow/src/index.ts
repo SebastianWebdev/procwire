@@ -80,7 +80,7 @@
  * ```
  *
  * @packageDocumentation
- * @module @procwire/codec-arrow
+ * @module codec-arrow
  */
 
 // Main codec class and options

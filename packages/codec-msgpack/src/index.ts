@@ -65,7 +65,7 @@
  * ```
  *
  * @packageDocumentation
- * @module @procwire/codec-msgpack
+ * @module codec-msgpack
  */
 
 // Main codec class and options

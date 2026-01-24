@@ -72,7 +72,7 @@
  * ```
  *
  * @packageDocumentation
- * @module @procwire/codec-protobuf
+ * @module codec-protobuf
  */
 
 // Main class and options
