@@ -92,8 +92,7 @@ export class ProcessManager implements IProcessManager {
     // Build data channel if enabled
     let dataChannel: Channel | null = null;
     if (options.dataChannel?.enabled) {
-      const dataPath =
-        options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
+      const dataPath = options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
       dataChannel = await this.buildDataChannel(dataPath, options.dataChannel.channel);
     }
 
@@ -170,13 +169,27 @@ export class ProcessManager implements IProcessManager {
 
   /**
    * Terminates all managed processes.
+   * Uses Promise.allSettled to ensure all processes are attempted to be terminated
+   * even if some fail. Emits error events for failed terminations.
    */
   async terminateAll(): Promise<void> {
-    const promises: Promise<void>[] = [];
+    const entries: Array<{ id: string; promise: Promise<void> }> = [];
     for (const id of this.processes.keys()) {
-      promises.push(this.terminate(id));
+      entries.push({ id, promise: this.terminate(id) });
     }
-    await Promise.all(promises);
+
+    const results = await Promise.allSettled(entries.map((e) => e.promise));
+
+    // Emit error events for any failed terminations
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const entry = entries[i];
+      if (result !== undefined && result.status === "rejected" && entry !== undefined) {
+        const error =
+          result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+        this.events.emit("error", { id: entry.id, error });
+      }
+    }
   }
 
   /**
@@ -260,9 +273,7 @@ export class ProcessManager implements IProcessManager {
         managed.handle.setState("stopped");
       } else {
         managed.handle.setState("crashed");
-        const error = new Error(
-          `Process exited with code ${code} and signal ${signal}`,
-        );
+        const error = new Error(`Process exited with code ${code} and signal ${signal}`);
         this.events.emit("crash", { id, error });
       }
 
@@ -311,10 +322,7 @@ export class ProcessManager implements IProcessManager {
     if (managed.options.dataChannel?.enabled) {
       const dataPath =
         managed.options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
-      dataChannel = await this.buildDataChannel(
-        dataPath,
-        managed.options.dataChannel.channel,
-      );
+      dataChannel = await this.buildDataChannel(dataPath, managed.options.dataChannel.channel);
     }
 
     // Update handle

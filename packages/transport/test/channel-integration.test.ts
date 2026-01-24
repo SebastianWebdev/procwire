@@ -76,12 +76,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -121,12 +121,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -172,20 +172,18 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
 
       // Send request that will fail
-      await expect(clientChannel.request("divide", { a: 10, b: 0 })).rejects.toThrow(
-        ProtocolError,
-      );
+      await expect(clientChannel.request("divide", { a: 10, b: 0 })).rejects.toThrow(ProtocolError);
     });
   });
 
@@ -216,12 +214,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -271,12 +269,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       clientChannel.onNotification((notification: any) => {
         clientNotifications.push(notification);
@@ -338,13 +336,13 @@ describe("Channel Integration Tests", () => {
 
       // Setup client with short timeout
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
         .withTimeout(100)
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -382,13 +380,13 @@ describe("Channel Integration Tests", () => {
 
       // Setup client with default short timeout
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
         .withTimeout(100)
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -427,12 +425,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new SimpleProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -478,12 +476,12 @@ describe("Channel Integration Tests", () => {
 
       // Setup client
       const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = (new ChannelBuilder()
+      clientChannel = new ChannelBuilder()
         .withTransport(clientTransport)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build()) as any;
+        .build() as any;
 
       await clientChannel.start();
       serverChannel = await serverConnectionPromise;
@@ -508,6 +506,311 @@ describe("Channel Integration Tests", () => {
       // Channel should still work after invalid message
       const result2 = await clientChannel.request("test");
       expect(result2).toEqual({ ok: true });
+    });
+  });
+
+  describe("Connection Error Cleanup (C1)", () => {
+    it("should cleanup subscriptions when transport.connect() fails", async () => {
+      // Create a mock transport that fails on connect
+      const mockTransport = {
+        state: "disconnected" as const,
+        connectCalled: false,
+        onDataCalled: false,
+        onCalled: false,
+        dataUnsubscribeCalled: false,
+        errorUnsubscribeCalled: false,
+
+        connect: async () => {
+          mockTransport.connectCalled = true;
+          throw new Error("Connection failed");
+        },
+
+        disconnect: async () => {},
+
+        write: async () => {},
+
+        onData: (handler: (data: Buffer) => void) => {
+          mockTransport.onDataCalled = true;
+          // Keep reference to verify handler isn't called
+          void handler;
+          return () => {
+            mockTransport.dataUnsubscribeCalled = true;
+          };
+        },
+
+        on: (event: string, handler: (data: unknown) => void) => {
+          if (event === "error") {
+            mockTransport.onCalled = true;
+          }
+          void handler;
+          return () => {
+            if (event === "error") {
+              mockTransport.errorUnsubscribeCalled = true;
+            }
+          };
+        },
+      };
+
+      const channel = new ChannelBuilder()
+        .withTransport(mockTransport as any)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build();
+
+      // Attempt to start - should fail
+      await expect(channel.start()).rejects.toThrow("Connection failed");
+
+      // Verify subscriptions were made before connect
+      expect(mockTransport.onDataCalled).toBe(true);
+      expect(mockTransport.onCalled).toBe(true);
+
+      // Verify subscriptions were cleaned up after connect failure
+      expect(mockTransport.dataUnsubscribeCalled).toBe(true);
+      expect(mockTransport.errorUnsubscribeCalled).toBe(true);
+    });
+
+    it("should allow retry after failed connection", async () => {
+      let connectAttempts = 0;
+
+      const mockTransport = {
+        state: "disconnected" as const,
+        subscriptionCount: 0,
+
+        connect: async () => {
+          connectAttempts++;
+          if (connectAttempts === 1) {
+            throw new Error("First attempt failed");
+          }
+          // Second attempt succeeds
+          (mockTransport as any).state = "connected";
+        },
+
+        disconnect: async () => {
+          (mockTransport as any).state = "disconnected";
+        },
+
+        write: async () => {},
+
+        onData: () => {
+          mockTransport.subscriptionCount++;
+          return () => {
+            mockTransport.subscriptionCount--;
+          };
+        },
+
+        on: () => {
+          mockTransport.subscriptionCount++;
+          return () => {
+            mockTransport.subscriptionCount--;
+          };
+        },
+      };
+
+      const channel = new ChannelBuilder()
+        .withTransport(mockTransport as any)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build();
+
+      // First attempt fails
+      await expect(channel.start()).rejects.toThrow("First attempt failed");
+
+      // Subscriptions should be cleaned up
+      expect(mockTransport.subscriptionCount).toBe(0);
+
+      // Second attempt succeeds
+      await channel.start();
+
+      // Should have active subscriptions now
+      expect(mockTransport.subscriptionCount).toBe(2); // onData + on("error")
+      expect(channel.isConnected).toBe(true);
+
+      // Cleanup
+      await channel.close();
+    });
+  });
+
+  describe("Max Inbound Frames Limit (C2)", () => {
+    it("should close channel when maxInboundFrames limit is exceeded", async () => {
+      // Setup server
+      server = new SocketServer();
+      await server.listen(socketPath);
+
+      const serverErrors: Error[] = [];
+      let serverClosed = false;
+
+      const serverConnectionPromise = new Promise<Channel>((resolve) => {
+        server.onConnection((transport) => {
+          const channel: any = new ChannelBuilder()
+            .withTransport(transport)
+            .withFraming(new LengthPrefixedFraming())
+            .withSerialization(new JsonCodec())
+            .withProtocol(new JsonRpcProtocol())
+            .withMaxInboundFrames(5) // Low limit for testing
+            .build();
+
+          channel.on("error", (err: Error) => {
+            serverErrors.push(err);
+          });
+
+          channel.on("close", () => {
+            serverClosed = true;
+          });
+
+          channel.start().then(() => resolve(channel));
+        });
+      });
+
+      // Setup client
+      const clientTransport = new SocketTransport({ path: socketPath });
+      clientChannel = new ChannelBuilder()
+        .withTransport(clientTransport)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await clientChannel.start();
+      serverChannel = await serverConnectionPromise;
+
+      // Send 10 notifications (more than the limit of 5)
+      for (let i = 0; i < 10; i++) {
+        await clientChannel.notify("test", { index: i }).catch(() => {});
+      }
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Server channel should have closed
+      expect(serverClosed).toBe(true);
+
+      // Should have emitted an error about exceeding limit
+      expect(serverErrors.length).toBeGreaterThan(0);
+      expect(serverErrors.some((e) => e.message.includes("max inbound frames"))).toBe(true);
+    });
+
+    it("should not limit frames when maxInboundFrames is undefined", async () => {
+      // Setup server without limit
+      server = new SocketServer();
+      await server.listen(socketPath);
+
+      const receivedNotifications: any[] = [];
+
+      const serverConnectionPromise = new Promise<Channel>((resolve) => {
+        server.onConnection((transport) => {
+          const channel: any = new ChannelBuilder()
+            .withTransport(transport)
+            .withFraming(new LengthPrefixedFraming())
+            .withSerialization(new JsonCodec())
+            .withProtocol(new JsonRpcProtocol())
+            // No maxInboundFrames set - unlimited
+            .build();
+
+          channel.onNotification((notif: any) => {
+            receivedNotifications.push(notif);
+          });
+
+          channel.start().then(() => resolve(channel));
+        });
+      });
+
+      // Setup client
+      const clientTransport = new SocketTransport({ path: socketPath });
+      clientChannel = new ChannelBuilder()
+        .withTransport(clientTransport)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await clientChannel.start();
+      serverChannel = await serverConnectionPromise;
+
+      // Send many notifications
+      for (let i = 0; i < 20; i++) {
+        await clientChannel.notify("test", { index: i });
+      }
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // All notifications should have been received
+      expect(receivedNotifications).toHaveLength(20);
+      expect(serverChannel.isConnected).toBe(true);
+    });
+
+    it("should reset inboundFrameCount on channel restart", async () => {
+      // Setup server
+      server = new SocketServer();
+      await server.listen(socketPath);
+
+      const channels: Channel[] = [];
+
+      server.onConnection((transport) => {
+        const channel: any = new ChannelBuilder()
+          .withTransport(transport)
+          .withFraming(new LengthPrefixedFraming())
+          .withSerialization(new JsonCodec())
+          .withProtocol(new JsonRpcProtocol())
+          .withMaxInboundFrames(3)
+          .build();
+
+        channels.push(channel);
+        channel.start();
+      });
+
+      // First connection
+      const clientTransport1 = new SocketTransport({ path: socketPath });
+      const client1 = new ChannelBuilder()
+        .withTransport(clientTransport1)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await client1.start();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Send 2 notifications (under limit)
+      await client1.notify("test", { n: 1 });
+      await client1.notify("test", { n: 2 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // First channel should still be connected
+      expect(channels[0]?.isConnected).toBe(true);
+
+      // Close first client
+      await client1.close();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Second connection
+      const clientTransport2 = new SocketTransport({ path: socketPath });
+      const client2 = new ChannelBuilder()
+        .withTransport(clientTransport2)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await client2.start();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Send 3 notifications (at limit, but should work because counter was reset for new channel)
+      await client2.notify("test", { n: 1 });
+      await client2.notify("test", { n: 2 });
+      await client2.notify("test", { n: 3 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Second channel should still be connected (its own counter started fresh)
+      expect(channels[1]?.isConnected).toBe(true);
+
+      // Cleanup
+      await client2.close();
+      for (const ch of channels) {
+        await ch.close().catch(() => {});
+      }
     });
   });
 });

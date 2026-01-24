@@ -106,9 +106,11 @@ export class SimpleResponseAccessor implements ResponseAccessor {
  * @template TRes - Response message type (wire format)
  * @template TNotif - Notification message type (wire format)
  */
-export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
-  implements Channel<TReq, TRes, TNotif>
-{
+export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> implements Channel<
+  TReq,
+  TRes,
+  TNotif
+> {
   private readonly transport: Transport;
   private readonly framing: FramingCodec;
   private readonly serialization: SerializationCodec;
@@ -137,8 +139,10 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
     this.protocol = options.protocol;
     this.defaultTimeout = options.timeout !== undefined ? options.timeout : 30000;
     this.middleware = options.middleware !== undefined ? options.middleware : [];
-    this.maxInboundFrames = options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
-    this.bufferEarlyNotifications = options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
+    this.maxInboundFrames =
+      options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
+    this.bufferEarlyNotifications =
+      options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
 
     // Auto-detect response accessor if not provided
     this.responseAccessor =
@@ -159,6 +163,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       return;
     }
 
+    // Reset inbound frame count on start (in case of retry after previous failure)
+    this.inboundFrameCount = 0;
+
     // Subscribe to transport events BEFORE connecting to avoid race conditions
     // where the child process might emit data before we're listening
     this.transportDataUnsubscribe = this.transport.onData((chunk) => {
@@ -173,7 +180,21 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
 
     // Connect transport if not already connected (e.g., server-accepted connections)
     if (this.transport.state !== "connected") {
-      await this.transport.connect();
+      try {
+        await this.transport.connect();
+      } catch (error) {
+        // Cleanup subscriptions on connection failure to prevent memory leaks
+        // and ensure clean state for potential retry
+        if (this.transportDataUnsubscribe !== undefined) {
+          this.transportDataUnsubscribe();
+          this.transportDataUnsubscribe = undefined;
+        }
+        if (this.transportErrorUnsubscribe !== undefined) {
+          this.transportErrorUnsubscribe();
+          this.transportErrorUnsubscribe = undefined;
+        }
+        throw error;
+      }
     }
 
     this._isConnected = true;
@@ -208,8 +229,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
     }
     this.pendingRequests.clear();
 
-    // Reset framing state
+    // Reset framing state and inbound frame count
     this.framing.reset();
+    this.inboundFrameCount = 0;
 
     // Disconnect transport
     await this.transport.disconnect();
@@ -360,30 +382,28 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       return;
     }
 
-    // Check max inbound frames limit
-    if (this.maxInboundFrames !== undefined) {
-      this.inboundFrameCount += frames.length;
-      if (this.inboundFrameCount > this.maxInboundFrames) {
-        this.emitError(new Error(`Exceeded max inbound frames: ${this.maxInboundFrames}`));
-        // Don't process these frames, but don't crash the channel either
-        this.inboundFrameCount -= frames.length;
-        return;
-      }
-    }
-
-    // Process each frame
+    // Process each frame, checking limit before each one
     for (const frame of frames) {
+      // Check max inbound frames limit BEFORE processing
+      if (this.maxInboundFrames !== undefined) {
+        this.inboundFrameCount++;
+        if (this.inboundFrameCount > this.maxInboundFrames) {
+          this.emitError(
+            new Error(
+              `Exceeded max inbound frames limit (${this.maxInboundFrames}). Closing channel.`,
+            ),
+          );
+          await this.close();
+          return;
+        }
+      }
+
       try {
         await this.processFrame(frame);
       } catch (error) {
         // Emit error but continue processing other frames
         this.emitError(toError(error));
       }
-    }
-
-    // Reset counter after processing batch
-    if (this.maxInboundFrames !== undefined) {
-      this.inboundFrameCount = 0;
     }
   }
 
@@ -570,10 +590,7 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   /**
    * Runs middleware hook for all registered middleware.
    */
-  private async runMiddlewareHook(
-    hook: keyof ChannelMiddleware,
-    data: unknown,
-  ): Promise<void> {
+  private async runMiddlewareHook(hook: keyof ChannelMiddleware, data: unknown): Promise<void> {
     for (const mw of this.middleware) {
       const fn = mw[hook];
       if (fn !== undefined) {
