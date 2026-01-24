@@ -633,62 +633,74 @@ describe("Channel Integration Tests", () => {
   });
 
   describe("Max Inbound Frames Limit (C2)", () => {
-    it("should close channel when maxInboundFrames limit is exceeded", async () => {
-      // Setup server
-      server = new SocketServer();
-      await server.listen(socketPath);
+    it("should close channel when maxInboundFrames limit is exceeded in single chunk", async () => {
+      // This test uses a mock transport to send multiple frames in a single chunk
+      // which triggers the per-batch limit protection against flooding attacks.
+      const errors: Error[] = [];
+      let channelClosed = false;
 
-      const serverErrors: Error[] = [];
-      let serverClosed = false;
+      const framing = new LengthPrefixedFraming();
+      const serialization = new JsonCodec();
 
-      const serverConnectionPromise = new Promise<Channel>((resolve) => {
-        server.onConnection((transport) => {
-          const channel: any = new ChannelBuilder()
-            .withTransport(transport)
-            .withFraming(new LengthPrefixedFraming())
-            .withSerialization(new JsonCodec())
-            .withProtocol(new JsonRpcProtocol())
-            .withMaxInboundFrames(5) // Low limit for testing
-            .build();
+      // Build multiple frames into a single buffer (simulating a flooding attack)
+      const frames: Buffer[] = [];
+      for (let i = 0; i < 10; i++) {
+        const notification = { jsonrpc: "2.0", method: "test", params: { index: i } };
+        const serialized = serialization.serialize(notification);
+        const framed = framing.encode(serialized);
+        frames.push(framed);
+      }
+      const combinedChunk = Buffer.concat(frames);
 
-          channel.on("error", (err: Error) => {
-            serverErrors.push(err);
-          });
+      // Create mock transport that will deliver all frames at once
+      let dataHandler: ((data: Buffer) => void) | null = null;
+      const mockTransport = {
+        state: "connected" as const,
+        connect: async () => {},
+        disconnect: async () => {},
+        write: async () => {},
+        onData: (handler: (data: Buffer) => void) => {
+          dataHandler = handler;
+          return () => {
+            dataHandler = null;
+          };
+        },
+        on: () => () => {},
+        simulateData: (data: Buffer) => {
+          if (dataHandler) dataHandler(data);
+        },
+      };
 
-          channel.on("close", () => {
-            serverClosed = true;
-          });
-
-          channel.start().then(() => resolve(channel));
-        });
-      });
-
-      // Setup client
-      const clientTransport = new SocketTransport({ path: socketPath });
-      clientChannel = new ChannelBuilder()
-        .withTransport(clientTransport)
+      const channel: any = new ChannelBuilder()
+        .withTransport(mockTransport as any)
         .withFraming(new LengthPrefixedFraming())
         .withSerialization(new JsonCodec())
         .withProtocol(new JsonRpcProtocol())
-        .build() as any;
+        .withMaxInboundFrames(5) // Limit of 5 frames per chunk
+        .build();
 
-      await clientChannel.start();
-      serverChannel = await serverConnectionPromise;
+      channel.on("error", (err: Error) => {
+        errors.push(err);
+      });
 
-      // Send 10 notifications (more than the limit of 5)
-      for (let i = 0; i < 10; i++) {
-        await clientChannel.notify("test", { index: i }).catch(() => {});
-      }
+      channel.on("close", () => {
+        channelClosed = true;
+      });
 
-      // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await channel.start();
 
-      // Server channel should have closed
-      expect(serverClosed).toBe(true);
+      // Simulate receiving all 10 frames in a single chunk
+      mockTransport.simulateData(combinedChunk);
+
+      // Wait for async processing
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Channel should have closed due to exceeding limit
+      expect(channelClosed).toBe(true);
 
       // Should have emitted an error about exceeding limit
-      expect(serverErrors.length).toBeGreaterThan(0);
-      expect(serverErrors.some((e) => e.message.includes("max inbound frames"))).toBe(true);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors.some((e) => e.message.includes("max inbound frames"))).toBe(true);
     });
 
     it("should not limit frames when maxInboundFrames is undefined", async () => {
@@ -741,76 +753,78 @@ describe("Channel Integration Tests", () => {
       expect(serverChannel.isConnected).toBe(true);
     });
 
-    it("should reset inboundFrameCount on channel restart", async () => {
-      // Setup server
-      server = new SocketServer();
-      await server.listen(socketPath);
+    it("should allow multiple separate chunks when each is under the limit", async () => {
+      // With the per-batch limit, multiple separate writes (each under the limit)
+      // should be processed successfully regardless of total frame count.
+      const errors: Error[] = [];
+      const receivedNotifications: any[] = [];
 
-      const channels: Channel[] = [];
+      const framing = new LengthPrefixedFraming();
+      const serialization = new JsonCodec();
 
-      server.onConnection((transport) => {
-        const channel: any = new ChannelBuilder()
-          .withTransport(transport)
-          .withFraming(new LengthPrefixedFraming())
-          .withSerialization(new JsonCodec())
-          .withProtocol(new JsonRpcProtocol())
-          .withMaxInboundFrames(3)
-          .build();
+      // Create mock transport
+      let dataHandler: ((data: Buffer) => void) | null = null;
+      const mockTransport = {
+        state: "connected" as const,
+        connect: async () => {},
+        disconnect: async () => {},
+        write: async () => {},
+        onData: (handler: (data: Buffer) => void) => {
+          dataHandler = handler;
+          return () => {
+            dataHandler = null;
+          };
+        },
+        on: () => () => {},
+        simulateData: (data: Buffer) => {
+          if (dataHandler) dataHandler(data);
+        },
+      };
 
-        channels.push(channel);
-        channel.start();
+      const channel: any = new ChannelBuilder()
+        .withTransport(mockTransport as any)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .withMaxInboundFrames(3) // Max 3 frames per chunk
+        .build();
+
+      channel.on("error", (err: Error) => {
+        errors.push(err);
       });
 
-      // First connection
-      const clientTransport1 = new SocketTransport({ path: socketPath });
-      const client1 = new ChannelBuilder()
-        .withTransport(clientTransport1)
-        .withFraming(new LengthPrefixedFraming())
-        .withSerialization(new JsonCodec())
-        .withProtocol(new JsonRpcProtocol())
-        .build() as any;
+      channel.onNotification((notif: any) => {
+        receivedNotifications.push(notif);
+      });
 
-      await client1.start();
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await channel.start();
 
-      // Send 2 notifications (under limit)
-      await client1.notify("test", { n: 1 });
-      await client1.notify("test", { n: 2 });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // First channel should still be connected
-      expect(channels[0]?.isConnected).toBe(true);
-
-      // Close first client
-      await client1.close();
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Second connection
-      const clientTransport2 = new SocketTransport({ path: socketPath });
-      const client2 = new ChannelBuilder()
-        .withTransport(clientTransport2)
-        .withFraming(new LengthPrefixedFraming())
-        .withSerialization(new JsonCodec())
-        .withProtocol(new JsonRpcProtocol())
-        .build() as any;
-
-      await client2.start();
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Send 3 notifications (at limit, but should work because counter was reset for new channel)
-      await client2.notify("test", { n: 1 });
-      await client2.notify("test", { n: 2 });
-      await client2.notify("test", { n: 3 });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Second channel should still be connected (its own counter started fresh)
-      expect(channels[1]?.isConnected).toBe(true);
-
-      // Cleanup
-      await client2.close();
-      for (const ch of channels) {
-        await ch.close().catch(() => {});
+      // Send 3 separate chunks, each with 2 frames (under the limit)
+      for (let chunk = 0; chunk < 3; chunk++) {
+        const frames: Buffer[] = [];
+        for (let i = 0; i < 2; i++) {
+          const notification = { jsonrpc: "2.0", method: "test", params: { chunk, index: i } };
+          const serialized = serialization.serialize(notification);
+          const framed = framing.encode(serialized);
+          frames.push(framed);
+        }
+        mockTransport.simulateData(Buffer.concat(frames));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
+
+      // Wait for all processing
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Channel should still be connected (no limit exceeded)
+      expect(channel.isConnected).toBe(true);
+
+      // All 6 notifications should have been received (3 chunks x 2 frames)
+      expect(receivedNotifications).toHaveLength(6);
+
+      // No errors should have occurred
+      expect(errors.filter((e) => e.message.includes("max inbound frames"))).toHaveLength(0);
+
+      await channel.close();
     });
   });
 

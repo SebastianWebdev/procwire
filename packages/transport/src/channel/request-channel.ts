@@ -176,7 +176,6 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
   private transportDataUnsubscribe: Unsubscribe | undefined;
   private transportErrorUnsubscribe: Unsubscribe | undefined;
   private _isConnected = false;
-  private inboundFrameCount = 0;
 
   constructor(options: ChannelOptions<TReq, TRes, TNotif>) {
     // Validate options
@@ -226,9 +225,6 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     if (this._isConnected) {
       return;
     }
-
-    // Reset inbound frame count on start (in case of retry after previous failure)
-    this.inboundFrameCount = 0;
 
     // Subscribe to transport events BEFORE connecting to avoid race conditions
     // where the child process might emit data before we're listening
@@ -294,9 +290,8 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     }
     this.pendingRequests.clear();
 
-    // Reset framing state and inbound frame count
+    // Reset framing state
     this.framing.reset();
-    this.inboundFrameCount = 0;
 
     // Disconnect transport
     await this.transport.disconnect();
@@ -458,27 +453,25 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
       return;
     }
 
-    // Process each frame, checking limit before each one
+    // Check max inbound frames limit for this batch BEFORE processing.
+    // This is a per-batch limit to prevent flooding, not a lifetime cap.
+    if (this.maxInboundFrames !== undefined && frames.length > this.maxInboundFrames) {
+      this.emitError(
+        new Error(
+          `Exceeded max inbound frames limit: received ${frames.length} frames in one chunk (limit: ${this.maxInboundFrames}). Closing channel.`,
+        ),
+      );
+      await this.close();
+      return;
+    }
+
+    // Process each frame
     for (const frame of frames) {
       if (this.metrics) {
         this.metrics.incrementCounter("framing.frames", 1, { direction: "inbound" });
         this.metrics.recordHistogram("framing.frame_size_bytes", frame.length, {
           direction: "inbound",
         });
-      }
-
-      // Check max inbound frames limit BEFORE processing
-      if (this.maxInboundFrames !== undefined) {
-        this.inboundFrameCount++;
-        if (this.inboundFrameCount > this.maxInboundFrames) {
-          this.emitError(
-            new Error(
-              `Exceeded max inbound frames limit (${this.maxInboundFrames}). Closing channel.`,
-            ),
-          );
-          await this.close();
-          return;
-        }
       }
 
       try {

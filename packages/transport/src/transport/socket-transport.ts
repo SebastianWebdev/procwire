@@ -302,6 +302,13 @@ export class SocketTransport implements Transport {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectAttempts++;
+
+      // Transition to disconnected before reconnecting to ensure valid state transition.
+      // From error state, we can only go to disconnected, and from disconnected we can connect.
+      if (this._state === "error") {
+        this._state = "disconnected";
+      }
+
       this.connect().catch(() => {
         // Error already emitted, will schedule next attempt
       });
