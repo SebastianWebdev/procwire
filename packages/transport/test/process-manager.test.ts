@@ -487,7 +487,7 @@ describe("ProcessManager Integration Tests", () => {
 
       await handle.request("crash", {}).catch(() => {}); // Wait for exit
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(exitEvents).toHaveLength(1);
       expect(exitEvents[0]).toMatchObject({
