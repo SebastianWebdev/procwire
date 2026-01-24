@@ -36,6 +36,11 @@ export class LengthPrefixedFraming implements FramingCodec {
   private expectedLength: number | null;
 
   constructor(options: LengthPrefixedFramingOptions = {}) {
+    // Validate options
+    if (options.maxMessageSize !== undefined && options.maxMessageSize <= 0) {
+      throw new Error("LengthPrefixedFraming: maxMessageSize must be positive");
+    }
+
     this.maxMessageSize = options.maxMessageSize ?? 32 * 1024 * 1024; // 32MB
     this.buffers = [];
     this.totalLength = 0;
@@ -199,7 +204,7 @@ export class LengthPrefixedFraming implements FramingCodec {
     }
 
     this.totalLength -= length;
-    return parts.length === 1 ? parts[0] : Buffer.concat(parts, length);
+    return parts.length === 1 ? parts[0]! : Buffer.concat(parts, length);
   }
 
   private consumeBytes(length: number): void {

@@ -90,9 +90,20 @@ export interface StdioTransportEvents extends TransportEvents {
  * transport.on('stderr', line => console.error('stderr:', line));
  * ```
  */
+interface InternalStdioTransportOptions {
+  executablePath: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+  startupTimeout: number;
+  maxStdoutBuffer: number;
+  maxStderrBuffer: number;
+  metrics: MetricsCollector | undefined;
+}
+
 export class StdioTransport implements Transport {
   private readonly emitter = new EventEmitter<StdioTransportEvents>();
-  private readonly options: Required<StdioTransportOptions>;
+  private readonly options: InternalStdioTransportOptions;
   private process: childProcess.ChildProcess | null = null;
   private _state: TransportState = "disconnected";
   private startupTimer: NodeJS.Timeout | null = null;
@@ -100,6 +111,22 @@ export class StdioTransport implements Transport {
   private stderrBytesReceived = 0;
 
   constructor(options: StdioTransportOptions) {
+    // Validate required options
+    if (!options.executablePath || options.executablePath.trim() === "") {
+      throw new Error("StdioTransport: executablePath is required and cannot be empty");
+    }
+
+    // Validate optional numeric options
+    if (options.startupTimeout !== undefined && options.startupTimeout <= 0) {
+      throw new Error("StdioTransport: startupTimeout must be positive");
+    }
+    if (options.maxStdoutBuffer !== undefined && options.maxStdoutBuffer <= 0) {
+      throw new Error("StdioTransport: maxStdoutBuffer must be positive");
+    }
+    if (options.maxStderrBuffer !== undefined && options.maxStderrBuffer <= 0) {
+      throw new Error("StdioTransport: maxStderrBuffer must be positive");
+    }
+
     this.options = {
       executablePath: options.executablePath,
       args: options.args ?? [],

@@ -165,6 +165,7 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
   private readonly bufferEarlyNotifications: number;
   private readonly metrics: MetricsCollector | undefined;
   private readonly pendingPool: PendingRequestPool | null;
+  private readonly onMiddlewareError: ((hook: string, error: Error) => void) | undefined;
 
   private readonly events = new EventEmitter<ChannelEvents>();
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();
@@ -178,6 +179,20 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
   private inboundFrameCount = 0;
 
   constructor(options: ChannelOptions<TReq, TRes, TNotif>) {
+    // Validate options
+    if (options.timeout !== undefined && options.timeout <= 0) {
+      throw new Error("RequestChannel: timeout must be positive");
+    }
+    if (options.maxInboundFrames !== undefined && options.maxInboundFrames < 0) {
+      throw new Error("RequestChannel: maxInboundFrames cannot be negative");
+    }
+    if (options.bufferEarlyNotifications !== undefined && options.bufferEarlyNotifications < 0) {
+      throw new Error("RequestChannel: bufferEarlyNotifications cannot be negative");
+    }
+    if (options.pendingRequestPoolSize !== undefined && options.pendingRequestPoolSize < 0) {
+      throw new Error("RequestChannel: pendingRequestPoolSize cannot be negative");
+    }
+
     this.transport = options.transport;
     this.framing = options.framing;
     this.serialization = options.serialization;
@@ -191,6 +206,7 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     this.metrics = options.metrics;
     const poolSize = options.pendingRequestPoolSize ?? 100;
     this.pendingPool = poolSize > 0 ? new PendingRequestPool(poolSize) : null;
+    this.onMiddlewareError = options.onMiddlewareError;
 
     // Auto-detect response accessor if not provided
     this.responseAccessor =
@@ -672,8 +688,11 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
         try {
           await typedFn.call(mw, data);
         } catch (error) {
-          // Log but don't throw - middleware errors shouldn't break the channel
-          console.error(`Error in middleware hook '${hook}':`, error);
+          // Middleware errors shouldn't break the channel
+          // If callback provided, invoke it; otherwise silently ignore
+          if (this.onMiddlewareError) {
+            this.onMiddlewareError(hook, toError(error));
+          }
         }
       }
     }

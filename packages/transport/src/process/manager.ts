@@ -37,28 +37,104 @@ interface ManagedProcess {
   restartPolicy: RestartPolicy;
 }
 
+interface InternalRestartPolicy {
+  enabled: boolean;
+  maxRestarts: number;
+  backoffMs: number;
+  maxBackoffMs: number;
+}
+
+interface InternalProcessManagerConfig {
+  defaultTimeout: number;
+  restartPolicy: InternalRestartPolicy;
+  namespace: string;
+  gracefulShutdownMs: number;
+  metrics: ProcessManagerConfig["metrics"];
+  handleSignals: boolean;
+}
+
 /**
  * Process manager implementation.
  * Manages the lifecycle of multiple child processes with restart capability.
  */
 export class ProcessManager implements IProcessManager {
-  private readonly config: Required<ProcessManagerConfig>;
+  private readonly config: InternalProcessManagerConfig;
   private readonly processes = new Map<string, ManagedProcess>();
   private readonly events = new EventEmitter<ProcessManagerEvents>();
+  private signalHandler: (() => Promise<void>) | null = null;
 
   constructor(config: ProcessManagerConfig = {}) {
+    // Validate options
+    if (config.defaultTimeout !== undefined && config.defaultTimeout <= 0) {
+      throw new Error("ProcessManager: defaultTimeout must be positive");
+    }
+    if (config.gracefulShutdownMs !== undefined && config.gracefulShutdownMs <= 0) {
+      throw new Error("ProcessManager: gracefulShutdownMs must be positive");
+    }
+    if (config.restartPolicy !== undefined) {
+      if (config.restartPolicy.maxRestarts !== undefined && config.restartPolicy.maxRestarts < 0) {
+        throw new Error("ProcessManager: restartPolicy.maxRestarts cannot be negative");
+      }
+      if (config.restartPolicy.backoffMs !== undefined && config.restartPolicy.backoffMs < 0) {
+        throw new Error("ProcessManager: restartPolicy.backoffMs cannot be negative");
+      }
+      if (config.restartPolicy.maxBackoffMs !== undefined && config.restartPolicy.maxBackoffMs < 0) {
+        throw new Error("ProcessManager: restartPolicy.maxBackoffMs cannot be negative");
+      }
+    }
+
+    const defaultRestartPolicy: InternalRestartPolicy = {
+      enabled: false,
+      maxRestarts: 3,
+      backoffMs: 1000,
+      maxBackoffMs: 30000,
+    };
+
     this.config = {
       defaultTimeout: config.defaultTimeout ?? 30000,
-      restartPolicy: config.restartPolicy ?? {
-        enabled: false,
-        maxRestarts: 3,
-        backoffMs: 1000,
-        maxBackoffMs: 30000,
-      },
+      restartPolicy: config.restartPolicy
+        ? {
+            enabled: config.restartPolicy.enabled ?? defaultRestartPolicy.enabled,
+            maxRestarts: config.restartPolicy.maxRestarts ?? defaultRestartPolicy.maxRestarts,
+            backoffMs: config.restartPolicy.backoffMs ?? defaultRestartPolicy.backoffMs,
+            maxBackoffMs: config.restartPolicy.maxBackoffMs ?? defaultRestartPolicy.maxBackoffMs,
+          }
+        : defaultRestartPolicy,
       namespace: config.namespace ?? "procwire",
       gracefulShutdownMs: config.gracefulShutdownMs ?? 5000,
       metrics: config.metrics,
+      handleSignals: config.handleSignals ?? false,
     };
+
+    if (this.config.handleSignals) {
+      this.setupSignalHandlers();
+    }
+  }
+
+  /**
+   * Sets up signal handlers for graceful shutdown.
+   * Called automatically if handleSignals is enabled.
+   */
+  private setupSignalHandlers(): void {
+    this.signalHandler = async () => {
+      await this.terminateAll();
+      process.exit(0);
+    };
+
+    process.on("SIGTERM", this.signalHandler);
+    process.on("SIGINT", this.signalHandler);
+  }
+
+  /**
+   * Removes signal handlers.
+   * Useful for cleanup in tests or when you want to handle signals differently.
+   */
+  removeSignalHandlers(): void {
+    if (this.signalHandler) {
+      process.off("SIGTERM", this.signalHandler);
+      process.off("SIGINT", this.signalHandler);
+      this.signalHandler = null;
+    }
   }
 
   /**
@@ -312,8 +388,10 @@ export class ProcessManager implements IProcessManager {
     const transportOptions: StdioTransportOptions = {
       executablePath: options.executablePath,
       startupTimeout: options.startupTimeout ?? 10000,
-      metrics: this.config.metrics,
     };
+    if (this.config.metrics !== undefined) {
+      transportOptions.metrics = this.config.metrics;
+    }
     if (options.args !== undefined) {
       transportOptions.args = options.args;
     }
@@ -423,7 +501,10 @@ export class ProcessManager implements IProcessManager {
    * Builds data channel from pipe transport.
    */
   private async buildDataChannel(path: string, config?: ChannelConfig): Promise<Channel> {
-    const transport = new SocketTransport({ path, metrics: this.config.metrics });
+    const transport =
+      this.config.metrics !== undefined
+        ? new SocketTransport({ path, metrics: this.config.metrics })
+        : new SocketTransport({ path });
 
     const framing =
       config?.framing === "line-delimited"

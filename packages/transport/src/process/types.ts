@@ -179,6 +179,14 @@ export interface ProcessManagerConfig {
    * Optional metrics collector shared by managed transports and channels.
    */
   metrics?: MetricsCollector;
+
+  /**
+   * Enable automatic handling of SIGTERM/SIGINT signals.
+   * When enabled, the process manager will call terminateAll() on these signals
+   * and then exit the process.
+   * @default false
+   */
+  handleSignals?: boolean;
 }
 
 /**
@@ -310,50 +318,148 @@ export interface ProcessHandle {
 
 /**
  * Process manager interface.
- * Manages the lifecycle of multiple child processes.
+ * Manages the lifecycle of multiple child processes with restart capability.
+ *
+ * @example
+ * ```typescript
+ * const manager = new ProcessManager({
+ *   restartPolicy: { enabled: true, maxRestarts: 3 },
+ *   handleSignals: true, // Graceful shutdown on SIGTERM/SIGINT
+ * });
+ *
+ * // Spawn a worker process
+ * const handle = await manager.spawn("worker", {
+ *   executablePath: "node",
+ *   args: ["worker.js"],
+ * });
+ *
+ * // Communicate via control channel
+ * const result = await handle.request("doWork", { data: "..." });
+ *
+ * // Clean shutdown
+ * await manager.terminateAll();
+ * ```
+ *
+ * @see {@link ProcessManagerConfig} for configuration options
+ * @see {@link SpawnOptions} for spawn options
+ * @see {@link ProcessHandle} for process handle interface
  */
 export interface ProcessManager {
   /**
    * Spawns a new managed process.
+   *
    * @param id - Unique process identifier
    * @param options - Spawn options
    * @returns Promise resolving to process handle
+   *
    * @throws {Error} if process with this ID already exists
+   * @throws {Error} if spawning fails
+   *
+   * @example
+   * ```typescript
+   * const handle = await manager.spawn("worker-1", {
+   *   executablePath: "node",
+   *   args: ["worker.js"],
+   *   env: { NODE_ENV: "production" },
+   * });
+   * ```
    */
   spawn(id: string, options: SpawnOptions): Promise<ProcessHandle>;
 
   /**
    * Terminates a managed process.
+   *
    * @param id - Process identifier
+   *
    * @throws {Error} if process doesn't exist
+   *
+   * @example
+   * ```typescript
+   * await manager.terminate("worker-1");
+   * ```
    */
   terminate(id: string): Promise<void>;
 
   /**
    * Terminates all managed processes.
+   * Uses Promise.allSettled to attempt termination of all processes
+   * even if some fail.
+   *
+   * @example
+   * ```typescript
+   * await manager.terminateAll();
+   * ```
    */
   terminateAll(): Promise<void>;
 
   /**
    * Gets a process handle by ID.
+   *
    * @param id - Process identifier
    * @returns Process handle or null if not found
+   *
+   * @example
+   * ```typescript
+   * const handle = manager.getHandle("worker-1");
+   * if (handle) {
+   *   console.log("State:", handle.state);
+   * }
+   * ```
    */
   getHandle(id: string): ProcessHandle | null;
 
   /**
    * Checks if a process is running.
+   *
    * @param id - Process identifier
    * @returns true if process exists and is in 'running' state
+   *
+   * @example
+   * ```typescript
+   * if (manager.isRunning("worker-1")) {
+   *   await manager.terminate("worker-1");
+   * }
+   * ```
    */
   isRunning(id: string): boolean;
 
   /**
    * Subscribes to manager events.
+   *
+   * @param event - Event name
+   * @param handler - Event handler function
    * @returns Unsubscribe function
+   *
+   * @example
+   * ```typescript
+   * manager.on("spawn", ({ id, pid }) => {
+   *   console.log(`Process ${id} spawned with PID ${pid}`);
+   * });
+   *
+   * manager.on("crash", ({ id, error }) => {
+   *   console.error(`Process ${id} crashed:`, error);
+   * });
+   * ```
    */
   on<K extends keyof ProcessManagerEvents>(
     event: K,
     handler: (data: ProcessManagerEvents[K]) => void,
   ): Unsubscribe;
+
+  /**
+   * Removes signal handlers registered by handleSignals option.
+   * Useful for cleanup in tests or when you want to handle signals differently.
+   *
+   * @example
+   * ```typescript
+   * const manager = new ProcessManager({ handleSignals: true });
+   *
+   * // Later, if you need custom signal handling:
+   * manager.removeSignalHandlers();
+   * process.on("SIGTERM", () => {
+   *   // Custom shutdown logic
+   * });
+   * ```
+   */
+  removeSignalHandlers(): void;
 }

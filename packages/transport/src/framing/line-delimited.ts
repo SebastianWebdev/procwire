@@ -42,6 +42,14 @@ export class LineDelimitedFraming implements FramingCodec {
   private totalLength: number;
 
   constructor(options: LineDelimitedFramingOptions = {}) {
+    // Validate options
+    if (options.delimiter !== undefined && (options.delimiter < 0 || options.delimiter > 255)) {
+      throw new Error("LineDelimitedFraming: delimiter must be a byte value (0-255)");
+    }
+    if (options.maxBufferSize !== undefined && options.maxBufferSize <= 0) {
+      throw new Error("LineDelimitedFraming: maxBufferSize must be positive");
+    }
+
     this.delimiter = options.delimiter ?? 0x0a; // '\n'
     this.maxBufferSize = options.maxBufferSize ?? 8 * 1024 * 1024; // 8MB
     this.stripDelimiter = options.stripDelimiter ?? true;
@@ -94,7 +102,7 @@ export class LineDelimitedFraming implements FramingCodec {
 
     // Find all complete frames (terminated by delimiter)
     while (bufferIndex < this.buffers.length) {
-      const buffer = this.buffers[bufferIndex];
+      const buffer = this.buffers[bufferIndex]!;
       const delimiterIndex = buffer.indexOf(this.delimiter, searchOffset);
 
       if (delimiterIndex === -1) {
@@ -114,7 +122,7 @@ export class LineDelimitedFraming implements FramingCodec {
       );
 
       // Move past delimiter
-      if (delimiterIndex + 1 < buffer.length) {
+      if (delimiterIndex + 1 < buffer!.length) {
         frameStartBufferIndex = bufferIndex;
         frameStartOffset = delimiterIndex + 1;
         searchOffset = frameStartOffset;

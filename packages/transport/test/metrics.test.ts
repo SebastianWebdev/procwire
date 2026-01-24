@@ -12,7 +12,7 @@ import type { Channel } from "../src/channel/types.js";
 type MetricEntry = {
   name: string;
   value: number;
-  tags?: Record<string, string>;
+  tags: Record<string, string> | undefined;
 };
 
 class MockMetricsCollector implements MetricsCollector {
@@ -74,7 +74,8 @@ describe("Metrics hooks", () => {
           .withProtocol(new JsonRpcProtocol())
           .build();
 
-        channel.onRequest((request: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        channel.onRequest((request: any): any => {
           if (request.method === "ping") {
             return { ok: true };
           }

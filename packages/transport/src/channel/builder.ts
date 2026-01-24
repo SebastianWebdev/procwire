@@ -33,6 +33,7 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   private maxInboundFrames?: number;
   private bufferEarlyNotifications?: number;
   private pendingRequestPoolSize?: number;
+  private middlewareErrorHandler?: (hook: string, error: Error) => void;
 
   /**
    * Sets the transport layer.
@@ -124,6 +125,15 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   }
 
   /**
+   * Sets the middleware error handler.
+   * Called when a middleware hook throws an error.
+   */
+  withMiddlewareErrorHandler(handler: (hook: string, error: Error) => void): this {
+    this.middlewareErrorHandler = handler;
+    return this;
+  }
+
+  /**
    * Builds and returns the configured channel.
    * @throws {Error} if required configuration is missing
    */
@@ -168,6 +178,9 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
     }
     if (this.pendingRequestPoolSize !== undefined) {
       options.pendingRequestPoolSize = this.pendingRequestPoolSize;
+    }
+    if (this.middlewareErrorHandler !== undefined) {
+      options.onMiddlewareError = this.middlewareErrorHandler;
     }
 
     return new RequestChannel<TReq, TRes, TNotif>(options);

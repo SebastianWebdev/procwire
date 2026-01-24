@@ -164,6 +164,15 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
    * Default: 100
    */
   pendingRequestPoolSize?: number;
+
+  /**
+   * Callback for middleware errors.
+   * Called when a middleware hook throws an error.
+   * If not provided, errors are silently ignored (not logged).
+   * @param hook - Name of the middleware hook that failed
+   * @param error - The error that was thrown
+   */
+  onMiddlewareError?: (hook: string, error: Error) => void;
 }
 
 /**
@@ -173,6 +182,33 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
  * @template TReq - Request data type (wire format)
  * @template TRes - Response data type (wire format)
  * @template TNotif - Notification data type (wire format)
+ *
+ * @example
+ * ```typescript
+ * // Create and start a channel
+ * const channel = new ChannelBuilder()
+ *   .withTransport(transport)
+ *   .withFraming(new LengthPrefixedFraming())
+ *   .withSerialization(new JsonCodec())
+ *   .withProtocol(new JsonRpcProtocol())
+ *   .build();
+ *
+ * await channel.start();
+ *
+ * // Send request
+ * const result = await channel.request("add", { a: 1, b: 2 });
+ *
+ * // Handle incoming requests
+ * channel.onRequest((req) => {
+ *   return { result: "processed" };
+ * });
+ *
+ * // Cleanup
+ * await channel.close();
+ * ```
+ *
+ * @see {@link ChannelBuilder} for fluent channel construction
+ * @see {@link ChannelOptions} for configuration options
  */
 export interface Channel<TReq = unknown, TRes = unknown, TNotif = unknown> {
   /**
@@ -181,48 +217,125 @@ export interface Channel<TReq = unknown, TRes = unknown, TNotif = unknown> {
   readonly isConnected: boolean;
 
   /**
-   * Starts the channel (connects transport).
+   * Starts the channel (connects transport and begins message processing).
+   *
+   * @throws {TransportError} if transport connection fails
+   *
+   * @example
+   * ```typescript
+   * await channel.start();
+   * console.log(channel.isConnected); // true
+   * ```
    */
   start(): Promise<void>;
 
   /**
    * Closes the channel gracefully.
+   * Rejects all pending requests and disconnects the transport.
+   *
+   * @example
+   * ```typescript
+   * await channel.close();
+   * console.log(channel.isConnected); // false
+   * ```
    */
   close(): Promise<void>;
 
   /**
    * Sends a request and waits for response.
-   * @param method - Method name
-   * @param params - Optional parameters
-   * @param timeout - Optional timeout override (ms)
+   *
+   * @param method - Method name to call
+   * @param params - Optional parameters to pass
+   * @param timeout - Optional timeout override in milliseconds
    * @returns Promise resolving to response result
+   *
    * @throws {TimeoutError} if request times out
-   * @throws {ProtocolError} if response is an error
+   * @throws {ProtocolError} if response contains an error
+   * @throws {Error} if channel is not connected
+   *
+   * @example
+   * ```typescript
+   * // Basic request
+   * const result = await channel.request("add", { a: 1, b: 2 });
+   *
+   * // With custom timeout
+   * const result = await channel.request("slowOperation", {}, 60000);
+   * ```
+   *
+   * @see {@link notify} for fire-and-forget messages
    */
   request(method: string, params?: unknown, timeout?: number): Promise<unknown>;
 
   /**
    * Sends a notification (fire-and-forget, no response expected).
+   *
    * @param method - Method name
    * @param params - Optional parameters
+   *
+   * @throws {Error} if channel is not connected
+   *
+   * @example
+   * ```typescript
+   * await channel.notify("log", { message: "Something happened" });
+   * ```
+   *
+   * @see {@link request} for request/response pattern
    */
   notify(method: string, params?: unknown): Promise<void>;
 
   /**
    * Registers handler for incoming requests.
-   * @returns Unsubscribe function
+   *
+   * @param handler - Function to handle incoming requests
+   * @returns Unsubscribe function to remove the handler
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = channel.onRequest((request) => {
+   *   if (request.method === "ping") {
+   *     return { pong: true };
+   *   }
+   *   throw new Error("Unknown method");
+   * });
+   *
+   * // Later: remove handler
+   * unsubscribe();
+   * ```
    */
   onRequest(handler: RequestHandler<TReq, TRes>): Unsubscribe;
 
   /**
    * Registers handler for incoming notifications.
-   * @returns Unsubscribe function
+   *
+   * @param handler - Function to handle incoming notifications
+   * @returns Unsubscribe function to remove the handler
+   *
+   * @example
+   * ```typescript
+   * channel.onNotification((notification) => {
+   *   console.log("Received:", notification);
+   * });
+   * ```
    */
   onNotification(handler: NotificationHandler<TNotif>): Unsubscribe;
 
   /**
    * Subscribes to channel events.
+   *
+   * @param event - Event name ('start', 'close', 'error')
+   * @param handler - Event handler function
    * @returns Unsubscribe function
+   *
+   * @example
+   * ```typescript
+   * channel.on("error", (error) => {
+   *   console.error("Channel error:", error);
+   * });
+   *
+   * channel.on("close", () => {
+   *   console.log("Channel closed");
+   * });
+   * ```
    */
   on<K extends keyof ChannelEvents>(
     event: K,

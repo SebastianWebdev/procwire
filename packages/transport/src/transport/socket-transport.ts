@@ -60,9 +60,18 @@ export interface SocketTransportOptions {
  * transport.onData(data => console.log('received:', data));
  * ```
  */
+interface InternalSocketTransportOptions {
+  path: string;
+  connectionTimeout: number;
+  autoReconnect: boolean;
+  reconnectDelay: number;
+  maxReconnectDelay: number;
+  metrics: MetricsCollector | undefined;
+}
+
 export class SocketTransport implements Transport {
   private readonly emitter = new EventEmitter<TransportEvents>();
-  private readonly options: Required<SocketTransportOptions>;
+  private readonly options: InternalSocketTransportOptions;
   private socket: net.Socket | null = null;
   private _state: TransportState = "disconnected";
   private connectTimer: NodeJS.Timeout | null = null;
@@ -71,6 +80,31 @@ export class SocketTransport implements Transport {
   private manualDisconnect = false;
 
   constructor(options: SocketTransportOptions) {
+    // Validate required options
+    if (!options.path || options.path.trim() === "") {
+      throw new Error("SocketTransport: path is required and cannot be empty");
+    }
+
+    // Validate optional numeric options
+    if (options.connectionTimeout !== undefined && options.connectionTimeout <= 0) {
+      throw new Error("SocketTransport: connectionTimeout must be positive");
+    }
+    if (options.reconnectDelay !== undefined && options.reconnectDelay < 0) {
+      throw new Error("SocketTransport: reconnectDelay cannot be negative");
+    }
+    if (options.maxReconnectDelay !== undefined && options.maxReconnectDelay < 0) {
+      throw new Error("SocketTransport: maxReconnectDelay cannot be negative");
+    }
+    if (
+      options.reconnectDelay !== undefined &&
+      options.maxReconnectDelay !== undefined &&
+      options.reconnectDelay > options.maxReconnectDelay
+    ) {
+      throw new Error(
+        "SocketTransport: reconnectDelay cannot be greater than maxReconnectDelay",
+      );
+    }
+
     this.options = {
       path: options.path,
       connectionTimeout: options.connectionTimeout ?? 5000,
