@@ -527,9 +527,12 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
   private async handleNotification(notification: TNotif): Promise<void> {
     // If no handlers registered yet, buffer the notification for later delivery
     if (this.notificationHandlers.length === 0) {
-      if (this.bufferedNotifications.length < this.bufferEarlyNotifications) {
-        this.bufferedNotifications.push(notification);
+      // Enforce buffer limit using sliding window (keep most recent notifications)
+      if (this.bufferedNotifications.length >= this.bufferEarlyNotifications) {
+        // Remove oldest notification to make room for new one
+        this.bufferedNotifications.shift();
       }
+      this.bufferedNotifications.push(notification);
       return;
     }
 

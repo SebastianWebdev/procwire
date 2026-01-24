@@ -1,6 +1,7 @@
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "../utils/events.js";
 import { TransportError, TimeoutError } from "../utils/errors.js";
+import { transitionState } from "../utils/assert.js";
 import type { Transport, TransportState, TransportEvents } from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
 
@@ -108,6 +109,14 @@ export class StdioTransport implements Transport {
     return this._state;
   }
 
+  /**
+   * Transitions to a new state with validation.
+   * Throws TransportError if the transition is invalid.
+   */
+  private setState(newState: TransportState): void {
+    this._state = transitionState(this._state, newState);
+  }
+
   async connect(): Promise<void> {
     if (this._state === "connected") {
       throw new TransportError("Already connected");
@@ -117,7 +126,7 @@ export class StdioTransport implements Transport {
       throw new TransportError("Connection already in progress");
     }
 
-    this._state = "connecting";
+    this.setState("connecting");
 
     return new Promise((resolve, reject) => {
       try {
@@ -132,7 +141,7 @@ export class StdioTransport implements Transport {
         // Startup timeout
         this.startupTimer = setTimeout(() => {
           proc.kill();
-          this._state = "error";
+          this.setState("error");
           const error = new TransportError(
             `Process startup timeout after ${this.options.startupTimeout}ms`,
             new TimeoutError(`Startup timeout`),
@@ -148,7 +157,7 @@ export class StdioTransport implements Transport {
             this.startupTimer = null;
           }
 
-          this._state = "connected";
+          this.setState("connected");
           this.setupProcessListeners(proc);
           this.emitter.emit("connect", undefined);
           resolve();
@@ -161,13 +170,13 @@ export class StdioTransport implements Transport {
             this.startupTimer = null;
           }
 
-          this._state = "error";
+          this.setState("error");
           const error = new TransportError(`Failed to spawn process: ${err.message}`, err);
           this.emitter.emit("error", error);
           reject(error);
         });
       } catch (err) {
-        this._state = "error";
+        this.setState("error");
         const error = new TransportError(
           `Failed to create process: ${(err as Error).message}`,
           err as Error,
@@ -230,7 +239,12 @@ export class StdioTransport implements Transport {
         return;
       }
 
-      const canContinue = stdin.write(data, (err) => {
+      // The callback is invoked when data has been written to the kernel buffer.
+      // This provides implicit backpressure handling - callers using await will
+      // naturally wait for each write to complete before sending more data.
+      // If the kernel buffer is full, the callback will be delayed until space
+      // is available (after 'drain' event internally).
+      stdin.write(data, (err) => {
         if (err) {
           const error = new TransportError(`Write to stdin failed: ${err.message}`, err);
           this.emitter.emit("error", error);
@@ -239,13 +253,6 @@ export class StdioTransport implements Transport {
           resolve();
         }
       });
-
-      // Handle backpressure
-      if (!canContinue) {
-        stdin.once("drain", () => {
-          // Buffer drained, can continue writing
-        });
-      }
     });
   }
 
@@ -306,7 +313,7 @@ export class StdioTransport implements Transport {
 
     // Process errors
     proc.on("error", (err) => {
-      this._state = "error";
+      this.setState("error");
       const error = new TransportError(`Process error: ${err.message}`, err);
       this.emitter.emit("error", error);
     });
@@ -336,7 +343,7 @@ export class StdioTransport implements Transport {
     }
 
     if (this._state !== "disconnected") {
-      this._state = "disconnected";
+      this.setState("disconnected");
       this.emitter.emit("disconnect", undefined);
     }
 

@@ -1,6 +1,14 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { tmpdir } from "node:os";
 import { isWindows } from "./platform.js";
+
+/**
+ * Maximum Unix socket path length.
+ * Linux: 108 bytes, macOS: 104 bytes.
+ * We use the lower limit (104) to ensure cross-platform compatibility.
+ */
+const UNIX_SOCKET_MAX_PATH_LENGTH = 104;
 
 /**
  * Cross-platform pipe path utilities for Named Pipes (Windows) and Unix Domain Sockets.
@@ -12,20 +20,26 @@ export class PipePath {
    * Generates a platform-specific pipe/socket path for a module.
    *
    * Windows: `\\.\pipe\<namespace>-<moduleId>`
-   * Unix: `/tmp/<namespace>-<moduleId>.sock`
+   * Unix: `<baseDir>/<namespace>-<moduleId>.sock`
    *
    * @param namespace - Application namespace (e.g., 'procwire')
    * @param moduleId - Module identifier (e.g., 'worker-1')
+   * @param baseDir - Optional base directory for Unix sockets. Defaults to `os.tmpdir()`.
+   *                  Ignored on Windows (Named Pipes are virtual).
    * @returns Platform-specific pipe/socket path
+   * @throws Error if Unix socket path exceeds 104 characters (system limit)
    *
    * @example
    * ```ts
    * // Windows: \\.\pipe\procwire-worker-1
    * // Unix: /tmp/procwire-worker-1.sock
    * const path = PipePath.forModule('procwire', 'worker-1');
+   *
+   * // Custom base directory (Unix only)
+   * const path = PipePath.forModule('procwire', 'worker-1', '/var/run/myapp');
    * ```
    */
-  static forModule(namespace: string, moduleId: string): string {
+  static forModule(namespace: string, moduleId: string, baseDir?: string): string {
     // Sanitize inputs to remove problematic characters
     const sanitizedNamespace = this.sanitize(namespace);
     const sanitizedModuleId = this.sanitize(moduleId);
@@ -33,10 +47,24 @@ export class PipePath {
 
     if (isWindows()) {
       // Windows Named Pipe: \\.\pipe\<name>
+      // Named Pipes are virtual and don't have path length limits
       return `\\\\.\\pipe\\${name}`;
     } else {
-      // Unix Domain Socket: /tmp/<name>.sock
-      return path.join("/tmp", `${name}.sock`);
+      // Unix Domain Socket: <baseDir>/<name>.sock
+      const effectiveBaseDir = baseDir ?? tmpdir();
+      const socketPath = path.join(effectiveBaseDir, `${name}.sock`);
+
+      // Validate path length (Linux: 108, macOS: 104 - use lower limit)
+      if (socketPath.length > UNIX_SOCKET_MAX_PATH_LENGTH) {
+        throw new Error(
+          `Unix socket path exceeds maximum length of ${UNIX_SOCKET_MAX_PATH_LENGTH} characters. ` +
+            `Current length: ${socketPath.length}. ` +
+            `Path: "${socketPath}". ` +
+            `Consider shortening namespace or moduleId.`,
+        );
+      }
+
+      return socketPath;
     }
   }
 

@@ -813,4 +813,121 @@ describe("Channel Integration Tests", () => {
       }
     });
   });
+
+  describe("Notification Buffer Limit (H1)", () => {
+    it("should enforce buffer limit using sliding window (keep most recent)", async () => {
+      // Setup server with small notification buffer
+      server = new SocketServer();
+      await server.listen(socketPath);
+
+      let _serverChannelRef: Channel | null = null;
+
+      const serverConnectionPromise = new Promise<Channel>((resolve) => {
+        server.onConnection((transport) => {
+          const channel: any = new ChannelBuilder()
+            .withTransport(transport)
+            .withFraming(new LengthPrefixedFraming())
+            .withSerialization(new JsonCodec())
+            .withProtocol(new JsonRpcProtocol())
+            .withBufferEarlyNotifications(3) // Only buffer 3 notifications
+            .build();
+
+          _serverChannelRef = channel;
+          // Intentionally NOT registering notification handler yet
+          channel.start().then(() => resolve(channel));
+        });
+      });
+
+      // Setup client
+      const clientTransport = new SocketTransport({ path: socketPath });
+      clientChannel = new ChannelBuilder()
+        .withTransport(clientTransport)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await clientChannel.start();
+      serverChannel = await serverConnectionPromise;
+
+      // Send 10 notifications WITHOUT registering a handler first
+      for (let i = 1; i <= 10; i++) {
+        await clientChannel.notify("event", { index: i });
+      }
+
+      // Wait for notifications to be processed
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Now register a handler - should receive only the last 3 buffered notifications
+      const receivedNotifications: any[] = [];
+      serverChannel.onNotification((notification: any) => {
+        receivedNotifications.push(notification);
+      });
+
+      // Give some time for buffered notifications to be delivered
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should have exactly 3 notifications (the most recent ones: 8, 9, 10)
+      expect(receivedNotifications).toHaveLength(3);
+      expect(receivedNotifications[0]).toMatchObject({
+        method: "event",
+        params: { index: 8 },
+      });
+      expect(receivedNotifications[1]).toMatchObject({
+        method: "event",
+        params: { index: 9 },
+      });
+      expect(receivedNotifications[2]).toMatchObject({
+        method: "event",
+        params: { index: 10 },
+      });
+    });
+
+    it("should not exceed buffer limit over time (memory leak prevention)", async () => {
+      // This test verifies that the buffer doesn't grow unbounded
+      server = new SocketServer();
+      await server.listen(socketPath);
+
+      let serverChannelRef: any = null;
+
+      const serverConnectionPromise = new Promise<Channel>((resolve) => {
+        server.onConnection((transport) => {
+          const channel: any = new ChannelBuilder()
+            .withTransport(transport)
+            .withFraming(new LengthPrefixedFraming())
+            .withSerialization(new JsonCodec())
+            .withProtocol(new JsonRpcProtocol())
+            .withBufferEarlyNotifications(5)
+            .build();
+
+          serverChannelRef = channel;
+          channel.start().then(() => resolve(channel));
+        });
+      });
+
+      const clientTransport = new SocketTransport({ path: socketPath });
+      clientChannel = new ChannelBuilder()
+        .withTransport(clientTransport)
+        .withFraming(new LengthPrefixedFraming())
+        .withSerialization(new JsonCodec())
+        .withProtocol(new JsonRpcProtocol())
+        .build() as any;
+
+      await clientChannel.start();
+      serverChannel = await serverConnectionPromise;
+
+      // Send many notifications in batches without registering a handler
+      for (let batch = 0; batch < 10; batch++) {
+        for (let i = 0; i < 20; i++) {
+          await clientChannel.notify("spam", { batch, index: i });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      // Access internal buffer to verify it didn't exceed limit
+      // This is a bit hacky but necessary to verify memory leak prevention
+      const internalBuffer = (serverChannelRef as any).bufferedNotifications;
+      expect(internalBuffer.length).toBeLessThanOrEqual(5);
+    });
+  });
 });
