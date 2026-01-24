@@ -1,7 +1,10 @@
 /**
  * Extension codecs for common JavaScript types not natively supported by MessagePack.
  *
- * @module extensions
+ * @remarks
+ * This is an internal module. Import from `@procwire/codec-msgpack` instead.
+ *
+ * @internal
  */
 
 import { ExtensionCodec, encode, decode } from "@msgpack/msgpack";
@@ -16,24 +19,71 @@ const EXT_BIGINT = 3;
 
 /**
  * Creates an ExtensionCodec with support for common JavaScript types.
- * Supports: Date, Map, Set, BigInt
  *
- * Extension type IDs used:
- * - 0: Date (milliseconds since epoch as float64)
- * - 1: Map (encoded as array of [key, value] pairs)
- * - 2: Set (encoded as array of values)
- * - 3: BigInt (encoded as string representation)
+ * This function creates a pre-configured ExtensionCodec that handles types
+ * not natively supported by MessagePack: `Date`, `Map`, `Set`, and `BigInt`.
+ * Use this when you need fine-grained control over codec configuration,
+ * or use {@link createExtendedCodec} for a simpler API.
  *
- * @returns ExtensionCodec configured for common types
+ * ## Extension Type IDs
  *
- * @example
+ * The following type IDs are used (from the user-defined range 0-127):
+ *
+ * | Type ID | JavaScript Type | Encoding Format |
+ * |---------|-----------------|-----------------|
+ * | 0 | `Date` | Milliseconds since epoch as float64 (big-endian) |
+ * | 1 | `Map` | Array of `[key, value]` pairs (recursive) |
+ * | 2 | `Set` | Array of values (recursive) |
+ * | 3 | `BigInt` | String representation (preserves full precision) |
+ *
+ * @returns A configured ExtensionCodec instance ready for use with MessagePackCodec.
+ *
+ * @example Basic usage with MessagePackCodec
+ * ```ts
+ * import { MessagePackCodec, createCommonExtensionCodec } from '@procwire/codec-msgpack';
+ *
+ * const extensionCodec = createCommonExtensionCodec();
+ * const codec = new MessagePackCodec({
+ *   extensionCodec,
+ *   sortKeys: true, // Additional options can be combined
+ * });
+ *
+ * const data = {
+ *   timestamp: new Date('2024-01-15'),
+ *   config: new Map([['debug', true]]),
+ *   tags: new Set(['production', 'stable']),
+ *   largeId: BigInt('9007199254740993'),
+ * };
+ *
+ * const buffer = codec.serialize(data);
+ * const decoded = codec.deserialize(buffer);
+ * // All types are preserved
+ * ```
+ *
+ * @example Combining with custom extensions
  * ```ts
  * import { ExtensionCodec } from '@msgpack/msgpack';
  * import { createCommonExtensionCodec } from '@procwire/codec-msgpack';
  *
- * const extensionCodec = createCommonExtensionCodec();
- * const codec = new MessagePackCodec({ extensionCodec });
+ * // Start with common types, then add your own
+ * const codec = createCommonExtensionCodec();
+ *
+ * // Add custom type (use ID > 3 to avoid conflicts)
+ * codec.register({
+ *   type: 10,
+ *   encode: (value) => {
+ *     if (value instanceof MyCustomType) {
+ *       return new TextEncoder().encode(value.toString());
+ *     }
+ *     return null;
+ *   },
+ *   decode: (data) => MyCustomType.fromString(new TextDecoder().decode(data)),
+ * });
  * ```
+ *
+ * @see {@link createExtendedCodec} for a simpler one-liner API
+ * @see {@link MessagePackCodecOptions.extensionCodec} for usage with MessagePackCodec
+ * @see {@link https://github.com/msgpack/msgpack-javascript#extension-types | @msgpack/msgpack Extension Types}
  */
 export function createCommonExtensionCodec(): ExtensionCodec {
   const codec = new ExtensionCodec();
@@ -111,31 +161,98 @@ export function createCommonExtensionCodec(): ExtensionCodec {
 }
 
 /**
- * Creates a MessagePackCodec with common JavaScript type extensions.
- * Supports: Date, Map, Set, BigInt
+ * Creates a MessagePackCodec with built-in support for common JavaScript types.
  *
- * @template T - Type of data being serialized/deserialized
- * @param options - Additional codec options (extensionCodec will be overwritten)
- * @returns Configured MessagePackCodec
+ * This is a convenience function that creates a {@link MessagePackCodec} pre-configured
+ * with extension type support for `Date`, `Map`, `Set`, and `BigInt`. It's the
+ * recommended way to get extended type support with minimal setup.
  *
- * @example
+ * @typeParam T - Type of data being serialized/deserialized. Defaults to `unknown`.
+ *
+ * @param options - Optional codec configuration. The `extensionCodec` option will be
+ *                  overwritten with the common extension codec, but all other options
+ *                  (like `sortKeys`, `initialBufferSize`) are preserved.
+ *
+ * @returns A configured MessagePackCodec instance with Date, Map, Set, BigInt support.
+ *
+ * @example Basic usage
  * ```ts
  * import { createExtendedCodec } from '@procwire/codec-msgpack';
  *
- * const codec = createExtendedCodec<MyData>();
+ * const codec = createExtendedCodec();
  *
- * // Now works with Date, Map, Set, BigInt
  * const data = {
  *   createdAt: new Date(),
- *   tags: new Set(["a", "b"]),
- *   metadata: new Map([["key", "value"]]),
- *   bigNumber: BigInt("9007199254740993")
+ *   updatedAt: new Date(),
+ *   tags: new Set(['important', 'urgent']),
+ *   metadata: new Map([
+ *     ['author', 'Alice'],
+ *     ['version', '1.0.0'],
+ *   ]),
+ *   largeNumber: BigInt('9007199254740993'),
  * };
  *
  * const buffer = codec.serialize(data);
  * const decoded = codec.deserialize(buffer);
- * // decoded.createdAt instanceof Date === true
+ *
+ * console.log(decoded.createdAt instanceof Date);  // true
+ * console.log(decoded.tags instanceof Set);        // true
+ * console.log(decoded.metadata instanceof Map);    // true
+ * console.log(typeof decoded.largeNumber);         // 'bigint'
  * ```
+ *
+ * @example Type-safe usage
+ * ```ts
+ * interface MyData {
+ *   id: bigint;
+ *   createdAt: Date;
+ *   tags: Set<string>;
+ *   config: Map<string, unknown>;
+ * }
+ *
+ * const codec = createExtendedCodec<MyData>();
+ *
+ * const data: MyData = {
+ *   id: BigInt('123456789012345678'),
+ *   createdAt: new Date(),
+ *   tags: new Set(['alpha', 'beta']),
+ *   config: new Map([['debug', true]]),
+ * };
+ *
+ * const buffer = codec.serialize(data);
+ * const decoded = codec.deserialize(buffer);
+ * // TypeScript knows all the correct types
+ * ```
+ *
+ * @example With additional options
+ * ```ts
+ * const codec = createExtendedCodec({
+ *   sortKeys: true,           // Deterministic output
+ *   initialBufferSize: 8192,  // Larger buffer for big payloads
+ * });
+ * ```
+ *
+ * @example Nested complex types
+ * ```ts
+ * const codec = createExtendedCodec();
+ *
+ * // Maps and Sets can contain Date, BigInt, and nested Maps/Sets
+ * const data = {
+ *   events: new Map<Date, Set<string>>([
+ *     [new Date('2024-01-01'), new Set(['event1', 'event2'])],
+ *     [new Date('2024-02-01'), new Set(['event3'])],
+ *   ]),
+ *   bigNumbers: new Set([BigInt(1), BigInt(2), BigInt(3)]),
+ * };
+ *
+ * const buffer = codec.serialize(data);
+ * const decoded = codec.deserialize(buffer);
+ * // All nested types are properly preserved
+ * ```
+ *
+ * @see {@link createCommonExtensionCodec} for more control over the extension codec
+ * @see {@link MessagePackCodec} for the underlying codec class
+ * @see {@link MessagePackCodecOptions} for available configuration options
  */
 export function createExtendedCodec<T = unknown>(
   options?: Omit<MessagePackCodecOptions, "extensionCodec">
