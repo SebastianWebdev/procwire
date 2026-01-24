@@ -4,6 +4,7 @@ import type { SerializationCodec } from "../serialization/types.js";
 import type { Protocol } from "../protocol/types.js";
 import type { ResponseAccessor, ChannelMiddleware, Channel, ChannelOptions } from "./types.js";
 import { RequestChannel } from "./request-channel.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Fluent API builder for creating channels.
@@ -28,8 +29,11 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   private timeout?: number;
   private responseAccessor?: ResponseAccessor;
   private middleware: ChannelMiddleware[] = [];
+  private metrics?: MetricsCollector;
   private maxInboundFrames?: number;
   private bufferEarlyNotifications?: number;
+  private pendingRequestPoolSize?: number;
+  private middlewareErrorHandler?: (hook: string, error: Error) => void;
 
   /**
    * Sets the transport layer.
@@ -88,6 +92,14 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
   }
 
   /**
+   * Sets the metrics collector for channel instrumentation.
+   */
+  withMetrics(metrics: MetricsCollector): this {
+    this.metrics = metrics;
+    return this;
+  }
+
+  /**
    * Sets the maximum inbound frames limit.
    */
   withMaxInboundFrames(max: number): this {
@@ -101,6 +113,23 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
    */
   withBufferEarlyNotifications(size: number): this {
     this.bufferEarlyNotifications = size;
+    return this;
+  }
+
+  /**
+   * Sets the pending request pool size (0 disables pooling).
+   */
+  withPendingRequestPoolSize(size: number): this {
+    this.pendingRequestPoolSize = size;
+    return this;
+  }
+
+  /**
+   * Sets the middleware error handler.
+   * Called when a middleware hook throws an error.
+   */
+  withMiddlewareErrorHandler(handler: (hook: string, error: Error) => void): this {
+    this.middlewareErrorHandler = handler;
     return this;
   }
 
@@ -138,11 +167,20 @@ export class ChannelBuilder<TReq = unknown, TRes = unknown, TNotif = unknown> {
     if (this.middleware.length > 0) {
       options.middleware = this.middleware;
     }
+    if (this.metrics !== undefined) {
+      options.metrics = this.metrics;
+    }
     if (this.maxInboundFrames !== undefined) {
       options.maxInboundFrames = this.maxInboundFrames;
     }
     if (this.bufferEarlyNotifications !== undefined) {
       options.bufferEarlyNotifications = this.bufferEarlyNotifications;
+    }
+    if (this.pendingRequestPoolSize !== undefined) {
+      options.pendingRequestPoolSize = this.pendingRequestPoolSize;
+    }
+    if (this.middlewareErrorHandler !== undefined) {
+      options.onMiddlewareError = this.middlewareErrorHandler;
     }
 
     return new RequestChannel<TReq, TRes, TNotif>(options);

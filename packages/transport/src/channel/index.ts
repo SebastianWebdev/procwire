@@ -12,7 +12,11 @@ export type {
 } from "./types.js";
 
 // Implementations
-export { RequestChannel, JsonRpcResponseAccessor, SimpleResponseAccessor } from "./request-channel.js";
+export {
+  RequestChannel,
+  JsonRpcResponseAccessor,
+  SimpleResponseAccessor,
+} from "./request-channel.js";
 export { ChannelBuilder } from "./builder.js";
 
 // Quick start helpers

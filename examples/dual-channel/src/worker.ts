@@ -91,7 +91,9 @@ async function setupDataChannel(): Promise<Channel> {
           }
           case "processMatrix": {
             const params = request.params as { matrix: number[][] };
-            console.error(`Worker: Processing ${params.matrix.length}x${params.matrix[0]?.length} matrix...`);
+            console.error(
+              `Worker: Processing ${params.matrix.length}x${params.matrix[0]?.length} matrix...`,
+            );
             let sum = 0;
             let count = 0;
             for (const row of params.matrix) {

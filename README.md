@@ -1,4 +1,4 @@
-# @procwire/* Monorepo
+# @procwire/\* Monorepo
 
 Modular, type-safe IPC (Inter-Process Communication) building blocks for Node.js with **zero runtime dependencies**.
 

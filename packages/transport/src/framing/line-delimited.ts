@@ -38,13 +38,23 @@ export class LineDelimitedFraming implements FramingCodec {
   private readonly delimiter: number;
   private readonly maxBufferSize: number;
   private readonly stripDelimiter: boolean;
-  private buffer: Buffer;
+  private buffers: Buffer[];
+  private totalLength: number;
 
   constructor(options: LineDelimitedFramingOptions = {}) {
+    // Validate options
+    if (options.delimiter !== undefined && (options.delimiter < 0 || options.delimiter > 255)) {
+      throw new Error("LineDelimitedFraming: delimiter must be a byte value (0-255)");
+    }
+    if (options.maxBufferSize !== undefined && options.maxBufferSize <= 0) {
+      throw new Error("LineDelimitedFraming: maxBufferSize must be positive");
+    }
+
     this.delimiter = options.delimiter ?? 0x0a; // '\n'
     this.maxBufferSize = options.maxBufferSize ?? 8 * 1024 * 1024; // 8MB
     this.stripDelimiter = options.stripDelimiter ?? true;
-    this.buffer = Buffer.allocUnsafe(0);
+    this.buffers = [];
+    this.totalLength = 0;
   }
 
   /**
@@ -69,43 +79,62 @@ export class LineDelimitedFraming implements FramingCodec {
    * Buffers partial data until delimiter is found.
    */
   decode(chunk: Buffer): Buffer[] {
-    // Append chunk to buffer
-    this.buffer = Buffer.concat([this.buffer, chunk]);
+    // Append chunk to buffer list
+    if (chunk.length > 0) {
+      this.buffers.push(chunk);
+      this.totalLength += chunk.length;
+    }
 
     // Check buffer size limit
-    if (this.buffer.length > this.maxBufferSize) {
+    if (this.totalLength > this.maxBufferSize) {
       const error = new FramingError(
-        `Buffer size ${this.buffer.length} exceeds maximum ${this.maxBufferSize}`,
+        `Buffer size ${this.totalLength} exceeds maximum ${this.maxBufferSize}`,
       );
       this.reset();
       throw error;
     }
 
     const frames: Buffer[] = [];
-    let searchStart = 0;
+    let frameStartBufferIndex = 0;
+    let frameStartOffset = 0;
+    let bufferIndex = 0;
+    let searchOffset = 0;
 
     // Find all complete frames (terminated by delimiter)
-    while (searchStart < this.buffer.length) {
-      const delimiterIndex = this.buffer.indexOf(this.delimiter, searchStart);
+    while (bufferIndex < this.buffers.length) {
+      const buffer = this.buffers[bufferIndex]!;
+      const delimiterIndex = buffer.indexOf(this.delimiter, searchOffset);
 
       if (delimiterIndex === -1) {
-        // No more delimiters found
-        break;
+        bufferIndex++;
+        searchOffset = 0;
+        continue;
       }
 
-      // Extract frame
-      const frameEnd = this.stripDelimiter ? delimiterIndex : delimiterIndex + 1;
-      const frame = this.buffer.subarray(searchStart, frameEnd);
-      frames.push(frame);
+      const frameEndOffset = this.stripDelimiter ? delimiterIndex : delimiterIndex + 1;
+      frames.push(
+        this.buildFrame(
+          frameStartBufferIndex,
+          frameStartOffset,
+          bufferIndex,
+          frameEndOffset,
+        ),
+      );
 
       // Move past delimiter
-      searchStart = delimiterIndex + 1;
+      if (delimiterIndex + 1 < buffer!.length) {
+        frameStartBufferIndex = bufferIndex;
+        frameStartOffset = delimiterIndex + 1;
+        searchOffset = frameStartOffset;
+      } else {
+        frameStartBufferIndex = bufferIndex + 1;
+        frameStartOffset = 0;
+        bufferIndex = frameStartBufferIndex;
+        searchOffset = 0;
+      }
     }
 
-    // Keep remaining data in buffer
-    if (searchStart > 0) {
-      this.buffer = this.buffer.subarray(searchStart);
-    }
+    this.compactBuffers(frameStartBufferIndex, frameStartOffset);
 
     return frames;
   }
@@ -114,20 +143,80 @@ export class LineDelimitedFraming implements FramingCodec {
    * Resets internal buffer state.
    */
   reset(): void {
-    this.buffer = Buffer.allocUnsafe(0);
+    this.buffers = [];
+    this.totalLength = 0;
   }
 
   /**
    * Returns true if there is buffered partial data.
    */
   hasBufferedData(): boolean {
-    return this.buffer.length > 0;
+    return this.totalLength > 0;
   }
 
   /**
    * Returns current buffer size in bytes.
    */
   getBufferSize(): number {
-    return this.buffer.length;
+    return this.totalLength;
+  }
+
+  private buildFrame(
+    startIndex: number,
+    startOffset: number,
+    endIndex: number,
+    endOffset: number,
+  ): Buffer {
+    if (startIndex === endIndex) {
+      return this.buffers[startIndex]!.subarray(startOffset, endOffset);
+    }
+
+    const parts: Buffer[] = [];
+    let totalLength = 0;
+
+    const first = this.buffers[startIndex]!.subarray(startOffset);
+    parts.push(first);
+    totalLength += first.length;
+
+    for (let i = startIndex + 1; i < endIndex; i++) {
+      const buffer = this.buffers[i]!;
+      parts.push(buffer);
+      totalLength += buffer.length;
+    }
+
+    const last = this.buffers[endIndex]!.subarray(0, endOffset);
+    parts.push(last);
+    totalLength += last.length;
+
+    return Buffer.concat(parts, totalLength);
+  }
+
+  private compactBuffers(startIndex: number, startOffset: number): void {
+    if (startIndex === 0 && startOffset === 0) {
+      return;
+    }
+
+    if (startIndex >= this.buffers.length) {
+      this.buffers = [];
+      this.totalLength = 0;
+      return;
+    }
+
+    const nextBuffers: Buffer[] = [];
+    let nextLength = 0;
+
+    for (let i = startIndex; i < this.buffers.length; i++) {
+      let buffer = this.buffers[i]!;
+      if (i === startIndex && startOffset > 0) {
+        buffer = buffer.subarray(startOffset);
+      }
+      if (buffer.length > 0) {
+        nextBuffers.push(buffer);
+        nextLength += buffer.length;
+      }
+    }
+
+    this.buffers = nextBuffers;
+    this.totalLength = nextLength;
   }
 }

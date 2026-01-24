@@ -347,7 +347,7 @@ export class MessagePackCodec<T = unknown> implements SerializationCodec<T> {
     } catch (error) {
       throw new SerializationError(
         `Failed to encode MessagePack: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }
@@ -409,14 +409,14 @@ export class MessagePackCodec<T = unknown> implements SerializationCodec<T> {
     if (buffer === null || buffer === undefined) {
       throw new SerializationError(
         `Invalid input: expected Buffer or Uint8Array, got ${buffer === null ? "null" : "undefined"}`,
-        new TypeError("Invalid input type")
+        new TypeError("Invalid input type"),
       );
     }
 
     if (typeof buffer !== "object") {
       throw new SerializationError(
         `Invalid input: expected Buffer or Uint8Array, got ${typeof buffer}`,
-        new TypeError("Invalid input type")
+        new TypeError("Invalid input type"),
       );
     }
 
@@ -425,7 +425,7 @@ export class MessagePackCodec<T = unknown> implements SerializationCodec<T> {
     if (!isBufferLike) {
       throw new SerializationError(
         `Invalid input: expected Buffer or Uint8Array, got ${typeof buffer}`,
-        new TypeError("Invalid input type")
+        new TypeError("Invalid input type"),
       );
     }
 
@@ -436,7 +436,7 @@ export class MessagePackCodec<T = unknown> implements SerializationCodec<T> {
     } catch (error) {
       throw new SerializationError(
         `Failed to decode MessagePack: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }

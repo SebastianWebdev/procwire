@@ -27,23 +27,23 @@ Note: `protobufjs` is a peer dependency and must be installed separately.
 ### Basic Usage
 
 ```ts
-import * as protobuf from 'protobufjs';
-import { ProtobufCodec } from '@procwire/codec-protobuf';
+import * as protobuf from "protobufjs";
+import { ProtobufCodec } from "@procwire/codec-protobuf";
 
 // Define your schema
 const root = protobuf.Root.fromJSON({
   nested: {
     User: {
       fields: {
-        id: { type: 'int32', id: 1 },
-        name: { type: 'string', id: 2 },
-        email: { type: 'string', id: 3, rule: 'optional' }
-      }
-    }
-  }
+        id: { type: "int32", id: 1 },
+        name: { type: "string", id: 2 },
+        email: { type: "string", id: 3, rule: "optional" },
+      },
+    },
+  },
 });
 
-const UserType = root.lookupType('User');
+const UserType = root.lookupType("User");
 
 // Create typed codec
 interface User {
@@ -55,7 +55,7 @@ interface User {
 const codec = new ProtobufCodec<User>(UserType);
 
 // Serialize
-const user = { id: 123, name: 'Alice' };
+const user = { id: 123, name: "Alice" };
 const buffer = codec.serialize(user);
 
 // Deserialize
@@ -66,26 +66,23 @@ console.log(decoded); // { id: 123, name: 'Alice' }
 ### Loading from .proto File
 
 ```ts
-import { createCodecFromProto } from '@procwire/codec-protobuf';
+import { createCodecFromProto } from "@procwire/codec-protobuf";
 
 interface User {
   id: number;
   name: string;
 }
 
-const codec = await createCodecFromProto<User>(
-  './schemas/user.proto',
-  'myapp.User'
-);
+const codec = await createCodecFromProto<User>("./schemas/user.proto", "myapp.User");
 
-const buffer = codec.serialize({ id: 1, name: 'Alice' });
+const buffer = codec.serialize({ id: 1, name: "Alice" });
 const user = codec.deserialize(buffer);
 ```
 
 ### From JSON Schema
 
 ```ts
-import { createCodecFromJSON } from '@procwire/codec-protobuf';
+import { createCodecFromJSON } from "@procwire/codec-protobuf";
 
 interface User {
   id: number;
@@ -97,13 +94,13 @@ const codec = createCodecFromJSON<User>(
     nested: {
       User: {
         fields: {
-          id: { type: 'int32', id: 1 },
-          name: { type: 'string', id: 2 }
-        }
-      }
-    }
+          id: { type: "int32", id: 1 },
+          name: { type: "string", id: 2 },
+        },
+      },
+    },
   },
-  'User'
+  "User",
 );
 ```
 
@@ -111,14 +108,14 @@ const codec = createCodecFromJSON<User>(
 
 ### ProtobufCodecOptions
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `longs` | `String \| Number` | `String` | How to convert int64/uint64 values |
-| `enums` | `String` | `undefined` | Convert enums to string names |
-| `bytes` | `String \| Array` | `undefined` | Convert bytes fields format |
-| `defaults` | `boolean` | `false` | Include default values in output |
-| `oneofs` | `boolean` | `false` | Include oneof field names |
-| `verifyOnSerialize` | `boolean` | `true` | Verify message before encoding |
+| Option              | Type               | Default     | Description                        |
+| ------------------- | ------------------ | ----------- | ---------------------------------- |
+| `longs`             | `String \| Number` | `String`    | How to convert int64/uint64 values |
+| `enums`             | `String`           | `undefined` | Convert enums to string names      |
+| `bytes`             | `String \| Array`  | `undefined` | Convert bytes fields format        |
+| `defaults`          | `boolean`          | `false`     | Include default values in output   |
+| `oneofs`            | `boolean`          | `false`     | Include oneof field names          |
+| `verifyOnSerialize` | `boolean`          | `true`      | Verify message before encoding     |
 
 ### Handling Large Integers (int64)
 
@@ -126,7 +123,7 @@ Protocol Buffers int64/uint64 can exceed JavaScript's `Number.MAX_SAFE_INTEGER`.
 
 ```ts
 const codec = new ProtobufCodec<{ timestamp: string }>(TimestampType, {
-  longs: String  // Default - safe for large values
+  longs: String, // Default - safe for large values
 });
 
 const output = codec.deserialize(buffer);
@@ -138,7 +135,7 @@ For small values where precision isn't a concern:
 
 ```ts
 const codec = new ProtobufCodec<{ timestamp: number }>(TimestampType, {
-  longs: Number  // May lose precision for large values
+  longs: Number, // May lose precision for large values
 });
 ```
 
@@ -146,7 +143,7 @@ const codec = new ProtobufCodec<{ timestamp: number }>(TimestampType, {
 
 ```ts
 const codec = new ProtobufCodec<{ status: string }>(MessageType, {
-  enums: String  // Convert enum values to their names
+  enums: String, // Convert enum values to their names
 });
 
 // With enums: String
@@ -164,12 +161,12 @@ const codec1 = new ProtobufCodec<{ data: Uint8Array }>(MessageType);
 
 // Base64 string
 const codec2 = new ProtobufCodec<{ data: string }>(MessageType, {
-  bytes: String
+  bytes: String,
 });
 
 // Number array
 const codec3 = new ProtobufCodec<{ data: number[] }>(MessageType, {
-  bytes: Array
+  bytes: Array,
 });
 ```
 
@@ -225,8 +222,8 @@ Creates a codec by loading a .proto file.
 async function createCodecFromProto<T>(
   protoPath: string,
   messageName: string,
-  options?: ProtobufCodecOptions
-): Promise<ProtobufCodec<T>>
+  options?: ProtobufCodecOptions,
+): Promise<ProtobufCodec<T>>;
 ```
 
 ### createCodecFromJSON<T>()
@@ -237,8 +234,8 @@ Creates a codec from an inline JSON schema.
 function createCodecFromJSON<T>(
   schema: INamespace,
   messageName: string,
-  options?: ProtobufCodecOptions
-): ProtobufCodec<T>
+  options?: ProtobufCodecOptions,
+): ProtobufCodec<T>;
 ```
 
 ## Advanced Usage
@@ -250,17 +247,17 @@ const root = protobuf.Root.fromJSON({
   nested: {
     Address: {
       fields: {
-        street: { type: 'string', id: 1 },
-        city: { type: 'string', id: 2 }
-      }
+        street: { type: "string", id: 1 },
+        city: { type: "string", id: 2 },
+      },
     },
     Person: {
       fields: {
-        name: { type: 'string', id: 1 },
-        address: { type: 'Address', id: 2 }
-      }
-    }
-  }
+        name: { type: "string", id: 1 },
+        address: { type: "Address", id: 2 },
+      },
+    },
+  },
 });
 
 interface Address {
@@ -273,7 +270,7 @@ interface Person {
   address: Address;
 }
 
-const codec = new ProtobufCodec<Person>(root.lookupType('Person'));
+const codec = new ProtobufCodec<Person>(root.lookupType("Person"));
 ```
 
 ### Repeated Fields
@@ -283,11 +280,11 @@ const root = protobuf.Root.fromJSON({
   nested: {
     Message: {
       fields: {
-        id: { type: 'int32', id: 1 },
-        tags: { type: 'string', id: 2, rule: 'repeated' }
-      }
-    }
-  }
+        id: { type: "int32", id: 1 },
+        tags: { type: "string", id: 2, rule: "repeated" },
+      },
+    },
+  },
 });
 
 interface Message {
@@ -295,7 +292,7 @@ interface Message {
   tags: string[];
 }
 
-const codec = new ProtobufCodec<Message>(root.lookupType('Message'));
+const codec = new ProtobufCodec<Message>(root.lookupType("Message"));
 ```
 
 ### Oneof Fields
@@ -305,24 +302,24 @@ const root = protobuf.Root.fromJSON({
   nested: {
     Message: {
       oneofs: {
-        value: { oneof: ['stringValue', 'intValue'] }
+        value: { oneof: ["stringValue", "intValue"] },
       },
       fields: {
-        stringValue: { type: 'string', id: 1 },
-        intValue: { type: 'int32', id: 2 }
-      }
-    }
-  }
+        stringValue: { type: "string", id: 1 },
+        intValue: { type: "int32", id: 2 },
+      },
+    },
+  },
 });
 
 interface Message {
   stringValue?: string;
   intValue?: number;
-  value?: 'stringValue' | 'intValue';  // When oneofs: true
+  value?: "stringValue" | "intValue"; // When oneofs: true
 }
 
-const codec = new ProtobufCodec<Message>(root.lookupType('Message'), {
-  oneofs: true  // Include virtual oneof field
+const codec = new ProtobufCodec<Message>(root.lookupType("Message"), {
+  oneofs: true, // Include virtual oneof field
 });
 ```
 
@@ -333,17 +330,17 @@ const root = protobuf.Root.fromJSON({
   nested: {
     Message: {
       fields: {
-        metadata: { keyType: 'string', type: 'string', id: 1 }
-      }
-    }
-  }
+        metadata: { keyType: "string", type: "string", id: 1 },
+      },
+    },
+  },
 });
 
 interface Message {
   metadata: Record<string, string>;
 }
 
-const codec = new ProtobufCodec<Message>(root.lookupType('Message'));
+const codec = new ProtobufCodec<Message>(root.lookupType("Message"));
 ```
 
 ### Schema Evolution
@@ -373,9 +370,9 @@ For maximum performance in trusted environments:
 
 ```ts
 const fastCodec = new ProtobufCodec<TrustedData>(MessageType, {
-  verifyOnSerialize: false,  // Skip verification
-  defaults: false,           // Don't include defaults
-  oneofs: false              // Don't include oneof names
+  verifyOnSerialize: false, // Skip verification
+  defaults: false, // Don't include defaults
+  oneofs: false, // Don't include oneof names
 });
 ```
 
@@ -383,10 +380,10 @@ For maximum compatibility:
 
 ```ts
 const safeCodec = new ProtobufCodec<AnyData>(MessageType, {
-  verifyOnSerialize: true,   // Verify before encoding
-  defaults: true,            // Include all fields
-  longs: String,             // Safe large integer handling
-  enums: String              // Human-readable enums
+  verifyOnSerialize: true, // Verify before encoding
+  defaults: true, // Include all fields
+  longs: String, // Safe large integer handling
+  enums: String, // Human-readable enums
 });
 ```
 
@@ -395,19 +392,20 @@ const safeCodec = new ProtobufCodec<AnyData>(MessageType, {
 The codec throws `SerializationError` from `@procwire/transport` for all serialization failures:
 
 ```ts
-import { SerializationError } from '@procwire/transport';
+import { SerializationError } from "@procwire/transport";
 
 try {
   const decoded = codec.deserialize(invalidBuffer);
 } catch (error) {
   if (error instanceof SerializationError) {
-    console.error('Serialization failed:', error.message);
-    console.error('Original error:', error.cause);
+    console.error("Serialization failed:", error.message);
+    console.error("Original error:", error.cause);
   }
 }
 ```
 
 Common error scenarios:
+
 - Invalid input type (not Buffer/Uint8Array)
 - Truncated or corrupted buffer
 - Schema verification failure (when `verifyOnSerialize: true`)
@@ -416,32 +414,41 @@ Common error scenarios:
 ## Type Safety Tips
 
 1. **Define interfaces matching your schema**:
+
 ```ts
 interface User {
   id: number;
   name: string;
-  timestamp: string;  // Use string for int64 with longs: String
+  timestamp: string; // Use string for int64 with longs: String
 }
 
 const codec = new ProtobufCodec<User>(UserType, { longs: String });
 ```
 
 2. **Match TypeScript types to options**:
+
 ```ts
 // With bytes: String
-interface Message { data: string; }  // Base64
+interface Message {
+  data: string;
+} // Base64
 
 // With bytes: Array
-interface Message { data: number[]; }
+interface Message {
+  data: number[];
+}
 
 // Default
-interface Message { data: Uint8Array; }
+interface Message {
+  data: Uint8Array;
+}
 ```
 
 3. **Use the `type` getter for reflection**:
+
 ```ts
 const codec = new ProtobufCodec<User>(UserType);
-const fields = codec.type.fields;  // Access schema info
+const fields = codec.type.fields; // Access schema info
 ```
 
 ## Performance
@@ -454,6 +461,7 @@ Protocol Buffers provides excellent performance characteristics:
 - **Schema Evolution**: Forward and backward compatible
 
 Ideal for:
+
 - High-performance microservices communication
 - Large data transfers
 - Long-term data storage

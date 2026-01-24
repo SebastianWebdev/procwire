@@ -50,15 +50,11 @@ describe("createCodecFromProto", () => {
   });
 
   it("throws on file not found", async () => {
-    await expect(
-      createCodecFromProto("./nonexistent.proto", "Message"),
-    ).rejects.toThrow();
+    await expect(createCodecFromProto("./nonexistent.proto", "Message")).rejects.toThrow();
   });
 
   it("throws on invalid message name", async () => {
-    await expect(
-      createCodecFromProto(testProtoPath, "testpkg.NonExistent"),
-    ).rejects.toThrow();
+    await expect(createCodecFromProto(testProtoPath, "testpkg.NonExistent")).rejects.toThrow();
   });
 
   it("handles package names correctly", async () => {

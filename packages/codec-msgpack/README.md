@@ -128,7 +128,7 @@ Factory function that creates a codec with built-in extension support.
 
 ```ts
 function createExtendedCodec<T = unknown>(
-  options?: Omit<MessagePackCodecOptions, "extensionCodec">
+  options?: Omit<MessagePackCodecOptions, "extensionCodec">,
 ): MessagePackCodec<T>;
 ```
 
@@ -151,32 +151,32 @@ Extension type IDs used:
 
 ### Default Behavior (without extensions)
 
-| Type         | Encoded As             | Notes                                |
-| ------------ | ---------------------- | ------------------------------------ |
-| `null`       | nil                    |                                      |
-| `boolean`    | bool                   |                                      |
-| `number`     | int/float              | Based on value                       |
-| `string`     | str                    | UTF-8 encoded                        |
-| `Uint8Array` | bin                    | Preserved as binary                  |
-| `Buffer`     | bin                    | Preserved as binary                  |
-| `Array`      | array                  |                                      |
-| `Object`     | map                    |                                      |
-| `undefined`  | nil                    | Converted to null                    |
-| `Infinity`   | float                  | Preserved as Infinity                |
-| `NaN`        | float                  | Preserved as NaN                     |
-| `Date`       | str (ISO)              | Loses type information               |
+| Type         | Encoded As             | Notes                                 |
+| ------------ | ---------------------- | ------------------------------------- |
+| `null`       | nil                    |                                       |
+| `boolean`    | bool                   |                                       |
+| `number`     | int/float              | Based on value                        |
+| `string`     | str                    | UTF-8 encoded                         |
+| `Uint8Array` | bin                    | Preserved as binary                   |
+| `Buffer`     | bin                    | Preserved as binary                   |
+| `Array`      | array                  |                                       |
+| `Object`     | map                    |                                       |
+| `undefined`  | nil                    | Converted to null                     |
+| `Infinity`   | float                  | Preserved as Infinity                 |
+| `NaN`        | float                  | Preserved as NaN                      |
+| `Date`       | str (ISO)              | Loses type information                |
 | `Map`        | map (empty or partial) | May lose entries with non-string keys |
-| `Set`        | array                  | Loses type information               |
-| `BigInt`     | **ERROR**              | Cannot serialize                     |
+| `Set`        | array                  | Loses type information                |
+| `BigInt`     | **ERROR**              | Cannot serialize                      |
 
 ### With Extension Codec (`createExtendedCodec`)
 
-| Type     | Behavior                          |
-| -------- | --------------------------------- |
+| Type     | Behavior                             |
+| -------- | ------------------------------------ |
 | `Date`   | Preserved with millisecond precision |
-| `Map`    | Preserved with any key types      |
-| `Set`    | Preserved as Set                  |
-| `BigInt` | Preserved with full precision     |
+| `Map`    | Preserved with any key types         |
+| `Set`    | Preserved as Set                     |
+| `BigInt` | Preserved with full precision        |
 
 ## Advanced Usage
 

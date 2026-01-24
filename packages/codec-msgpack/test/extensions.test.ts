@@ -318,7 +318,9 @@ describe("createCommonExtensionCodec", () => {
       expect(result.level1.level2.date).toBeInstanceOf(Date);
       expect(result.level1.level2.map).toBeInstanceOf(Map);
 
-      const nestedValue = result.level1.level2.map.get("nested") as { set: Set<bigint> } | undefined;
+      const nestedValue = result.level1.level2.map.get("nested") as
+        | { set: Set<bigint> }
+        | undefined;
       expect(nestedValue).toBeDefined();
       expect(nestedValue!.set).toBeInstanceOf(Set);
       const setValues = Array.from(nestedValue!.set);

@@ -1,8 +1,10 @@
 import * as net from "node:net";
 import { EventEmitter } from "../utils/events.js";
 import { TransportError } from "../utils/errors.js";
+import { transitionState } from "../utils/assert.js";
 import type { Transport, TransportState, TransportEvents } from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Socket transport options (Named Pipes on Windows, Unix Domain Sockets on Unix).
@@ -38,6 +40,11 @@ export interface SocketTransportOptions {
    * @default 30000
    */
   maxReconnectDelay?: number;
+
+  /**
+   * Optional metrics collector for transport events.
+   */
+  metrics?: MetricsCollector;
 }
 
 /**
@@ -53,9 +60,18 @@ export interface SocketTransportOptions {
  * transport.onData(data => console.log('received:', data));
  * ```
  */
+interface InternalSocketTransportOptions {
+  path: string;
+  connectionTimeout: number;
+  autoReconnect: boolean;
+  reconnectDelay: number;
+  maxReconnectDelay: number;
+  metrics: MetricsCollector | undefined;
+}
+
 export class SocketTransport implements Transport {
   private readonly emitter = new EventEmitter<TransportEvents>();
-  private readonly options: Required<SocketTransportOptions>;
+  private readonly options: InternalSocketTransportOptions;
   private socket: net.Socket | null = null;
   private _state: TransportState = "disconnected";
   private connectTimer: NodeJS.Timeout | null = null;
@@ -64,17 +80,51 @@ export class SocketTransport implements Transport {
   private manualDisconnect = false;
 
   constructor(options: SocketTransportOptions) {
+    // Validate required options
+    if (!options.path || options.path.trim() === "") {
+      throw new Error("SocketTransport: path is required and cannot be empty");
+    }
+
+    // Validate optional numeric options
+    if (options.connectionTimeout !== undefined && options.connectionTimeout <= 0) {
+      throw new Error("SocketTransport: connectionTimeout must be positive");
+    }
+    if (options.reconnectDelay !== undefined && options.reconnectDelay < 0) {
+      throw new Error("SocketTransport: reconnectDelay cannot be negative");
+    }
+    if (options.maxReconnectDelay !== undefined && options.maxReconnectDelay < 0) {
+      throw new Error("SocketTransport: maxReconnectDelay cannot be negative");
+    }
+    if (
+      options.reconnectDelay !== undefined &&
+      options.maxReconnectDelay !== undefined &&
+      options.reconnectDelay > options.maxReconnectDelay
+    ) {
+      throw new Error(
+        "SocketTransport: reconnectDelay cannot be greater than maxReconnectDelay",
+      );
+    }
+
     this.options = {
       path: options.path,
       connectionTimeout: options.connectionTimeout ?? 5000,
       autoReconnect: options.autoReconnect ?? false,
       reconnectDelay: options.reconnectDelay ?? 1000,
       maxReconnectDelay: options.maxReconnectDelay ?? 30000,
+      metrics: options.metrics,
     };
   }
 
   get state(): TransportState {
     return this._state;
+  }
+
+  /**
+   * Transitions to a new state with validation.
+   * Throws TransportError if the transition is invalid.
+   */
+  private setState(newState: TransportState): void {
+    this._state = transitionState(this._state, newState);
   }
 
   async connect(): Promise<void> {
@@ -87,7 +137,7 @@ export class SocketTransport implements Transport {
     }
 
     this.manualDisconnect = false;
-    this._state = "connecting";
+    this.setState("connecting");
 
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({ path: this.options.path });
@@ -96,10 +146,11 @@ export class SocketTransport implements Transport {
       // Connection timeout
       this.connectTimer = setTimeout(() => {
         socket.destroy();
-        this._state = "error";
+        this.setState("error");
         const error = new TransportError(
           `Connection timeout after ${this.options.connectionTimeout}ms`,
         );
+        this.recordError(error);
         this.emitter.emit("error", error);
         reject(error);
       }, this.options.connectionTimeout);
@@ -110,8 +161,9 @@ export class SocketTransport implements Transport {
           this.connectTimer = null;
         }
 
-        this._state = "connected";
+        this.setState("connected");
         this.reconnectAttempts = 0;
+        this.options.metrics?.incrementCounter("transport.connect", 1, { transport: "socket" });
         this.setupSocketListeners(socket);
         this.emitter.emit("connect", undefined);
         resolve();
@@ -123,8 +175,9 @@ export class SocketTransport implements Transport {
           this.connectTimer = null;
         }
 
-        this._state = "error";
+        this.setState("error");
         const error = new TransportError(`Connection failed: ${err.message}`, err);
+        this.recordError(error);
         this.emitter.emit("error", error);
         reject(error);
 
@@ -184,22 +237,21 @@ export class SocketTransport implements Transport {
     return new Promise((resolve, reject) => {
       const socket = this.socket!;
 
-      const canContinue = socket.write(data, (err) => {
+      // The callback is invoked when data has been written to the kernel buffer.
+      // This provides implicit backpressure handling - callers using await will
+      // naturally wait for each write to complete before sending more data.
+      // If the kernel buffer is full, the callback will be delayed until space
+      // is available (after 'drain' event internally).
+      socket.write(data, (err) => {
         if (err) {
           const error = new TransportError(`Write failed: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         } else {
           resolve();
         }
       });
-
-      // Handle backpressure
-      if (!canContinue) {
-        socket.once("drain", () => {
-          // Buffer drained, can continue writing
-        });
-      }
     });
   }
 
@@ -229,8 +281,9 @@ export class SocketTransport implements Transport {
     });
 
     socket.on("error", (err) => {
-      this._state = "error";
+      this.setState("error");
       const error = new TransportError(`Socket error: ${err.message}`, err);
+      this.recordError(error);
       this.emitter.emit("error", error);
     });
   }
@@ -249,6 +302,13 @@ export class SocketTransport implements Transport {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.reconnectAttempts++;
+
+      // Transition to disconnected before reconnecting to ensure valid state transition.
+      // From error state, we can only go to disconnected, and from disconnected we can connect.
+      if (this._state === "error") {
+        this._state = "disconnected";
+      }
+
       this.connect().catch(() => {
         // Error already emitted, will schedule next attempt
       });
@@ -265,8 +325,16 @@ export class SocketTransport implements Transport {
     }
 
     if (this._state !== "disconnected") {
-      this._state = "disconnected";
+      this.setState("disconnected");
+      this.options.metrics?.incrementCounter("transport.disconnect", 1, { transport: "socket" });
       this.emitter.emit("disconnect", undefined);
     }
+  }
+
+  private recordError(error: Error): void {
+    this.options.metrics?.incrementCounter("transport.error", 1, {
+      transport: "socket",
+      type: error.name,
+    });
   }
 }

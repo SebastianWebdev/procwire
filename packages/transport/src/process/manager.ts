@@ -37,27 +37,104 @@ interface ManagedProcess {
   restartPolicy: RestartPolicy;
 }
 
+interface InternalRestartPolicy {
+  enabled: boolean;
+  maxRestarts: number;
+  backoffMs: number;
+  maxBackoffMs: number;
+}
+
+interface InternalProcessManagerConfig {
+  defaultTimeout: number;
+  restartPolicy: InternalRestartPolicy;
+  namespace: string;
+  gracefulShutdownMs: number;
+  metrics: ProcessManagerConfig["metrics"];
+  handleSignals: boolean;
+}
+
 /**
  * Process manager implementation.
  * Manages the lifecycle of multiple child processes with restart capability.
  */
 export class ProcessManager implements IProcessManager {
-  private readonly config: Required<ProcessManagerConfig>;
+  private readonly config: InternalProcessManagerConfig;
   private readonly processes = new Map<string, ManagedProcess>();
   private readonly events = new EventEmitter<ProcessManagerEvents>();
+  private signalHandler: (() => Promise<void>) | null = null;
 
   constructor(config: ProcessManagerConfig = {}) {
+    // Validate options
+    if (config.defaultTimeout !== undefined && config.defaultTimeout <= 0) {
+      throw new Error("ProcessManager: defaultTimeout must be positive");
+    }
+    if (config.gracefulShutdownMs !== undefined && config.gracefulShutdownMs <= 0) {
+      throw new Error("ProcessManager: gracefulShutdownMs must be positive");
+    }
+    if (config.restartPolicy !== undefined) {
+      if (config.restartPolicy.maxRestarts !== undefined && config.restartPolicy.maxRestarts < 0) {
+        throw new Error("ProcessManager: restartPolicy.maxRestarts cannot be negative");
+      }
+      if (config.restartPolicy.backoffMs !== undefined && config.restartPolicy.backoffMs < 0) {
+        throw new Error("ProcessManager: restartPolicy.backoffMs cannot be negative");
+      }
+      if (config.restartPolicy.maxBackoffMs !== undefined && config.restartPolicy.maxBackoffMs < 0) {
+        throw new Error("ProcessManager: restartPolicy.maxBackoffMs cannot be negative");
+      }
+    }
+
+    const defaultRestartPolicy: InternalRestartPolicy = {
+      enabled: false,
+      maxRestarts: 3,
+      backoffMs: 1000,
+      maxBackoffMs: 30000,
+    };
+
     this.config = {
       defaultTimeout: config.defaultTimeout ?? 30000,
-      restartPolicy: config.restartPolicy ?? {
-        enabled: false,
-        maxRestarts: 3,
-        backoffMs: 1000,
-        maxBackoffMs: 30000,
-      },
+      restartPolicy: config.restartPolicy
+        ? {
+            enabled: config.restartPolicy.enabled ?? defaultRestartPolicy.enabled,
+            maxRestarts: config.restartPolicy.maxRestarts ?? defaultRestartPolicy.maxRestarts,
+            backoffMs: config.restartPolicy.backoffMs ?? defaultRestartPolicy.backoffMs,
+            maxBackoffMs: config.restartPolicy.maxBackoffMs ?? defaultRestartPolicy.maxBackoffMs,
+          }
+        : defaultRestartPolicy,
       namespace: config.namespace ?? "procwire",
       gracefulShutdownMs: config.gracefulShutdownMs ?? 5000,
+      metrics: config.metrics,
+      handleSignals: config.handleSignals ?? false,
     };
+
+    if (this.config.handleSignals) {
+      this.setupSignalHandlers();
+    }
+  }
+
+  /**
+   * Sets up signal handlers for graceful shutdown.
+   * Called automatically if handleSignals is enabled.
+   */
+  private setupSignalHandlers(): void {
+    this.signalHandler = async () => {
+      await this.terminateAll();
+      process.exit(0);
+    };
+
+    process.on("SIGTERM", this.signalHandler);
+    process.on("SIGINT", this.signalHandler);
+  }
+
+  /**
+   * Removes signal handlers.
+   * Useful for cleanup in tests or when you want to handle signals differently.
+   */
+  removeSignalHandlers(): void {
+    if (this.signalHandler) {
+      process.off("SIGTERM", this.signalHandler);
+      process.off("SIGINT", this.signalHandler);
+      this.signalHandler = null;
+    }
   }
 
   /**
@@ -70,21 +147,7 @@ export class ProcessManager implements IProcessManager {
 
     const restartPolicy = options.restartPolicy ?? this.config.restartPolicy;
 
-    // Create stdio transport
-    const transportOptions: StdioTransportOptions = {
-      executablePath: options.executablePath,
-      startupTimeout: options.startupTimeout ?? 10000,
-    };
-    if (options.args !== undefined) {
-      transportOptions.args = options.args;
-    }
-    if (options.cwd !== undefined) {
-      transportOptions.cwd = options.cwd;
-    }
-    if (options.env !== undefined) {
-      transportOptions.env = options.env;
-    }
-    const transport = new StdioTransport(transportOptions);
+    const transport = this.createTransport(options);
 
     // Build control channel (stdio-based)
     const controlChannel = await this.buildControlChannel(transport, options.controlChannel);
@@ -92,8 +155,7 @@ export class ProcessManager implements IProcessManager {
     // Build data channel if enabled
     let dataChannel: Channel | null = null;
     if (options.dataChannel?.enabled) {
-      const dataPath =
-        options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
+      const dataPath = options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
       dataChannel = await this.buildDataChannel(dataPath, options.dataChannel.channel);
     }
 
@@ -112,34 +174,11 @@ export class ProcessManager implements IProcessManager {
 
     this.processes.set(id, managed);
 
-    // Setup process lifecycle listeners
-    transport.on("exit", ({ code, signal }) => {
-      this.handleProcessExit(id, code, signal);
-    });
-
-    transport.on("error", (error) => {
-      this.events.emit("error", { id, error });
-      handle.emitError(error);
-    });
+    this.setupProcessListeners(id, transport, handle);
 
     // Start transport and channels
     try {
-      // IMPORTANT: Start control channel BEFORE connecting transport
-      // This ensures the channel subscribes to transport events before
-      // the child process starts sending data
-      await controlChannel.start();
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pid = (transport as any).process?.pid ?? null;
-      handle.setPid(pid);
-
-      if (dataChannel) {
-        await dataChannel.start();
-      }
-
-      handle.setState("running");
-      this.events.emit("spawn", { id, pid: pid ?? 0 });
-      this.events.emit("ready", { id });
+      await this.startManagedProcess(id, handle, transport, dataChannel);
     } catch (error) {
       // Cleanup on failure
       this.processes.delete(id);
@@ -170,13 +209,27 @@ export class ProcessManager implements IProcessManager {
 
   /**
    * Terminates all managed processes.
+   * Uses Promise.allSettled to ensure all processes are attempted to be terminated
+   * even if some fail. Emits error events for failed terminations.
    */
   async terminateAll(): Promise<void> {
-    const promises: Promise<void>[] = [];
+    const entries: Array<{ id: string; promise: Promise<void> }> = [];
     for (const id of this.processes.keys()) {
-      promises.push(this.terminate(id));
+      entries.push({ id, promise: this.terminate(id) });
     }
-    await Promise.all(promises);
+
+    const results = await Promise.allSettled(entries.map((e) => e.promise));
+
+    // Emit error events for any failed terminations
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const entry = entries[i];
+      if (result !== undefined && result.status === "rejected" && entry !== undefined) {
+        const error =
+          result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+        this.events.emit("error", { id: entry.id, error });
+      }
+    }
   }
 
   /**
@@ -260,9 +313,7 @@ export class ProcessManager implements IProcessManager {
         managed.handle.setState("stopped");
       } else {
         managed.handle.setState("crashed");
-        const error = new Error(
-          `Process exited with code ${code} and signal ${signal}`,
-        );
+        const error = new Error(`Process exited with code ${code} and signal ${signal}`);
         this.events.emit("crash", { id, error });
       }
 
@@ -284,21 +335,7 @@ export class ProcessManager implements IProcessManager {
     // Cleanup old resources
     await this.cleanupProcess(managed);
 
-    // Create new transport
-    const transportOptions: StdioTransportOptions = {
-      executablePath: managed.options.executablePath,
-      startupTimeout: managed.options.startupTimeout ?? 10000,
-    };
-    if (managed.options.args !== undefined) {
-      transportOptions.args = managed.options.args;
-    }
-    if (managed.options.cwd !== undefined) {
-      transportOptions.cwd = managed.options.cwd;
-    }
-    if (managed.options.env !== undefined) {
-      transportOptions.env = managed.options.env;
-    }
-    const transport = new StdioTransport(transportOptions);
+    const transport = this.createTransport(managed.options);
 
     // Build new control channel
     const controlChannel = await this.buildControlChannel(
@@ -311,10 +348,7 @@ export class ProcessManager implements IProcessManager {
     if (managed.options.dataChannel?.enabled) {
       const dataPath =
         managed.options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
-      dataChannel = await this.buildDataChannel(
-        dataPath,
-        managed.options.dataChannel.channel,
-      );
+      dataChannel = await this.buildDataChannel(dataPath, managed.options.dataChannel.channel);
     }
 
     // Update handle
@@ -323,32 +357,8 @@ export class ProcessManager implements IProcessManager {
     managed.handle = newHandle;
     managed.transport = transport;
 
-    // Setup listeners
-    transport.on("exit", ({ code, signal }) => {
-      this.handleProcessExit(id, code, signal);
-    });
-
-    transport.on("error", (error) => {
-      this.events.emit("error", { id, error });
-      newHandle.emitError(error);
-    });
-
-    // Start control channel BEFORE connecting transport (same as spawn())
-    // This ensures the channel subscribes to transport events before
-    // the child process starts sending data
-    await controlChannel.start();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pid = (transport as any).process?.pid ?? null;
-    newHandle.setPid(pid);
-
-    if (dataChannel) {
-      await dataChannel.start();
-    }
-
-    newHandle.setState("running");
-    this.events.emit("spawn", { id, pid: pid ?? 0 });
-    this.events.emit("ready", { id });
+    this.setupProcessListeners(id, transport, newHandle);
+    await this.startManagedProcess(id, newHandle, transport, dataChannel);
 
     // Close old handle
     await oldHandle.close().catch(() => {});
@@ -372,6 +382,64 @@ export class ProcessManager implements IProcessManager {
         childProcess.kill("SIGKILL");
       }
     }
+  }
+
+  private createTransport(options: SpawnOptions): StdioTransport {
+    const transportOptions: StdioTransportOptions = {
+      executablePath: options.executablePath,
+      startupTimeout: options.startupTimeout ?? 10000,
+    };
+    if (this.config.metrics !== undefined) {
+      transportOptions.metrics = this.config.metrics;
+    }
+    if (options.args !== undefined) {
+      transportOptions.args = options.args;
+    }
+    if (options.cwd !== undefined) {
+      transportOptions.cwd = options.cwd;
+    }
+    if (options.env !== undefined) {
+      transportOptions.env = options.env;
+    }
+    return new StdioTransport(transportOptions);
+  }
+
+  private setupProcessListeners(
+    id: string,
+    transport: StdioTransport,
+    handle: ProcessHandle,
+  ): void {
+    transport.on("exit", ({ code, signal }) => {
+      this.handleProcessExit(id, code, signal);
+    });
+
+    transport.on("error", (error) => {
+      this.events.emit("error", { id, error });
+      handle.emitError(error);
+    });
+  }
+
+  private async startManagedProcess(
+    id: string,
+    handle: ProcessHandle,
+    transport: StdioTransport,
+    dataChannel: Channel | null,
+  ): Promise<void> {
+    // IMPORTANT: Start control channel BEFORE connecting transport
+    // This ensures the channel subscribes to transport events before
+    // the child process starts sending data
+    await handle.controlChannel.start();
+
+    const pid = transport.pid;
+    handle.setPid(pid);
+
+    if (dataChannel) {
+      await dataChannel.start();
+    }
+
+    handle.setState("running");
+    this.events.emit("spawn", { id, pid: pid ?? 0 });
+    this.events.emit("ready", { id });
   }
 
   /**
@@ -411,6 +479,10 @@ export class ProcessManager implements IProcessManager {
       // notifications immediately after spawn (e.g., runtime.ready)
       .withBufferEarlyNotifications(10);
 
+    if (this.config.metrics !== undefined) {
+      builder.withMetrics(this.config.metrics);
+    }
+
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);
     } else {
@@ -429,7 +501,10 @@ export class ProcessManager implements IProcessManager {
    * Builds data channel from pipe transport.
    */
   private async buildDataChannel(path: string, config?: ChannelConfig): Promise<Channel> {
-    const transport = new SocketTransport({ path });
+    const transport =
+      this.config.metrics !== undefined
+        ? new SocketTransport({ path, metrics: this.config.metrics })
+        : new SocketTransport({ path });
 
     const framing =
       config?.framing === "line-delimited"
@@ -460,6 +535,10 @@ export class ProcessManager implements IProcessManager {
       // Enable early notification buffering for child processes that send
       // notifications immediately after spawn (e.g., runtime.ready)
       .withBufferEarlyNotifications(10);
+
+    if (this.config.metrics !== undefined) {
+      builder.withMetrics(this.config.metrics);
+    }
 
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);

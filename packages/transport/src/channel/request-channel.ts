@@ -15,6 +15,9 @@ import type { Unsubscribe } from "../utils/disposables.js";
 import { EventEmitter } from "../utils/events.js";
 import { ProtocolError, toError, SerializationError } from "../utils/errors.js";
 import { createTimeoutSignal } from "../utils/time.js";
+import type { MetricsCollector } from "../utils/metrics.js";
+
+type TimeoutSignal = ReturnType<typeof createTimeoutSignal>;
 
 /**
  * Pending request state.
@@ -22,7 +25,47 @@ import { createTimeoutSignal } from "../utils/time.js";
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timeoutSignal: { cancel: () => void };
+  timeoutSignal: TimeoutSignal | null;
+  startTime: number;
+  method: string;
+}
+
+const noop = () => {};
+
+function createPendingRequest(): PendingRequest {
+  return {
+    resolve: noop,
+    reject: noop,
+    timeoutSignal: null,
+    startTime: 0,
+    method: "",
+  };
+}
+
+class PendingRequestPool {
+  private readonly pool: PendingRequest[] = [];
+  private readonly maxSize: number;
+
+  constructor(maxSize: number = 100) {
+    this.maxSize = maxSize;
+  }
+
+  acquire(): PendingRequest {
+    return this.pool.pop() ?? createPendingRequest();
+  }
+
+  release(pending: PendingRequest): void {
+    pending.timeoutSignal?.cancel();
+    pending.resolve = noop;
+    pending.reject = noop;
+    pending.timeoutSignal = null;
+    pending.startTime = 0;
+    pending.method = "";
+
+    if (this.pool.length < this.maxSize) {
+      this.pool.push(pending);
+    }
+  }
 }
 
 /**
@@ -106,9 +149,11 @@ export class SimpleResponseAccessor implements ResponseAccessor {
  * @template TRes - Response message type (wire format)
  * @template TNotif - Notification message type (wire format)
  */
-export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
-  implements Channel<TReq, TRes, TNotif>
-{
+export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> implements Channel<
+  TReq,
+  TRes,
+  TNotif
+> {
   private readonly transport: Transport;
   private readonly framing: FramingCodec;
   private readonly serialization: SerializationCodec;
@@ -118,6 +163,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   private readonly middleware: ChannelMiddleware[];
   private readonly maxInboundFrames: number | undefined;
   private readonly bufferEarlyNotifications: number;
+  private readonly metrics: MetricsCollector | undefined;
+  private readonly pendingPool: PendingRequestPool | null;
+  private readonly onMiddlewareError: ((hook: string, error: Error) => void) | undefined;
 
   private readonly events = new EventEmitter<ChannelEvents>();
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();
@@ -128,17 +176,36 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   private transportDataUnsubscribe: Unsubscribe | undefined;
   private transportErrorUnsubscribe: Unsubscribe | undefined;
   private _isConnected = false;
-  private inboundFrameCount = 0;
 
   constructor(options: ChannelOptions<TReq, TRes, TNotif>) {
+    // Validate options
+    if (options.timeout !== undefined && options.timeout <= 0) {
+      throw new Error("RequestChannel: timeout must be positive");
+    }
+    if (options.maxInboundFrames !== undefined && options.maxInboundFrames < 0) {
+      throw new Error("RequestChannel: maxInboundFrames cannot be negative");
+    }
+    if (options.bufferEarlyNotifications !== undefined && options.bufferEarlyNotifications < 0) {
+      throw new Error("RequestChannel: bufferEarlyNotifications cannot be negative");
+    }
+    if (options.pendingRequestPoolSize !== undefined && options.pendingRequestPoolSize < 0) {
+      throw new Error("RequestChannel: pendingRequestPoolSize cannot be negative");
+    }
+
     this.transport = options.transport;
     this.framing = options.framing;
     this.serialization = options.serialization;
     this.protocol = options.protocol;
     this.defaultTimeout = options.timeout !== undefined ? options.timeout : 30000;
     this.middleware = options.middleware !== undefined ? options.middleware : [];
-    this.maxInboundFrames = options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
-    this.bufferEarlyNotifications = options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
+    this.maxInboundFrames =
+      options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
+    this.bufferEarlyNotifications =
+      options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
+    this.metrics = options.metrics;
+    const poolSize = options.pendingRequestPoolSize ?? 100;
+    this.pendingPool = poolSize > 0 ? new PendingRequestPool(poolSize) : null;
+    this.onMiddlewareError = options.onMiddlewareError;
 
     // Auto-detect response accessor if not provided
     this.responseAccessor =
@@ -173,7 +240,21 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
 
     // Connect transport if not already connected (e.g., server-accepted connections)
     if (this.transport.state !== "connected") {
-      await this.transport.connect();
+      try {
+        await this.transport.connect();
+      } catch (error) {
+        // Cleanup subscriptions on connection failure to prevent memory leaks
+        // and ensure clean state for potential retry
+        if (this.transportDataUnsubscribe !== undefined) {
+          this.transportDataUnsubscribe();
+          this.transportDataUnsubscribe = undefined;
+        }
+        if (this.transportErrorUnsubscribe !== undefined) {
+          this.transportErrorUnsubscribe();
+          this.transportErrorUnsubscribe = undefined;
+        }
+        throw error;
+      }
     }
 
     this._isConnected = true;
@@ -203,8 +284,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
     // Reject all pending requests
     const channelClosedError = new Error("Channel closed");
     for (const pending of this.pendingRequests.values()) {
-      pending.timeoutSignal.cancel();
+      pending.timeoutSignal?.cancel();
       pending.reject(channelClosedError);
+      this.releasePendingRequest(pending);
     }
     this.pendingRequests.clear();
 
@@ -232,8 +314,14 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       throw new ProtocolError("Failed to extract request ID from created request");
     }
 
+    this.metrics?.incrementCounter("channel.request", 1, { method });
+
     // Call middleware
     await this.runMiddlewareHook("onOutgoingRequest", request);
+
+    const pending = this.acquirePendingRequest();
+    pending.startTime = Date.now();
+    pending.method = method;
 
     // Setup pending request promise
     const resultPromise = new Promise<unknown>((resolve, reject) => {
@@ -241,19 +329,23 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       const timeoutSignal = createTimeoutSignal(effectiveTimeout);
 
       // Store pending request
-      this.pendingRequests.set(id, {
-        resolve,
-        reject,
-        timeoutSignal,
-      });
+      pending.resolve = resolve;
+      pending.reject = reject;
+      pending.timeoutSignal = timeoutSignal;
+      this.pendingRequests.set(id, pending);
 
       // Race between response and timeout
       timeoutSignal.promise.catch((error) => {
         // Timeout occurred
-        const pending = this.pendingRequests.get(id);
-        if (pending) {
+        const activePending = this.pendingRequests.get(id);
+        if (activePending) {
           this.pendingRequests.delete(id);
-          reject(error);
+          this.metrics?.incrementCounter("channel.request_timeout", 1, {
+            method: activePending.method,
+          });
+          this.recordRequestLatency(activePending, "timeout");
+          activePending.reject(error);
+          this.releasePendingRequest(activePending);
         }
       });
     });
@@ -267,10 +359,11 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       await this.transport.write(framed);
     } catch (error) {
       // Write failed, clean up pending request
-      const pending = this.pendingRequests.get(id);
-      if (pending) {
-        pending.timeoutSignal.cancel();
+      const activePending = this.pendingRequests.get(id);
+      if (activePending) {
+        activePending.timeoutSignal?.cancel();
         this.pendingRequests.delete(id);
+        this.releasePendingRequest(activePending);
       }
       throw error;
     }
@@ -360,30 +453,33 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
       return;
     }
 
-    // Check max inbound frames limit
-    if (this.maxInboundFrames !== undefined) {
-      this.inboundFrameCount += frames.length;
-      if (this.inboundFrameCount > this.maxInboundFrames) {
-        this.emitError(new Error(`Exceeded max inbound frames: ${this.maxInboundFrames}`));
-        // Don't process these frames, but don't crash the channel either
-        this.inboundFrameCount -= frames.length;
-        return;
-      }
+    // Check max inbound frames limit for this batch BEFORE processing.
+    // This is a per-batch limit to prevent flooding, not a lifetime cap.
+    if (this.maxInboundFrames !== undefined && frames.length > this.maxInboundFrames) {
+      this.emitError(
+        new Error(
+          `Exceeded max inbound frames limit: received ${frames.length} frames in one chunk (limit: ${this.maxInboundFrames}). Closing channel.`,
+        ),
+      );
+      await this.close();
+      return;
     }
 
     // Process each frame
     for (const frame of frames) {
+      if (this.metrics) {
+        this.metrics.incrementCounter("framing.frames", 1, { direction: "inbound" });
+        this.metrics.recordHistogram("framing.frame_size_bytes", frame.length, {
+          direction: "inbound",
+        });
+      }
+
       try {
         await this.processFrame(frame);
       } catch (error) {
         // Emit error but continue processing other frames
         this.emitError(toError(error));
       }
-    }
-
-    // Reset counter after processing batch
-    if (this.maxInboundFrames !== undefined) {
-      this.inboundFrameCount = 0;
     }
   }
 
@@ -437,16 +533,20 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
 
     // Remove from pending
     this.pendingRequests.delete(id);
-    pending.timeoutSignal.cancel();
+    pending.timeoutSignal?.cancel();
 
     // Check if error response
     if (this.responseAccessor.isErrorResponse(response)) {
       const error = this.responseAccessor.getError(response);
+      this.recordRequestLatency(pending, "error");
       pending.reject(new ProtocolError("Request failed", error));
     } else {
       const result = this.responseAccessor.getResult(response);
+      this.recordRequestLatency(pending, "success");
       pending.resolve(result);
     }
+
+    this.releasePendingRequest(pending);
   }
 
   /**
@@ -507,9 +607,12 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   private async handleNotification(notification: TNotif): Promise<void> {
     // If no handlers registered yet, buffer the notification for later delivery
     if (this.notificationHandlers.length === 0) {
-      if (this.bufferedNotifications.length < this.bufferEarlyNotifications) {
-        this.bufferedNotifications.push(notification);
+      // Enforce buffer limit using sliding window (keep most recent notifications)
+      if (this.bufferedNotifications.length >= this.bufferEarlyNotifications) {
+        // Remove oldest notification to make room for new one
+        this.bufferedNotifications.shift();
       }
+      this.bufferedNotifications.push(notification);
       return;
     }
 
@@ -570,10 +673,7 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
   /**
    * Runs middleware hook for all registered middleware.
    */
-  private async runMiddlewareHook(
-    hook: keyof ChannelMiddleware,
-    data: unknown,
-  ): Promise<void> {
+  private async runMiddlewareHook(hook: keyof ChannelMiddleware, data: unknown): Promise<void> {
     for (const mw of this.middleware) {
       const fn = mw[hook];
       if (fn !== undefined) {
@@ -581,17 +681,42 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown>
         try {
           await typedFn.call(mw, data);
         } catch (error) {
-          // Log but don't throw - middleware errors shouldn't break the channel
-          console.error(`Error in middleware hook '${hook}':`, error);
+          // Middleware errors shouldn't break the channel
+          // If callback provided, invoke it; otherwise silently ignore
+          if (this.onMiddlewareError) {
+            this.onMiddlewareError(hook, toError(error));
+          }
         }
       }
     }
+  }
+
+  private acquirePendingRequest(): PendingRequest {
+    return this.pendingPool?.acquire() ?? createPendingRequest();
+  }
+
+  private releasePendingRequest(pending: PendingRequest): void {
+    if (this.pendingPool) {
+      this.pendingPool.release(pending);
+    }
+  }
+
+  private recordRequestLatency(pending: PendingRequest, status: string): void {
+    if (!this.metrics) {
+      return;
+    }
+    const latencyMs = Date.now() - pending.startTime;
+    this.metrics.recordHistogram("channel.request_latency_ms", latencyMs, {
+      method: pending.method,
+      status,
+    });
   }
 
   /**
    * Emits error event.
    */
   private emitError(error: Error): void {
+    this.metrics?.incrementCounter("channel.error", 1, { type: error.name });
     this.events.emit("error", error);
   }
 }

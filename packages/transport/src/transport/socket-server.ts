@@ -3,7 +3,14 @@ import { EventEmitter } from "../utils/events.js";
 import { TransportError } from "../utils/errors.js";
 import { PipePath } from "../utils/pipe-path.js";
 import { isWindows } from "../utils/platform.js";
-import type { TransportServer, TransportServerEvents, ServerAddress, Transport, TransportEvents, TransportState } from "./types.js";
+import type {
+  TransportServer,
+  TransportServerEvents,
+  ServerAddress,
+  Transport,
+  TransportEvents,
+  TransportState,
+} from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
 
 /**

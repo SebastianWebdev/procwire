@@ -26,40 +26,42 @@ pnpm add @procwire/codec-arrow apache-arrow
 Create a simple worker process that communicates via stdio:
 
 **worker.js**
+
 ```javascript
-import { createStdioChannel } from '@procwire/transport/channel';
+import { createStdioChannel } from "@procwire/transport/channel";
 
 const channel = createStdioChannel();
 
 // Handle incoming requests
 channel.onRequest(async (method, params) => {
-  if (method === 'greet') {
+  if (method === "greet") {
     return { message: `Hello, ${params.name}!` };
   }
   throw new Error(`Unknown method: ${method}`);
 });
 
 await channel.connect();
-console.error('Worker ready'); // Log to stderr
+console.error("Worker ready"); // Log to stderr
 ```
 
 **main.js**
+
 ```javascript
-import { createStdioChannel } from '@procwire/transport/channel';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { createStdioChannel } from "@procwire/transport/channel";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const channel = createStdioChannel({
-  executablePath: 'node',
-  args: [join(__dirname, 'worker.js')],
+  executablePath: "node",
+  args: [join(__dirname, "worker.js")],
 });
 
 await channel.connect();
 
 // Send request
-const response = await channel.request('greet', { name: 'World' });
+const response = await channel.request("greet", { name: "World" });
 console.log(response); // { message: 'Hello, World!' }
 
 await channel.disconnect();
@@ -70,14 +72,13 @@ await channel.disconnect();
 For inter-process communication without spawning child processes:
 
 **server.js**
+
 ```javascript
-import { createPipeChannel } from '@procwire/transport/channel';
+import { createPipeChannel } from "@procwire/transport/channel";
 
 const server = createPipeChannel({
   isServer: true,
-  path: process.platform === 'win32'
-    ? '\\\\.\\pipe\\my-app'
-    : '/tmp/my-app.sock'
+  path: process.platform === "win32" ? "\\\\.\\pipe\\my-app" : "/tmp/my-app.sock",
 });
 
 server.onRequest(async (method, params) => {
@@ -85,22 +86,21 @@ server.onRequest(async (method, params) => {
 });
 
 await server.connect();
-console.log('Server listening...');
+console.log("Server listening...");
 ```
 
 **client.js**
+
 ```javascript
-import { createPipeChannel } from '@procwire/transport/channel';
+import { createPipeChannel } from "@procwire/transport/channel";
 
 const client = createPipeChannel({
-  path: process.platform === 'win32'
-    ? '\\\\.\\pipe\\my-app'
-    : '/tmp/my-app.sock'
+  path: process.platform === "win32" ? "\\\\.\\pipe\\my-app" : "/tmp/my-app.sock",
 });
 
 await client.connect();
 
-const result = await client.request('echo', { data: 'test' });
+const result = await client.request("echo", { data: "test" });
 console.log(result); // { echo: { data: 'test' } }
 
 await client.disconnect();
@@ -113,15 +113,15 @@ await client.disconnect();
 Use the [ChannelBuilder](/api/transport/src/classes/channelbuilder/) for fine-grained control:
 
 ```javascript
-import { ChannelBuilder } from '@procwire/transport/channel';
-import { StdioTransport } from '@procwire/transport/transport';
-import { LineDelimitedFraming } from '@procwire/transport/framing';
-import { JsonCodec } from '@procwire/transport/serialization';
-import { JsonRpcProtocol } from '@procwire/transport/protocol';
+import { ChannelBuilder } from "@procwire/transport/channel";
+import { StdioTransport } from "@procwire/transport/transport";
+import { LineDelimitedFraming } from "@procwire/transport/framing";
+import { JsonCodec } from "@procwire/transport/serialization";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
 
 const transport = new StdioTransport({
-  executablePath: 'node',
-  args: ['worker.js']
+  executablePath: "node",
+  args: ["worker.js"],
 });
 
 const channel = new ChannelBuilder()
@@ -140,11 +140,11 @@ await channel.connect();
 For better performance with binary data:
 
 ```javascript
-import { ChannelBuilder } from '@procwire/transport/channel';
-import { MessagePackCodec } from '@procwire/codec-msgpack';
-import { LineDelimitedFraming } from '@procwire/transport/framing';
-import { JsonRpcProtocol } from '@procwire/transport/protocol';
-import { StdioTransport } from '@procwire/transport/transport';
+import { ChannelBuilder } from "@procwire/transport/channel";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+import { LineDelimitedFraming } from "@procwire/transport/framing";
+import { JsonRpcProtocol } from "@procwire/transport/protocol";
+import { StdioTransport } from "@procwire/transport/transport";
 
 const codec = new MessagePackCodec();
 
@@ -163,6 +163,7 @@ const channel = new ChannelBuilder()
 - Check out the [examples](https://github.com/SebastianWebdev/procwire/tree/main/examples) in the repository
 
 ## Test Mermaid
+
 ```mermaid
 graph TD;
     A-->B;

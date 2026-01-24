@@ -534,10 +534,7 @@ export class ProtobufCodec<T> implements SerializationCodec<T> {
   deserialize(buffer: Buffer): T {
     // Validate input type - cast to unknown first for runtime type check
     const input = buffer as unknown;
-    if (
-      !Buffer.isBuffer(input) &&
-      !(input instanceof Uint8Array)
-    ) {
+    if (!Buffer.isBuffer(input) && !(input instanceof Uint8Array)) {
       throw new SerializationError(
         `Invalid input: expected Buffer or Uint8Array, got ${typeof input}`,
         new TypeError("Invalid input type"),

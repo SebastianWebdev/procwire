@@ -1,8 +1,10 @@
 import * as childProcess from "node:child_process";
 import { EventEmitter } from "../utils/events.js";
 import { TransportError, TimeoutError } from "../utils/errors.js";
+import { transitionState } from "../utils/assert.js";
 import type { Transport, TransportState, TransportEvents } from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Stdio transport options for child process communication.
@@ -47,6 +49,11 @@ export interface StdioTransportOptions {
    * @default 1MB
    */
   maxStderrBuffer?: number;
+
+  /**
+   * Optional metrics collector for transport events.
+   */
+  metrics?: MetricsCollector;
 }
 
 /**
@@ -83,9 +90,20 @@ export interface StdioTransportEvents extends TransportEvents {
  * transport.on('stderr', line => console.error('stderr:', line));
  * ```
  */
+interface InternalStdioTransportOptions {
+  executablePath: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+  startupTimeout: number;
+  maxStdoutBuffer: number;
+  maxStderrBuffer: number;
+  metrics: MetricsCollector | undefined;
+}
+
 export class StdioTransport implements Transport {
   private readonly emitter = new EventEmitter<StdioTransportEvents>();
-  private readonly options: Required<StdioTransportOptions>;
+  private readonly options: InternalStdioTransportOptions;
   private process: childProcess.ChildProcess | null = null;
   private _state: TransportState = "disconnected";
   private startupTimer: NodeJS.Timeout | null = null;
@@ -93,19 +111,48 @@ export class StdioTransport implements Transport {
   private stderrBytesReceived = 0;
 
   constructor(options: StdioTransportOptions) {
+    // Validate required options
+    if (!options.executablePath || options.executablePath.trim() === "") {
+      throw new Error("StdioTransport: executablePath is required and cannot be empty");
+    }
+
+    // Validate optional numeric options
+    if (options.startupTimeout !== undefined && options.startupTimeout <= 0) {
+      throw new Error("StdioTransport: startupTimeout must be positive");
+    }
+    if (options.maxStdoutBuffer !== undefined && options.maxStdoutBuffer <= 0) {
+      throw new Error("StdioTransport: maxStdoutBuffer must be positive");
+    }
+    if (options.maxStderrBuffer !== undefined && options.maxStderrBuffer <= 0) {
+      throw new Error("StdioTransport: maxStderrBuffer must be positive");
+    }
+
     this.options = {
       executablePath: options.executablePath,
       args: options.args ?? [],
       cwd: options.cwd ?? process.cwd(),
-      env: options.env ?? process.env as Record<string, string>,
+      env: options.env ?? (process.env as Record<string, string>),
       startupTimeout: options.startupTimeout ?? 10000,
       maxStdoutBuffer: options.maxStdoutBuffer ?? 10 * 1024 * 1024, // 10MB
       maxStderrBuffer: options.maxStderrBuffer ?? 1 * 1024 * 1024, // 1MB
+      metrics: options.metrics,
     };
   }
 
   get state(): TransportState {
     return this._state;
+  }
+
+  get pid(): number | null {
+    return this.process?.pid ?? null;
+  }
+
+  /**
+   * Transitions to a new state with validation.
+   * Throws TransportError if the transition is invalid.
+   */
+  private setState(newState: TransportState): void {
+    this._state = transitionState(this._state, newState);
   }
 
   async connect(): Promise<void> {
@@ -117,7 +164,7 @@ export class StdioTransport implements Transport {
       throw new TransportError("Connection already in progress");
     }
 
-    this._state = "connecting";
+    this.setState("connecting");
 
     return new Promise((resolve, reject) => {
       try {
@@ -132,11 +179,12 @@ export class StdioTransport implements Transport {
         // Startup timeout
         this.startupTimer = setTimeout(() => {
           proc.kill();
-          this._state = "error";
+          this.setState("error");
           const error = new TransportError(
             `Process startup timeout after ${this.options.startupTimeout}ms`,
             new TimeoutError(`Startup timeout`),
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         }, this.options.startupTimeout);
@@ -148,7 +196,8 @@ export class StdioTransport implements Transport {
             this.startupTimer = null;
           }
 
-          this._state = "connected";
+          this.setState("connected");
+          this.options.metrics?.incrementCounter("transport.connect", 1, { transport: "stdio" });
           this.setupProcessListeners(proc);
           this.emitter.emit("connect", undefined);
           resolve();
@@ -161,17 +210,19 @@ export class StdioTransport implements Transport {
             this.startupTimer = null;
           }
 
-          this._state = "error";
+          this.setState("error");
           const error = new TransportError(`Failed to spawn process: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         });
       } catch (err) {
-        this._state = "error";
+        this.setState("error");
         const error = new TransportError(
           `Failed to create process: ${(err as Error).message}`,
           err as Error,
         );
+        this.recordError(error);
         reject(error);
       }
     });
@@ -230,22 +281,21 @@ export class StdioTransport implements Transport {
         return;
       }
 
-      const canContinue = stdin.write(data, (err) => {
+      // The callback is invoked when data has been written to the kernel buffer.
+      // This provides implicit backpressure handling - callers using await will
+      // naturally wait for each write to complete before sending more data.
+      // If the kernel buffer is full, the callback will be delayed until space
+      // is available (after 'drain' event internally).
+      stdin.write(data, (err) => {
         if (err) {
           const error = new TransportError(`Write to stdin failed: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         } else {
           resolve();
         }
       });
-
-      // Handle backpressure
-      if (!canContinue) {
-        stdin.once("drain", () => {
-          // Buffer drained, can continue writing
-        });
-      }
     });
   }
 
@@ -270,6 +320,7 @@ export class StdioTransport implements Transport {
           const error = new TransportError(
             `Stdout buffer exceeded limit of ${this.options.maxStdoutBuffer} bytes`,
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           this.disconnect();
           return;
@@ -289,6 +340,7 @@ export class StdioTransport implements Transport {
           const error = new TransportError(
             `Stderr buffer exceeded limit of ${this.options.maxStderrBuffer} bytes`,
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           this.disconnect();
           return;
@@ -306,8 +358,9 @@ export class StdioTransport implements Transport {
 
     // Process errors
     proc.on("error", (err) => {
-      this._state = "error";
+      this.setState("error");
       const error = new TransportError(`Process error: ${err.message}`, err);
+      this.recordError(error);
       this.emitter.emit("error", error);
     });
   }
@@ -336,11 +389,19 @@ export class StdioTransport implements Transport {
     }
 
     if (this._state !== "disconnected") {
-      this._state = "disconnected";
+      this.setState("disconnected");
+      this.options.metrics?.incrementCounter("transport.disconnect", 1, { transport: "stdio" });
       this.emitter.emit("disconnect", undefined);
     }
 
     this.stdoutBytesReceived = 0;
     this.stderrBytesReceived = 0;
+  }
+
+  private recordError(error: Error): void {
+    this.options.metrics?.incrementCounter("transport.error", 1, {
+      transport: "stdio",
+      type: error.name,
+    });
   }
 }

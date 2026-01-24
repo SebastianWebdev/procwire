@@ -44,6 +44,7 @@ Demonstrates **cross-language IPC** between Node.js and Rust:
 ## Why Rust Workers?
 
 ### Use Cases
+
 - **CPU-intensive computations**: Fibonacci, prime checks, cryptography
 - **High-performance data processing**: Parsing, compression, encoding
 - **System-level operations**: File I/O, networking, OS integration
@@ -51,6 +52,7 @@ Demonstrates **cross-language IPC** between Node.js and Rust:
 - **Concurrent workloads**: Parallel processing with Rayon
 
 ### Benefits
+
 - **Performance**: 10-100x faster than JavaScript for compute tasks
 - **Memory safety**: Rust's ownership system prevents crashes
 - **Concurrency**: Fearless concurrency with async/await
@@ -166,18 +168,21 @@ Parent: Done
 JSON-RPC 2.0 is language-agnostic. Both sides speak the same protocol:
 
 **Request** (Node.js → Rust):
+
 ```json
-{"jsonrpc":"2.0","id":1,"method":"add","params":{"a":2,"b":3}}
+{ "jsonrpc": "2.0", "id": 1, "method": "add", "params": { "a": 2, "b": 3 } }
 ```
 
 **Response** (Rust → Node.js):
+
 ```json
-{"jsonrpc":"2.0","id":1,"result":5}
+{ "jsonrpc": "2.0", "id": 1, "result": 5 }
 ```
 
 **Notification** (bidirectional, no response):
+
 ```json
-{"jsonrpc":"2.0","method":"log","params":{"message":"Worker started"}}
+{ "jsonrpc": "2.0", "method": "log", "params": { "message": "Worker started" } }
 ```
 
 ### Node.js Side
@@ -246,20 +251,20 @@ fn main() {
 
 Approximate benchmarks (Fibonacci 40):
 
-| Language | Time | Performance |
-|----------|------|-------------|
-| JavaScript (Node.js) | ~1500ms | Baseline |
-| Rust (debug build) | ~800ms | 1.9x faster |
-| Rust (release build) | ~80ms | **18.8x faster** |
+| Language             | Time    | Performance      |
+| -------------------- | ------- | ---------------- |
+| JavaScript (Node.js) | ~1500ms | Baseline         |
+| Rust (debug build)   | ~800ms  | 1.9x faster      |
+| Rust (release build) | ~80ms   | **18.8x faster** |
 
 For prime checking (1,000,000,007):
 
-| Language | Time | Performance |
-|----------|------|-------------|
-| JavaScript | ~450ms | Baseline |
-| Rust | ~15ms | **30x faster** |
+| Language   | Time   | Performance    |
+| ---------- | ------ | -------------- |
+| JavaScript | ~450ms | Baseline       |
+| Rust       | ~15ms  | **30x faster** |
 
-*Note: Actual performance depends on algorithm, data size, and hardware.*
+_Note: Actual performance depends on algorithm, data size, and hardware._
 
 ## Advanced Patterns
 
@@ -277,12 +282,14 @@ async fn main() {
 ### 2. Binary Protocol (MessagePack)
 
 Replace JSON with MessagePack for better performance:
+
 - Node.js: Use `MessagePackCodec` from `@procwire/codec-msgpack`
 - Rust: Use `rmp-serde` crate
 
 ### 3. Shared Memory
 
 For ultra-low-latency:
+
 - Use named pipes/unix sockets (data channel pattern)
 - Or shared memory via `mmap`
 
@@ -302,6 +309,7 @@ match handle_request(&request) {
 **Cause**: Worker not built or wrong path.
 
 **Solution**:
+
 ```bash
 cd rust
 cargo build --release
@@ -312,6 +320,7 @@ cargo build --release
 **Cause**: Invalid JSON or protocol mismatch.
 
 **Solution**:
+
 - Verify both sides use JSON-RPC 2.0
 - Check line-delimited framing (no extra whitespace)
 - Use `cargo run` to test Rust worker standalone
@@ -321,6 +330,7 @@ cargo build --release
 **Cause**: Panic in Rust code.
 
 **Solution**:
+
 - Run in debug mode: `cargo build` (no `--release`)
 - Check stderr output
 - Add error handling in Rust handlers
@@ -330,6 +340,7 @@ cargo build --release
 **Cause**: Debug build instead of release.
 
 **Solution**:
+
 - Always use `cargo build --release` for production
 - Check CPU throttling, background processes
 - Profile with `cargo flamegraph`
@@ -339,6 +350,7 @@ cargo build --release
 ### Option 1: Pre-built Binaries
 
 Commit release binaries to repo (not recommended for large binaries):
+
 ```
 rust/target/release/
   rust-worker       (Linux)
@@ -349,6 +361,7 @@ rust/target/release/
 ### Option 2: Build in CI
 
 Add Rust toolchain to CI:
+
 ```yaml
 - name: Setup Rust
   uses: actions-rs/toolchain@v1
@@ -364,6 +377,7 @@ Add Rust toolchain to CI:
 ### Option 3: Skip in CI
 
 Mark example as documentation-only (current approach):
+
 - Include Rust source code
 - README with build instructions
 - No CI execution

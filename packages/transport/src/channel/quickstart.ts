@@ -11,8 +11,7 @@ import { ChannelBuilder } from "./builder.js";
 /**
  * Options for stdio channel creation.
  */
-export interface StdioChannelOptions
-  extends Omit<StdioTransportOptions, "executablePath"> {
+export interface StdioChannelOptions extends Omit<StdioTransportOptions, "executablePath"> {
   /**
    * Request timeout in milliseconds.
    * @default 30000
@@ -74,17 +73,22 @@ export async function createStdioChannel(
     ...options,
   });
 
-  const channel = new ChannelBuilder()
+  const builder = new ChannelBuilder()
     .withTransport(transport)
     .withFraming(new LineDelimitedFraming())
     .withSerialization(new JsonCodec())
     .withProtocol(new JsonRpcProtocol())
-    .withTimeout(options?.timeout ?? 30000)
-    .build();
+    .withTimeout(options?.timeout ?? 30000);
 
-  await channel.start();
+  if (options?.metrics) {
+    builder.withMetrics(options.metrics);
+  }
 
-  return channel;
+  const builtChannel = builder.build();
+
+  await builtChannel.start();
+
+  return builtChannel;
 }
 
 /**
@@ -137,15 +141,20 @@ export async function createPipeChannel(
     ? new LineDelimitedFraming()
     : new LengthPrefixedFraming();
 
-  const channel = new ChannelBuilder()
+  const builder = new ChannelBuilder()
     .withTransport(transport)
     .withFraming(framing)
     .withSerialization(new JsonCodec())
     .withProtocol(new JsonRpcProtocol())
-    .withTimeout(options?.timeout ?? 30000)
-    .build();
+    .withTimeout(options?.timeout ?? 30000);
 
-  await channel.start();
+  if (options?.metrics) {
+    builder.withMetrics(options.metrics);
+  }
 
-  return channel;
+  const builtChannel = builder.build();
+
+  await builtChannel.start();
+
+  return builtChannel;
 }

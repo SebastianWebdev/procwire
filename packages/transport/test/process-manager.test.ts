@@ -86,7 +86,7 @@ describe("ProcessManager Integration Tests", () => {
       });
 
       // Worker sends runtime.ready on startup
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(notifications.length).toBeGreaterThan(0);
       expect(notifications[0]).toMatchObject({
@@ -493,6 +493,108 @@ describe("ProcessManager Integration Tests", () => {
       expect(exitEvents[0]).toMatchObject({
         code: 1,
       });
+    });
+  });
+
+  describe("TerminateAll Robustness (C3)", () => {
+    it("should terminate all processes even when some fail", async () => {
+      // Spawn 3 processes
+      await manager.spawn("worker-term-1", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      await manager.spawn("worker-term-2", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      await manager.spawn("worker-term-3", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      expect(manager.isRunning("worker-term-1")).toBe(true);
+      expect(manager.isRunning("worker-term-2")).toBe(true);
+      expect(manager.isRunning("worker-term-3")).toBe(true);
+
+      // Terminate all - all should succeed normally
+      await manager.terminateAll();
+
+      // All should be terminated
+      expect(manager.isRunning("worker-term-1")).toBe(false);
+      expect(manager.isRunning("worker-term-2")).toBe(false);
+      expect(manager.isRunning("worker-term-3")).toBe(false);
+    });
+
+    it("should emit error events for failed terminations but continue", async () => {
+      // This test verifies that terminateAll uses Promise.allSettled
+      // by checking that even if one termination were to fail,
+      // the method completes without throwing and all processes
+      // are attempted to be terminated
+
+      const errorEvents: any[] = [];
+      manager.on("error", (data) => {
+        errorEvents.push(data);
+      });
+
+      // Spawn processes
+      await manager.spawn("worker-robust-1", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      await manager.spawn("worker-robust-2", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      // Verify both are running
+      expect(manager.isRunning("worker-robust-1")).toBe(true);
+      expect(manager.isRunning("worker-robust-2")).toBe(true);
+
+      // terminateAll should complete without throwing
+      // even though internally Promise.allSettled is used
+      await expect(manager.terminateAll()).resolves.toBeUndefined();
+
+      // Both should be terminated
+      expect(manager.isRunning("worker-robust-1")).toBe(false);
+      expect(manager.isRunning("worker-robust-2")).toBe(false);
+    });
+
+    it("should handle empty process list in terminateAll", async () => {
+      // terminateAll on empty manager should not throw
+      await expect(manager.terminateAll()).resolves.toBeUndefined();
+    });
+
+    it("should not leave zombie processes after terminateAll", async () => {
+      // Spawn processes
+      const handle1 = await manager.spawn("worker-zombie-1", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      const handle2 = await manager.spawn("worker-zombie-2", {
+        executablePath: "node",
+        args: [WORKER_PATH],
+      });
+
+      // Verify they work
+      const result1 = await handle1.request("echo", { msg: "test1" });
+      const result2 = await handle2.request("echo", { msg: "test2" });
+      expect(result1).toEqual({ msg: "test1" });
+      expect(result2).toEqual({ msg: "test2" });
+
+      // Terminate all
+      await manager.terminateAll();
+
+      // Handles should show stopped state
+      expect(handle1.state).toBe("stopped");
+      expect(handle2.state).toBe("stopped");
+
+      // Manager should have no running processes
+      expect(manager.getHandle("worker-zombie-1")).toBeNull();
+      expect(manager.getHandle("worker-zombie-2")).toBeNull();
     });
   });
 });

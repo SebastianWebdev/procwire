@@ -26,7 +26,9 @@ async function main() {
   // Listen for manager events
   manager.on("spawn", ({ id }) => console.log(`Parent: Process spawned: ${id}`));
   manager.on("ready", ({ id }) => console.log(`Parent: Process ready: ${id}`));
-  manager.on("exit", ({ id, code }) => console.log(`Parent: Process exited: ${id} (code: ${code})`));
+  manager.on("exit", ({ id, code }) =>
+    console.log(`Parent: Process exited: ${id} (code: ${code})`),
+  );
   manager.on("restart", ({ id, attempt }) =>
     console.log(`Parent: Restarting process: ${id} (attempt ${attempt})`),
   );
