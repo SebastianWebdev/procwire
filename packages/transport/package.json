@@ -16,11 +16,11 @@
   "author": "Sebastian Webdev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sebastianwebdev/procwire.git",
+    "url": "git+https://github.com/SebastianWebdev/procwire.git",
     "directory": "packages/transport"
   },
   "bugs": {
-    "url": "https://github.com/sebastianwebdev/procwire/issues"
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
   },
   "homepage": "https://www.procwire.dev",
   "type": "module",

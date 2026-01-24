@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write # Niezbędne dla OIDC
+      id-token: write # Wymagane dla OIDC
 
     steps:
       - name: Checkout
@@ -26,17 +26,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
-          # WAŻNE: Nie ustawiaj tutaj registry-url, bo to wymusi auth-token!
-          # registry-url: "https://registry.npmjs.org"
+          registry-url: "https://registry.npmjs.org"
+          # NIE ustawiamy NODE_AUTH_TOKEN - to pozwoli na OIDC
 
-      # WAŻNE: Ręcznie wskazujemy rejestr dla Twojego scope'a, ale BEZ tokena.
-      # To pozwoli pnpm/npm znaleźć paczki, a autoryzacja pójdzie przez OIDC (provenance).
-      - name: Setup .npmrc for OIDC
-        run: |
-          echo "@procwire:registry=https://registry.npmjs.org" > .npmrc
-          echo "registry=https://registry.npmjs.org" >> .npmrc
+      - name: Update npm to latest
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -54,4 +50,5 @@ jobs:
           title: "Version Packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # BRAK NODE_AUTH_TOKEN - idziemy czystym OIDC
+          NPM_CONFIG_PROVENANCE: true
+          # BRAK NODE_AUTH_TOKEN - OIDC automatycznie
