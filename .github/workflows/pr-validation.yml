@@ -1,0 +1,132 @@
+name: PR Validation
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+    # ============================================
+    # Check if changeset is needed
+    # ============================================
+    changeset-check:
+        name: Changeset Check
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Check for changeset
+              id: changeset
+              run: |
+                  # Get list of changed files in packages/
+                  CHANGED_PACKAGES=$(git diff --name-only origin/main...HEAD | grep -E "^packages/" | cut -d'/' -f2 | sort -u || true)
+
+                  if [ -z "$CHANGED_PACKAGES" ]; then
+                    echo "status=skip" >> $GITHUB_OUTPUT
+                    echo "ℹ️ No package changes detected - changeset not required"
+                    exit 0
+                  fi
+
+                  echo "📦 Changed packages: $CHANGED_PACKAGES"
+
+                  # Check if changeset exists (excluding README.md)
+                  CHANGESET_COUNT=$(ls -1 .changeset/*.md 2>/dev/null | grep -v README.md | wc -l || echo "0")
+
+                  if [ "$CHANGESET_COUNT" -gt 0 ]; then
+                    echo "status=ok" >> $GITHUB_OUTPUT
+                    echo "✅ Changeset found"
+                  else
+                    echo "status=missing" >> $GITHUB_OUTPUT
+                    echo "⚠️ Package changes detected but no changeset found"
+                  fi
+
+            - name: Check for skip label
+              id: skip-label
+              run: |
+                  if [[ "${{ contains(github.event.pull_request.labels.*.name, 'skip-changeset') }}" == "true" ]]; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                    echo "ℹ️ 'skip-changeset' label found - skipping changeset requirement"
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Report status
+              if: steps.changeset.outputs.status == 'missing' && steps.skip-label.outputs.skip == 'false'
+              run: |
+                  echo "## ⚠️ Changeset Required" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "This PR modifies packages but doesn't include a changeset." >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "### How to add a changeset:" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo '```bash' >> $GITHUB_STEP_SUMMARY
+                  echo "pnpm changeset" >> $GITHUB_STEP_SUMMARY
+                  echo "git add .changeset" >> $GITHUB_STEP_SUMMARY
+                  echo 'git commit -m "chore: add changeset"' >> $GITHUB_STEP_SUMMARY
+                  echo "git push" >> $GITHUB_STEP_SUMMARY
+                  echo '```' >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "### Skip changeset (for docs-only or internal changes):" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "Add the \`skip-changeset\` label to this PR." >> $GITHUB_STEP_SUMMARY
+
+                  echo "::warning::Package changes detected but no changeset found. Run 'pnpm changeset' to add one, or add 'skip-changeset' label to skip."
+
+            - name: Changeset summary (success)
+              if: steps.changeset.outputs.status == 'ok'
+              run: |
+                  echo "## ✅ Changeset Found" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "This PR includes a changeset for version bumping." >> $GITHUB_STEP_SUMMARY
+
+    # ============================================
+    # PR title lint (conventional commits)
+    # ============================================
+    pr-title:
+        name: PR Title
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check PR title format
+              run: |
+                  PR_TITLE="${{ github.event.pull_request.title }}"
+
+                  # Conventional commit pattern
+                  PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+"
+
+                  if [[ "$PR_TITLE" =~ $PATTERN ]]; then
+                    echo "✅ PR title follows conventional commit format"
+                    echo "## ✅ PR Title Valid" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "Title: \`$PR_TITLE\`" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "## ⚠️ PR Title Format" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "PR title should follow [Conventional Commits](https://www.conventionalcommits.org/):" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "**Format:** \`<type>(<scope>): <description>\`" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "**Types:** feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "**Examples:**" >> $GITHUB_STEP_SUMMARY
+                    echo "- \`feat(transport): add Unix socket support\`" >> $GITHUB_STEP_SUMMARY
+                    echo "- \`fix: resolve memory leak in channel\`" >> $GITHUB_STEP_SUMMARY
+                    echo "- \`docs: update API reference\`" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "**Your title:** \`$PR_TITLE\`" >> $GITHUB_STEP_SUMMARY
+
+                    echo "::warning::PR title doesn't follow conventional commit format. Consider updating it."
+                  fi

@@ -1,28 +1,127 @@
 /**
- * Protocol Buffers codec for @procwire/transport.
- * Provides type-safe binary serialization using protobufjs.
+ * Protocol Buffers serialization codec for @procwire/transport.
  *
- * @module Codec Protobuf
- */
-
-import type { Type } from "protobufjs";
-import type { SerializationCodec } from "@procwire/transport/serialization";
-import { SerializationError } from "@procwire/transport";
-
-/**
- * Protocol Buffers serialization codec.
- * Implements type-safe binary serialization with schema validation.
+ * Provides type-safe, schema-validated binary serialization using Protocol Buffers (protobuf).
+ * This codec uses the `protobufjs` library and implements the {@link SerializationCodec}
+ * interface for seamless integration with @procwire/transport channels.
  *
- * @typeParam T - The TypeScript type corresponding to the protobuf message
+ * ## Features
  *
- * @example
+ * - **Type-safe serialization** - Generic type parameter ensures compile-time safety
+ * - **Schema validation** - Messages are validated against protobuf schema
+ * - **Compact binary format** - Typically 3-10x smaller than JSON
+ * - **Cross-language support** - Compatible with protobuf in any language
+ * - **Configurable options** - Control Long/enum/bytes conversion
+ * - **Zero-copy optimization** - Minimizes memory allocations
+ *
+ * ## Quick Start
+ *
  * ```ts
  * import * as protobuf from 'protobufjs';
  * import { ProtobufCodec } from '@procwire/codec-protobuf';
- * import { ChannelBuilder } from '@procwire/transport';
  *
- * // Define schema
+ * // Define schema inline
  * const root = protobuf.Root.fromJSON({
+ *   nested: {
+ *     User: {
+ *       fields: {
+ *         id: { type: 'int32', id: 1 },
+ *         name: { type: 'string', id: 2 },
+ *         email: { type: 'string', id: 3 }
+ *       }
+ *     }
+ *   }
+ * });
+ *
+ * interface User {
+ *   id: number;
+ *   name: string;
+ *   email: string;
+ * }
+ *
+ * const codec = new ProtobufCodec<User>(root.lookupType('User'));
+ * const buffer = codec.serialize({ id: 1, name: 'Alice', email: 'alice@example.com' });
+ * const user = codec.deserialize(buffer);
+ * ```
+ *
+ * ## Loading .proto Files
+ *
+ * For production use, load schemas from .proto files:
+ *
+ * ```ts
+ * import { createCodecFromProto } from '@procwire/codec-protobuf';
+ *
+ * const codec = await createCodecFromProto<User>(
+ *   './schemas/user.proto',
+ *   'mypackage.User'
+ * );
+ * ```
+ *
+ * ## Integration with @procwire/transport
+ *
+ * ```ts
+ * import { ProtobufCodec } from '@procwire/codec-protobuf';
+ * import { RequestChannel } from '@procwire/transport/channel';
+ *
+ * const channel = new RequestChannel({
+ *   transport,
+ *   framing,
+ *   serialization: new ProtobufCodec<MyMessage>(messageType),
+ *   protocol
+ * });
+ * ```
+ *
+ * @packageDocumentation
+ * @module codec-protobuf
+ */
+
+// Main class and options
+export { ProtobufCodec } from "./codec.js";
+export type { ProtobufCodecOptions } from "./codec.js";
+
+// Helper functions
+export { createCodecFromProto, createCodecFromJSON } from "./helpers.js";
+
+/**
+ * Re-export of Type from protobufjs.
+ *
+ * The Type class represents a protobuf message type. Use it to define
+ * the schema for {@link ProtobufCodec}. You can obtain a Type instance
+ * by calling `root.lookupType('MessageName')` on a protobufjs Root.
+ *
+ * @see {@link https://protobufjs.github.io/protobuf.js/Type.html | protobufjs Type documentation}
+ */
+export type { Type } from "protobufjs";
+
+/**
+ * Re-export of Root from protobufjs.
+ *
+ * The Root class is the root of a protobuf namespace hierarchy.
+ * Use `Root.fromJSON()` for inline schemas or `protobuf.load()` for .proto files.
+ *
+ * @see {@link https://protobufjs.github.io/protobuf.js/Root.html | protobufjs Root documentation}
+ */
+export type { Root } from "protobufjs";
+
+/**
+ * Re-export of Field from protobufjs.
+ *
+ * The Field class represents a single field in a protobuf message.
+ * Useful for advanced reflection and schema inspection.
+ *
+ * @see {@link https://protobufjs.github.io/protobuf.js/Field.html | protobufjs Field documentation}
+ */
+export type { Field } from "protobufjs";
+
+/**
+ * Re-export of INamespace from protobufjs.
+ *
+ * The INamespace interface represents a protobuf namespace definition
+ * in JSON format. Use with `Root.fromJSON()` to create inline schemas.
+ *
+ * @example
+ * ```ts
+ * const schema: INamespace = {
  *   nested: {
  *     User: {
  *       fields: {
@@ -31,66 +130,9 @@ import { SerializationError } from "@procwire/transport";
  *       }
  *     }
  *   }
- * });
- * const UserType = root.lookupType('User');
- *
- * // Create codec
- * const codec = new ProtobufCodec<User>(UserType);
- *
- * // Use with channel
- * const channel = new ChannelBuilder()
- *   .withSerialization(codec)
- *   // ... other configuration
- *   .build();
+ * };
  * ```
+ *
+ * @see {@link createCodecFromJSON} for creating codecs from JSON schemas
  */
-export class ProtobufCodec<T> implements SerializationCodec<T> {
-  readonly name = "protobuf";
-  readonly contentType = "application/x-protobuf";
-
-  /**
-   * Creates a new ProtobufCodec instance.
-   *
-   * @param messageType - The protobufjs Type instance defining the message schema
-   */
-  constructor(private readonly messageType: Type) {}
-
-  /**
-   * Serializes a value to Protocol Buffers binary format.
-   *
-   * @param value - Value to serialize (must match the message schema)
-   * @returns Buffer containing protobuf-encoded data
-   * @throws {SerializationError} if encoding fails or value doesn't match schema
-   */
-  serialize(value: T): Buffer {
-    try {
-      const message = this.messageType.create(value as Record<string, unknown>);
-      const bytes = this.messageType.encode(message).finish();
-      return Buffer.from(bytes);
-    } catch (error) {
-      throw new SerializationError(
-        `Failed to encode protobuf message: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      );
-    }
-  }
-
-  /**
-   * Deserializes Protocol Buffers binary data to a typed JavaScript object.
-   *
-   * @param buffer - Buffer containing protobuf-encoded data
-   * @returns Deserialized plain JavaScript object
-   * @throws {SerializationError} if decoding fails or data doesn't match schema
-   */
-  deserialize(buffer: Buffer): T {
-    try {
-      const decoded = this.messageType.decode(buffer);
-      return this.messageType.toObject(decoded) as T;
-    } catch (error) {
-      throw new SerializationError(
-        `Failed to decode protobuf message: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      );
-    }
-  }
-}
+export type { INamespace } from "protobufjs";

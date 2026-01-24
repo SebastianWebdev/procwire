@@ -15,15 +15,19 @@ This guide explains how to release new versions of `@procwire/*` packages to npm
 - [Version Policy](#version-policy)
 - [Recovery from Failed Publish](#recovery-from-failed-publish)
 - [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-This monorepo uses [Changesets](https://github.com/changesets/changesets) for version management and publishing. Changesets provides:
+This monorepo uses [Changesets](https://github.com/changesets/changesets) for version management and publishing, combined with **OIDC Trusted Publishing** for secure, token-free CI/CD releases.
+
+### Key Features
 
 - **Atomic versioning** - Version multiple packages together
 - **Changelog generation** - Automatically generate changelogs from changesets
 - **Monorepo support** - Handle workspace dependencies correctly
-- **CI integration** - Automated releases via GitHub Actions
+- **OIDC Authentication** - No long-lived npm tokens required
+- **Provenance attestations** - Cryptographic proof of build origin
 
 ## Prerequisites
 
@@ -32,7 +36,7 @@ Before releasing, ensure:
 1. **You have npm publish access** to `@procwire/*` packages
 2. **All CI checks pass** - Run `pnpm ci` locally and verify CI passes on main
 3. **Changes are merged to `main`** - All release-ready changes are on main branch
-4. **NPM_TOKEN is configured** (for automated releases) - Set in GitHub Secrets
+4. **Trusted Publisher is configured** - See [Setting Up Trusted Publisher](#setting-up-trusted-publisher)
 
 ### Verify Your npm Access
 
@@ -42,6 +46,43 @@ npm access ls-packages
 ```
 
 You should see `@procwire/transport`, `@procwire/codec-msgpack`, `@procwire/codec-protobuf`, and `@procwire/codec-arrow` with `read-write` access.
+
+### Setting Up Trusted Publisher
+
+OIDC Trusted Publishing eliminates the need for long-lived npm tokens. Each package must be configured once on npmjs.com:
+
+1. Go to your package settings: `https://www.npmjs.com/package/@procwire/<package-name>/access`
+2. Find the **"Trusted Publisher"** section
+3. Click **"GitHub Actions"**
+4. Fill in the configuration:
+   - **Repository owner**: `SebastianWebdev` (must match GitHub URL exactly, including capitalization!)
+   - **Repository name**: `procwire`
+   - **Workflow filename**: `release.yml`
+   - **Environment name**: *(leave empty)*
+5. Click **"Save"**
+
+> ⚠️ **Important**: The repository owner name is **case-sensitive**. It must exactly match your GitHub username/organization as shown in the URL (e.g., `SebastianWebdev`, not `sebastianwebdev`).
+
+Repeat this for each package:
+- `@procwire/transport`
+- `@procwire/codec-msgpack`
+- `@procwire/codec-protobuf`
+- `@procwire/codec-arrow`
+
+### Package Configuration
+
+Each package's `package.json` must include a `repository` field that exactly matches the GitHub URL:
+
+```json
+{
+  "name": "@procwire/transport",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SebastianWebdev/procwire.git",
+    "directory": "packages/transport"
+  }
+}
+```
 
 ## Release Process
 
@@ -139,11 +180,7 @@ pnpm ci
 pnpm release
 ```
 
-This runs `changeset publish` which:
-
-1. Publishes all packages with new versions to npm
-2. Creates git tags for each version (e.g., `@procwire/transport@1.2.0`)
-3. Pushes tags to GitHub
+This publishes all packages with new versions to npm.
 
 **Verify the publish:**
 
@@ -160,7 +197,16 @@ The repository has automated release support via GitHub Actions ([.github/workfl
 
 1. **On push to `main`** - The release workflow runs automatically
 2. **If changesets exist** - Creates a "Version Packages" PR that bumps versions
-3. **When PR is merged** - Automatically publishes to npm with provenance
+3. **When PR is merged** - Automatically publishes to npm using OIDC authentication
+
+### Security Model
+
+The CI release uses **OIDC Trusted Publishing**:
+
+- ✅ **No npm tokens stored** - Authentication happens via GitHub's OIDC provider
+- ✅ **Short-lived credentials** - Tokens are valid only for the publish operation
+- ✅ **Provenance attestations** - Each package includes cryptographic proof of its build origin
+- ✅ **Workflow-specific** - Only the configured workflow can publish
 
 ### Using Automated Releases
 
@@ -170,7 +216,7 @@ The repository has automated release support via GitHub Actions ([.github/workfl
 2. Merge PRs with changesets to `main`
 3. GitHub Actions creates a "Version Packages" PR
 4. Review and merge the PR
-5. Packages are automatically published to npm
+5. Packages are automatically published to npm with provenance
 
 **Manual Trigger:**
 
@@ -186,12 +232,11 @@ You can also manually trigger a release:
 
 The automated workflow requires:
 
-1. **NPM_TOKEN secret** - Set in repository Settings → Secrets → Actions
-   - Generate token at https://www.npmjs.com/settings/tokens
-   - Use **Automation** type token
-   - Add as `NPM_TOKEN` secret
-
+1. **Trusted Publisher configured** - For each package on npmjs.com (see [Setting Up Trusted Publisher](#setting-up-trusted-publisher))
 2. **GITHUB_TOKEN** - Automatically provided by GitHub Actions
+3. **Workflow permissions** - `id-token: write` permission (already configured in workflow)
+
+> 📝 **Note**: No `NPM_TOKEN` secret is required! OIDC Trusted Publishing eliminates the need for stored tokens.
 
 ## Manual Release
 
@@ -221,12 +266,15 @@ git push
 # 6. Run full CI pipeline
 pnpm ci
 
-# 7. Publish to npm
+# 7. Publish to npm (requires npm login)
+npm login
 pnpm release
 
 # 8. Push tags
 git push --follow-tags
 ```
+
+> ⚠️ **Note**: Manual publishing from your local machine uses traditional npm authentication (`npm login`), not OIDC. OIDC is only available in GitHub Actions.
 
 ## Version Policy
 
@@ -301,14 +349,15 @@ pnpm ci
 pnpm release
 ```
 
-### Scenario 4: CI publish failed
+### Scenario 4: CI publish failed with OIDC error
 
 1. Check the **Actions** tab for error logs
-2. Common issues:
-   - Missing `NPM_TOKEN` secret
-   - Expired npm token
-   - Build/test failures before publish
-3. Fix the issue and re-run the workflow manually
+2. Common OIDC issues:
+   - **E404 error** - Trusted Publisher configuration mismatch (check case sensitivity!)
+   - **ENEEDAUTH** - Trusted Publisher not configured for the package
+   - **Workflow filename mismatch** - Ensure `release.yml` matches exactly
+3. Verify Trusted Publisher settings on npmjs.com
+4. Fix the issue and re-run the workflow manually
 
 ## Best Practices
 
@@ -329,6 +378,7 @@ pnpm release
 ### After Publishing
 
 - ✅ **Verify on npm** - Check https://www.npmjs.com/package/@procwire/transport
+- ✅ **Check provenance** - Look for the "Provenance" badge on the npm package page
 - ✅ **Test installation** - Run `npm install @procwire/transport` in a test project
 - ✅ **Check GitHub Releases** - Verify git tags are pushed and GitHub Releases are created
 - ✅ **Update documentation** - If needed, update docs for new features
@@ -359,20 +409,32 @@ pnpm release
 2. Wrong package name/scope
 3. npm registry issues (try `npm cache clean --force`)
 
-### "Authentication failed" during publish
+### "E404 Not Found" during OIDC publish
 
-**Problem:** `pnpm release` fails with authentication error
+**Problem:** CI publish fails with `npm error 404 Not Found - PUT https://registry.npmjs.org/@procwire/...`
 
-**Solution:**
+**This usually means Trusted Publisher configuration doesn't match.** Check:
 
+1. **Case sensitivity** - Repository owner must match exactly (e.g., `SebastianWebdev` not `sebastianwebdev`)
+2. **Workflow filename** - Must be exactly `release.yml` (with `.yml` extension)
+3. **Repository name** - Must be `procwire`
+4. **No environment name** - Leave the environment field empty
+
+### "ENEEDAUTH" during publish
+
+**Problem:** `npm error code ENEEDAUTH` / "need auth"
+
+**Solutions:**
+
+For CI (OIDC):
+- Verify Trusted Publisher is configured for the package
+- Check that `id-token: write` permission is set in workflow
+- Ensure `registry-url` is set in `setup-node` action
+
+For manual publish:
 ```bash
-# Log in to npm
 npm login
-
-# Verify authentication
-npm whoami
-
-# Try publishing again
+npm whoami  # Verify authentication
 pnpm release
 ```
 
@@ -386,12 +448,23 @@ pnpm release
 2. Running `pnpm release` (not `npm publish` directly)
 3. Check `.changeset/config.json` has correct settings
 
+### Provenance not showing on npm
+
+**Problem:** Package published but no "Provenance" badge on npmjs.com
+
+**Possible causes:**
+
+1. Package published from private repository (provenance not supported)
+2. OIDC authentication wasn't used (manual publish)
+3. npm CLI version too old (requires npm >= 11.5.1 for trusted publishing)
+
 ## Additional Resources
 
 - [Changesets Documentation](https://github.com/changesets/changesets)
+- [npm Trusted Publishing Guide](https://docs.npmjs.com/trusted-publishers/)
 - [Semantic Versioning Spec](https://semver.org/)
-- [npm Publishing Guide](https://docs.npmjs.com/packages-and-modules/contributing-packages-to-the-registry)
-- [GitHub Actions - Publishing Node.js packages](https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages)
+- [npm Provenance Documentation](https://docs.npmjs.com/generating-provenance-statements/)
+- [GitHub Actions OIDC](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
 
 ## Questions?
 

@@ -1,68 +1,88 @@
 /**
- * MessagePack codec for @procwire/transport.
- * Provides efficient binary serialization using @msgpack/msgpack.
+ * MessagePack binary serialization codec for @procwire/transport.
  *
- * @module Codec MessagePack
- */
-
-import { decode, encode } from "@msgpack/msgpack";
-import type { SerializationCodec } from "@procwire/transport/serialization";
-import { SerializationError } from "@procwire/transport";
-
-/**
- * MessagePack serialization codec.
- * Implements efficient binary serialization with support for various JavaScript types.
+ * Provides efficient binary serialization using the MessagePack format,
+ * which is typically 20-50% smaller and 2-5x faster than JSON. This codec
+ * implements the {@link SerializationCodec} interface for seamless integration
+ * with @procwire/transport channels.
  *
- * @example
+ * ## Features
+ *
+ * - **Compact binary format** - 20-50% smaller than JSON
+ * - **Fast serialization** - 2-5x faster than JSON.stringify/parse
+ * - **Type preservation** - Supports Buffer, TypedArray, and binary data
+ * - **Extension types** - Optional support for Date, Map, Set, BigInt
+ * - **Zero-copy optimization** - Minimizes memory allocations
+ * - **Configurable** - Buffer size, key sorting, and custom extensions
+ *
+ * ## Quick Start
+ *
  * ```ts
  * import { MessagePackCodec } from '@procwire/codec-msgpack';
- * import { ChannelBuilder } from '@procwire/transport';
  *
- * const channel = new ChannelBuilder()
- *   .withSerialization(new MessagePackCodec())
- *   // ... other configuration
- *   .build();
+ * const codec = new MessagePackCodec();
+ * const buffer = codec.serialize({ hello: 'world', count: 42 });
+ * const data = codec.deserialize(buffer);
  * ```
+ *
+ * ## Supported Types
+ *
+ * Out of the box, MessagePackCodec supports:
+ * - Primitives: `string`, `number`, `boolean`, `null`
+ * - Containers: `object`, `array` (nested)
+ * - Binary: `Buffer`, `Uint8Array`, `TypedArray`
+ * - Special: `undefined` (encoded as `null`)
+ *
+ * ## Extended Type Support
+ *
+ * For `Date`, `Map`, `Set`, and `BigInt` support, use {@link createExtendedCodec}:
+ *
+ * ```ts
+ * import { createExtendedCodec } from '@procwire/codec-msgpack';
+ *
+ * const codec = createExtendedCodec();
+ * const data = {
+ *   createdAt: new Date(),
+ *   tags: new Set(['a', 'b']),
+ *   metadata: new Map([['key', 'value']]),
+ *   bigNumber: BigInt('9007199254740993')
+ * };
+ * const buffer = codec.serialize(data);
+ * ```
+ *
+ * ## Integration with @procwire/transport
+ *
+ * ```ts
+ * import { MessagePackCodec } from '@procwire/codec-msgpack';
+ * import { RequestChannel } from '@procwire/transport/channel';
+ *
+ * const channel = new RequestChannel({
+ *   transport,
+ *   framing,
+ *   serialization: new MessagePackCodec(),
+ *   protocol
+ * });
+ * ```
+ *
+ * @packageDocumentation
+ * @module codec-msgpack
  */
-export class MessagePackCodec implements SerializationCodec<unknown> {
-  readonly name = "msgpack";
-  readonly contentType = "application/x-msgpack";
 
-  /**
-   * Serializes a value to MessagePack binary format.
-   *
-   * @param value - Value to serialize
-   * @returns Buffer containing MessagePack-encoded data
-   * @throws {SerializationError} if encoding fails
-   */
-  serialize(value: unknown): Buffer {
-    try {
-      const uint8array = encode(value);
-      // Optimize: avoid copying by wrapping the underlying ArrayBuffer
-      return Buffer.from(uint8array.buffer, uint8array.byteOffset, uint8array.byteLength);
-    } catch (error) {
-      throw new SerializationError(
-        `Failed to encode MessagePack: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      );
-    }
-  }
+// Main codec class and options
+export { MessagePackCodec } from "./codec.js";
+export type { MessagePackCodecOptions } from "./codec.js";
 
-  /**
-   * Deserializes MessagePack binary data to a JavaScript value.
-   *
-   * @param buffer - Buffer containing MessagePack-encoded data
-   * @returns Deserialized value
-   * @throws {SerializationError} if decoding fails
-   */
-  deserialize(buffer: Buffer): unknown {
-    try {
-      return decode(buffer);
-    } catch (error) {
-      throw new SerializationError(
-        `Failed to decode MessagePack: ${error instanceof Error ? error.message : String(error)}`,
-        error,
-      );
-    }
-  }
-}
+// Extension utilities
+export { createCommonExtensionCodec, createExtendedCodec } from "./extensions.js";
+
+/**
+ * Re-export of ExtensionCodec from @msgpack/msgpack.
+ *
+ * Use this type when creating custom extension codecs for non-standard types.
+ * The ExtensionCodec allows you to define how custom types are serialized
+ * and deserialized using MessagePack extension types (type IDs 0-127).
+ *
+ * @see {@link https://github.com/msgpack/msgpack-javascript#extension-types | @msgpack/msgpack Extension Types}
+ * @see {@link createCommonExtensionCodec} for pre-built extension support
+ */
+export type { ExtensionCodec } from "@msgpack/msgpack";

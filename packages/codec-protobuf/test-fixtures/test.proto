@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package testpkg;
+
+message SimpleMessage {
+  int32 id = 1;
+  string name = 2;
+}
+
+message CompleteMessage {
+  // Scalars
+  int32 int32_field = 1;
+  int64 int64_field = 2;
+  uint32 uint32_field = 3;
+  uint64 uint64_field = 4;
+  float float_field = 5;
+  double double_field = 6;
+  bool bool_field = 7;
+  string string_field = 8;
+  bytes bytes_field = 9;
+
+  // Enum
+  Status status = 10;
+
+  // Nested
+  NestedMessage nested = 11;
+
+  // Repeated
+  repeated string tags = 12;
+  repeated NestedMessage items = 13;
+
+  // Map
+  map<string, string> metadata = 14;
+
+  // Oneof
+  oneof value {
+    string string_value = 15;
+    int32 int_value = 16;
+  }
+}
+
+enum Status {
+  UNKNOWN = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+}
+
+message NestedMessage {
+  string value = 1;
+}

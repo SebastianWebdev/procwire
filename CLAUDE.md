@@ -37,10 +37,25 @@ pnpm clean               # Remove build artifacts
 ### Publishing
 
 ```bash
-pnpm changeset           # Create a changeset
+pnpm changeset           # Create a changeset (interactive CLI)
 pnpm version-packages    # Bump versions and update changelogs
 pnpm release             # Publish to npm
 ```
+
+#### Creating Changesets Manually (for Claude Code)
+
+The `pnpm changeset` command requires an interactive CLI which Claude Code cannot use. To create a changeset manually, create a markdown file in `.changeset/` directory with a descriptive name (e.g., `.changeset/my-feature.md`):
+
+```markdown
+---
+"@procwire/transport": minor
+"@procwire/codec-msgpack": patch
+---
+
+Description of the changes. Use `minor` for new features, `patch` for bug fixes, `major` for breaking changes.
+```
+
+The YAML frontmatter lists affected packages and their bump types. The body contains the changelog entry.
 
 ### Per-Package Commands
 

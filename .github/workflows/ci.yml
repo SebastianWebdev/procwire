@@ -6,10 +6,47 @@ on:
     branches:
       - main
 
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    name: Lint / Test / Build (${{ matrix.os }})
+  # ============================================
+  # Lint job - runs first, fast feedback
+  # ============================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format --check
+
+  # ============================================
+  # Build & Test job - matrix for cross-platform
+  # ============================================
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: lint # Wait for lint to pass first
     strategy:
       fail-fast: false
       matrix:
@@ -19,32 +56,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
-        # Zmieniamy na --no-frozen-lockfile, aby uniknąć błędów przy niespójnym lockfile
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      # Zamiast 'pnpm run ci', uruchamiamy kroki osobno z wykluczeniem astro-docs
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Build
-        # Wykluczamy astro-docs z budowania (to najważniejsza zmiana naprawiająca błąd D2)
+      - name: Build packages
         run: pnpm --filter "!astro-docs" --filter "!." build
 
       - name: Typecheck
-        # Sprawdzamy typy tylko w kodzie aplikacji
         run: pnpm --filter "!astro-docs" --if-present typecheck
 
-      - name: Test
-        # Uruchamiamy testy tylko dla pakietów aplikacyjnych
+      - name: Run tests
         run: pnpm --filter "!astro-docs" --if-present test
+
+      # Upload build artifacts for potential reuse
+      - name: Upload build artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist
+          retention-days: 1
+
+  # ============================================
+  # Final status check - for branch protection
+  # ============================================
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [lint, build-and-test]
+    if: always()
+    steps:
+      - name: Check CI status
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
+            echo "❌ CI failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed"
