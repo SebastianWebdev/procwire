@@ -26,5 +26,11 @@ export * from "./protocol/index.js";
 export * from "./channel/index.js";
 export * from "./process/index.js";
 
+// Resilience
+export * from "./heartbeat/index.js";
+export * from "./reconnect/index.js";
+export * from "./shutdown/index.js";
+export * from "./resilience/index.js";
+
 // Utilities
 export * from "./utils/index.js";
