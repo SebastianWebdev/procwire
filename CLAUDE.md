@@ -241,6 +241,19 @@ When implementing features in this codebase:
 5. **Error handling** - Use custom error types from `utils/errors.ts`
 6. **Resource cleanup** - Use the disposable pattern from `utils/disposables.ts` for cleanup
 
+## Task Completion Checklist
+
+**IMPORTANT**: Before completing any coding task, ALWAYS run these commands to verify code quality:
+
+```bash
+pnpm format              # Format code with Prettier
+pnpm lint                # Check ESLint rules
+pnpm typecheck           # Verify TypeScript types
+pnpm test                # Run all tests
+```
+
+All four checks MUST pass before considering a task complete. Fix any errors before committing.
+
 ## CI/CD
 
 - CI workflow: `.github/workflows/release.yml` (for automated releases)
