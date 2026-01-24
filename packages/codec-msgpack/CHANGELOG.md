@@ -1,5 +1,12 @@
 # @procwire/codec-msgpack
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [[`3bb167b`](https://github.com/SebastianWebdev/procwire/commit/3bb167b4ff333a6c27dbf3cc509b19d54f23e8be)]:
+  - @procwire/transport@0.2.0
+
 ## 0.2.0
 
 ### Minor Changes
