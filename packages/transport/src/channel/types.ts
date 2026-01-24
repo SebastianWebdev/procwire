@@ -4,6 +4,7 @@ import type { Transport, TransportServer } from "../transport/types.js";
 import type { FramingCodec } from "../framing/types.js";
 import type { SerializationCodec } from "../serialization/types.js";
 import type { Protocol, RequestId, ProtocolDataError } from "../protocol/types.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Request handler function.
@@ -142,6 +143,11 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
   middleware?: ChannelMiddleware[];
 
   /**
+   * Optional metrics collector for channel instrumentation.
+   */
+  metrics?: MetricsCollector;
+
+  /**
    * Maximum number of inbound frames to buffer before backpressure (optional).
    */
   maxInboundFrames?: number;
@@ -152,6 +158,12 @@ export interface ChannelOptions<TReq = unknown, TRes = unknown, TNotif = unknown
    * Default: 10
    */
   bufferEarlyNotifications?: number;
+
+  /**
+   * Maximum size of pending request pool (0 disables pooling).
+   * Default: 100
+   */
+  pendingRequestPoolSize?: number;
 }
 
 /**

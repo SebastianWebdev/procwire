@@ -4,6 +4,7 @@ import { TransportError, TimeoutError } from "../utils/errors.js";
 import { transitionState } from "../utils/assert.js";
 import type { Transport, TransportState, TransportEvents } from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Stdio transport options for child process communication.
@@ -48,6 +49,11 @@ export interface StdioTransportOptions {
    * @default 1MB
    */
   maxStderrBuffer?: number;
+
+  /**
+   * Optional metrics collector for transport events.
+   */
+  metrics?: MetricsCollector;
 }
 
 /**
@@ -102,11 +108,16 @@ export class StdioTransport implements Transport {
       startupTimeout: options.startupTimeout ?? 10000,
       maxStdoutBuffer: options.maxStdoutBuffer ?? 10 * 1024 * 1024, // 10MB
       maxStderrBuffer: options.maxStderrBuffer ?? 1 * 1024 * 1024, // 1MB
+      metrics: options.metrics,
     };
   }
 
   get state(): TransportState {
     return this._state;
+  }
+
+  get pid(): number | null {
+    return this.process?.pid ?? null;
   }
 
   /**
@@ -146,6 +157,7 @@ export class StdioTransport implements Transport {
             `Process startup timeout after ${this.options.startupTimeout}ms`,
             new TimeoutError(`Startup timeout`),
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         }, this.options.startupTimeout);
@@ -158,6 +170,7 @@ export class StdioTransport implements Transport {
           }
 
           this.setState("connected");
+          this.options.metrics?.incrementCounter("transport.connect", 1, { transport: "stdio" });
           this.setupProcessListeners(proc);
           this.emitter.emit("connect", undefined);
           resolve();
@@ -172,6 +185,7 @@ export class StdioTransport implements Transport {
 
           this.setState("error");
           const error = new TransportError(`Failed to spawn process: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         });
@@ -181,6 +195,7 @@ export class StdioTransport implements Transport {
           `Failed to create process: ${(err as Error).message}`,
           err as Error,
         );
+        this.recordError(error);
         reject(error);
       }
     });
@@ -247,6 +262,7 @@ export class StdioTransport implements Transport {
       stdin.write(data, (err) => {
         if (err) {
           const error = new TransportError(`Write to stdin failed: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         } else {
@@ -277,6 +293,7 @@ export class StdioTransport implements Transport {
           const error = new TransportError(
             `Stdout buffer exceeded limit of ${this.options.maxStdoutBuffer} bytes`,
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           this.disconnect();
           return;
@@ -296,6 +313,7 @@ export class StdioTransport implements Transport {
           const error = new TransportError(
             `Stderr buffer exceeded limit of ${this.options.maxStderrBuffer} bytes`,
           );
+          this.recordError(error);
           this.emitter.emit("error", error);
           this.disconnect();
           return;
@@ -315,6 +333,7 @@ export class StdioTransport implements Transport {
     proc.on("error", (err) => {
       this.setState("error");
       const error = new TransportError(`Process error: ${err.message}`, err);
+      this.recordError(error);
       this.emitter.emit("error", error);
     });
   }
@@ -344,10 +363,18 @@ export class StdioTransport implements Transport {
 
     if (this._state !== "disconnected") {
       this.setState("disconnected");
+      this.options.metrics?.incrementCounter("transport.disconnect", 1, { transport: "stdio" });
       this.emitter.emit("disconnect", undefined);
     }
 
     this.stdoutBytesReceived = 0;
     this.stderrBytesReceived = 0;
+  }
+
+  private recordError(error: Error): void {
+    this.options.metrics?.incrementCounter("transport.error", 1, {
+      transport: "stdio",
+      type: error.name,
+    });
   }
 }

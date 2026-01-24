@@ -57,6 +57,7 @@ export class ProcessManager implements IProcessManager {
       },
       namespace: config.namespace ?? "procwire",
       gracefulShutdownMs: config.gracefulShutdownMs ?? 5000,
+      metrics: config.metrics,
     };
   }
 
@@ -70,21 +71,7 @@ export class ProcessManager implements IProcessManager {
 
     const restartPolicy = options.restartPolicy ?? this.config.restartPolicy;
 
-    // Create stdio transport
-    const transportOptions: StdioTransportOptions = {
-      executablePath: options.executablePath,
-      startupTimeout: options.startupTimeout ?? 10000,
-    };
-    if (options.args !== undefined) {
-      transportOptions.args = options.args;
-    }
-    if (options.cwd !== undefined) {
-      transportOptions.cwd = options.cwd;
-    }
-    if (options.env !== undefined) {
-      transportOptions.env = options.env;
-    }
-    const transport = new StdioTransport(transportOptions);
+    const transport = this.createTransport(options);
 
     // Build control channel (stdio-based)
     const controlChannel = await this.buildControlChannel(transport, options.controlChannel);
@@ -111,34 +98,11 @@ export class ProcessManager implements IProcessManager {
 
     this.processes.set(id, managed);
 
-    // Setup process lifecycle listeners
-    transport.on("exit", ({ code, signal }) => {
-      this.handleProcessExit(id, code, signal);
-    });
-
-    transport.on("error", (error) => {
-      this.events.emit("error", { id, error });
-      handle.emitError(error);
-    });
+    this.setupProcessListeners(id, transport, handle);
 
     // Start transport and channels
     try {
-      // IMPORTANT: Start control channel BEFORE connecting transport
-      // This ensures the channel subscribes to transport events before
-      // the child process starts sending data
-      await controlChannel.start();
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pid = (transport as any).process?.pid ?? null;
-      handle.setPid(pid);
-
-      if (dataChannel) {
-        await dataChannel.start();
-      }
-
-      handle.setState("running");
-      this.events.emit("spawn", { id, pid: pid ?? 0 });
-      this.events.emit("ready", { id });
+      await this.startManagedProcess(id, handle, transport, dataChannel);
     } catch (error) {
       // Cleanup on failure
       this.processes.delete(id);
@@ -295,21 +259,7 @@ export class ProcessManager implements IProcessManager {
     // Cleanup old resources
     await this.cleanupProcess(managed);
 
-    // Create new transport
-    const transportOptions: StdioTransportOptions = {
-      executablePath: managed.options.executablePath,
-      startupTimeout: managed.options.startupTimeout ?? 10000,
-    };
-    if (managed.options.args !== undefined) {
-      transportOptions.args = managed.options.args;
-    }
-    if (managed.options.cwd !== undefined) {
-      transportOptions.cwd = managed.options.cwd;
-    }
-    if (managed.options.env !== undefined) {
-      transportOptions.env = managed.options.env;
-    }
-    const transport = new StdioTransport(transportOptions);
+    const transport = this.createTransport(managed.options);
 
     // Build new control channel
     const controlChannel = await this.buildControlChannel(
@@ -331,32 +281,8 @@ export class ProcessManager implements IProcessManager {
     managed.handle = newHandle;
     managed.transport = transport;
 
-    // Setup listeners
-    transport.on("exit", ({ code, signal }) => {
-      this.handleProcessExit(id, code, signal);
-    });
-
-    transport.on("error", (error) => {
-      this.events.emit("error", { id, error });
-      newHandle.emitError(error);
-    });
-
-    // Start control channel BEFORE connecting transport (same as spawn())
-    // This ensures the channel subscribes to transport events before
-    // the child process starts sending data
-    await controlChannel.start();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pid = (transport as any).process?.pid ?? null;
-    newHandle.setPid(pid);
-
-    if (dataChannel) {
-      await dataChannel.start();
-    }
-
-    newHandle.setState("running");
-    this.events.emit("spawn", { id, pid: pid ?? 0 });
-    this.events.emit("ready", { id });
+    this.setupProcessListeners(id, transport, newHandle);
+    await this.startManagedProcess(id, newHandle, transport, dataChannel);
 
     // Close old handle
     await oldHandle.close().catch(() => {});
@@ -380,6 +306,62 @@ export class ProcessManager implements IProcessManager {
         childProcess.kill("SIGKILL");
       }
     }
+  }
+
+  private createTransport(options: SpawnOptions): StdioTransport {
+    const transportOptions: StdioTransportOptions = {
+      executablePath: options.executablePath,
+      startupTimeout: options.startupTimeout ?? 10000,
+      metrics: this.config.metrics,
+    };
+    if (options.args !== undefined) {
+      transportOptions.args = options.args;
+    }
+    if (options.cwd !== undefined) {
+      transportOptions.cwd = options.cwd;
+    }
+    if (options.env !== undefined) {
+      transportOptions.env = options.env;
+    }
+    return new StdioTransport(transportOptions);
+  }
+
+  private setupProcessListeners(
+    id: string,
+    transport: StdioTransport,
+    handle: ProcessHandle,
+  ): void {
+    transport.on("exit", ({ code, signal }) => {
+      this.handleProcessExit(id, code, signal);
+    });
+
+    transport.on("error", (error) => {
+      this.events.emit("error", { id, error });
+      handle.emitError(error);
+    });
+  }
+
+  private async startManagedProcess(
+    id: string,
+    handle: ProcessHandle,
+    transport: StdioTransport,
+    dataChannel: Channel | null,
+  ): Promise<void> {
+    // IMPORTANT: Start control channel BEFORE connecting transport
+    // This ensures the channel subscribes to transport events before
+    // the child process starts sending data
+    await handle.controlChannel.start();
+
+    const pid = transport.pid;
+    handle.setPid(pid);
+
+    if (dataChannel) {
+      await dataChannel.start();
+    }
+
+    handle.setState("running");
+    this.events.emit("spawn", { id, pid: pid ?? 0 });
+    this.events.emit("ready", { id });
   }
 
   /**
@@ -419,6 +401,10 @@ export class ProcessManager implements IProcessManager {
       // notifications immediately after spawn (e.g., runtime.ready)
       .withBufferEarlyNotifications(10);
 
+    if (this.config.metrics !== undefined) {
+      builder.withMetrics(this.config.metrics);
+    }
+
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);
     } else {
@@ -437,7 +423,7 @@ export class ProcessManager implements IProcessManager {
    * Builds data channel from pipe transport.
    */
   private async buildDataChannel(path: string, config?: ChannelConfig): Promise<Channel> {
-    const transport = new SocketTransport({ path });
+    const transport = new SocketTransport({ path, metrics: this.config.metrics });
 
     const framing =
       config?.framing === "line-delimited"
@@ -468,6 +454,10 @@ export class ProcessManager implements IProcessManager {
       // Enable early notification buffering for child processes that send
       // notifications immediately after spawn (e.g., runtime.ready)
       .withBufferEarlyNotifications(10);
+
+    if (this.config.metrics !== undefined) {
+      builder.withMetrics(this.config.metrics);
+    }
 
     if (config?.timeoutMs !== undefined) {
       builder.withTimeout(config.timeoutMs);

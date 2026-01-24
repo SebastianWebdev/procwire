@@ -5,6 +5,7 @@ import type { SerializationCodec } from "../serialization/types.js";
 import type { Protocol } from "../protocol/types.js";
 import type { ResponseAccessor } from "../channel/types.js";
 import type { Channel } from "../channel/types.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Process lifecycle states.
@@ -173,6 +174,11 @@ export interface ProcessManagerConfig {
    * @default 5000
    */
   gracefulShutdownMs?: number;
+
+  /**
+   * Optional metrics collector shared by managed transports and channels.
+   */
+  metrics?: MetricsCollector;
 }
 
 /**

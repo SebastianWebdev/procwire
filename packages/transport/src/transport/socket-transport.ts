@@ -4,6 +4,7 @@ import { TransportError } from "../utils/errors.js";
 import { transitionState } from "../utils/assert.js";
 import type { Transport, TransportState, TransportEvents } from "./types.js";
 import type { Unsubscribe } from "../utils/disposables.js";
+import type { MetricsCollector } from "../utils/metrics.js";
 
 /**
  * Socket transport options (Named Pipes on Windows, Unix Domain Sockets on Unix).
@@ -39,6 +40,11 @@ export interface SocketTransportOptions {
    * @default 30000
    */
   maxReconnectDelay?: number;
+
+  /**
+   * Optional metrics collector for transport events.
+   */
+  metrics?: MetricsCollector;
 }
 
 /**
@@ -71,6 +77,7 @@ export class SocketTransport implements Transport {
       autoReconnect: options.autoReconnect ?? false,
       reconnectDelay: options.reconnectDelay ?? 1000,
       maxReconnectDelay: options.maxReconnectDelay ?? 30000,
+      metrics: options.metrics,
     };
   }
 
@@ -109,6 +116,7 @@ export class SocketTransport implements Transport {
         const error = new TransportError(
           `Connection timeout after ${this.options.connectionTimeout}ms`,
         );
+        this.recordError(error);
         this.emitter.emit("error", error);
         reject(error);
       }, this.options.connectionTimeout);
@@ -121,6 +129,7 @@ export class SocketTransport implements Transport {
 
         this.setState("connected");
         this.reconnectAttempts = 0;
+        this.options.metrics?.incrementCounter("transport.connect", 1, { transport: "socket" });
         this.setupSocketListeners(socket);
         this.emitter.emit("connect", undefined);
         resolve();
@@ -134,6 +143,7 @@ export class SocketTransport implements Transport {
 
         this.setState("error");
         const error = new TransportError(`Connection failed: ${err.message}`, err);
+        this.recordError(error);
         this.emitter.emit("error", error);
         reject(error);
 
@@ -201,6 +211,7 @@ export class SocketTransport implements Transport {
       socket.write(data, (err) => {
         if (err) {
           const error = new TransportError(`Write failed: ${err.message}`, err);
+          this.recordError(error);
           this.emitter.emit("error", error);
           reject(error);
         } else {
@@ -238,6 +249,7 @@ export class SocketTransport implements Transport {
     socket.on("error", (err) => {
       this.setState("error");
       const error = new TransportError(`Socket error: ${err.message}`, err);
+      this.recordError(error);
       this.emitter.emit("error", error);
     });
   }
@@ -273,7 +285,15 @@ export class SocketTransport implements Transport {
 
     if (this._state !== "disconnected") {
       this.setState("disconnected");
+      this.options.metrics?.incrementCounter("transport.disconnect", 1, { transport: "socket" });
       this.emitter.emit("disconnect", undefined);
     }
+  }
+
+  private recordError(error: Error): void {
+    this.options.metrics?.incrementCounter("transport.error", 1, {
+      transport: "socket",
+      type: error.name,
+    });
   }
 }

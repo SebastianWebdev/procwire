@@ -15,6 +15,9 @@ import type { Unsubscribe } from "../utils/disposables.js";
 import { EventEmitter } from "../utils/events.js";
 import { ProtocolError, toError, SerializationError } from "../utils/errors.js";
 import { createTimeoutSignal } from "../utils/time.js";
+import type { MetricsCollector } from "../utils/metrics.js";
+
+type TimeoutSignal = ReturnType<typeof createTimeoutSignal>;
 
 /**
  * Pending request state.
@@ -22,7 +25,47 @@ import { createTimeoutSignal } from "../utils/time.js";
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timeoutSignal: { cancel: () => void };
+  timeoutSignal: TimeoutSignal | null;
+  startTime: number;
+  method: string;
+}
+
+const noop = () => {};
+
+function createPendingRequest(): PendingRequest {
+  return {
+    resolve: noop,
+    reject: noop,
+    timeoutSignal: null,
+    startTime: 0,
+    method: "",
+  };
+}
+
+class PendingRequestPool {
+  private readonly pool: PendingRequest[] = [];
+  private readonly maxSize: number;
+
+  constructor(maxSize: number = 100) {
+    this.maxSize = maxSize;
+  }
+
+  acquire(): PendingRequest {
+    return this.pool.pop() ?? createPendingRequest();
+  }
+
+  release(pending: PendingRequest): void {
+    pending.timeoutSignal?.cancel();
+    pending.resolve = noop;
+    pending.reject = noop;
+    pending.timeoutSignal = null;
+    pending.startTime = 0;
+    pending.method = "";
+
+    if (this.pool.length < this.maxSize) {
+      this.pool.push(pending);
+    }
+  }
 }
 
 /**
@@ -120,6 +163,8 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
   private readonly middleware: ChannelMiddleware[];
   private readonly maxInboundFrames: number | undefined;
   private readonly bufferEarlyNotifications: number;
+  private readonly metrics: MetricsCollector | undefined;
+  private readonly pendingPool: PendingRequestPool | null;
 
   private readonly events = new EventEmitter<ChannelEvents>();
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();
@@ -143,6 +188,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
       options.maxInboundFrames !== undefined ? options.maxInboundFrames : undefined;
     this.bufferEarlyNotifications =
       options.bufferEarlyNotifications !== undefined ? options.bufferEarlyNotifications : 10;
+    this.metrics = options.metrics;
+    const poolSize = options.pendingRequestPoolSize ?? 100;
+    this.pendingPool = poolSize > 0 ? new PendingRequestPool(poolSize) : null;
 
     // Auto-detect response accessor if not provided
     this.responseAccessor =
@@ -224,8 +272,9 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     // Reject all pending requests
     const channelClosedError = new Error("Channel closed");
     for (const pending of this.pendingRequests.values()) {
-      pending.timeoutSignal.cancel();
+      pending.timeoutSignal?.cancel();
       pending.reject(channelClosedError);
+      this.releasePendingRequest(pending);
     }
     this.pendingRequests.clear();
 
@@ -254,8 +303,14 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
       throw new ProtocolError("Failed to extract request ID from created request");
     }
 
+    this.metrics?.incrementCounter("channel.request", 1, { method });
+
     // Call middleware
     await this.runMiddlewareHook("onOutgoingRequest", request);
+
+    const pending = this.acquirePendingRequest();
+    pending.startTime = Date.now();
+    pending.method = method;
 
     // Setup pending request promise
     const resultPromise = new Promise<unknown>((resolve, reject) => {
@@ -263,19 +318,23 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
       const timeoutSignal = createTimeoutSignal(effectiveTimeout);
 
       // Store pending request
-      this.pendingRequests.set(id, {
-        resolve,
-        reject,
-        timeoutSignal,
-      });
+      pending.resolve = resolve;
+      pending.reject = reject;
+      pending.timeoutSignal = timeoutSignal;
+      this.pendingRequests.set(id, pending);
 
       // Race between response and timeout
       timeoutSignal.promise.catch((error) => {
         // Timeout occurred
-        const pending = this.pendingRequests.get(id);
-        if (pending) {
+        const activePending = this.pendingRequests.get(id);
+        if (activePending) {
           this.pendingRequests.delete(id);
-          reject(error);
+          this.metrics?.incrementCounter("channel.request_timeout", 1, {
+            method: activePending.method,
+          });
+          this.recordRequestLatency(activePending, "timeout");
+          activePending.reject(error);
+          this.releasePendingRequest(activePending);
         }
       });
     });
@@ -289,10 +348,11 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
       await this.transport.write(framed);
     } catch (error) {
       // Write failed, clean up pending request
-      const pending = this.pendingRequests.get(id);
-      if (pending) {
-        pending.timeoutSignal.cancel();
+      const activePending = this.pendingRequests.get(id);
+      if (activePending) {
+        activePending.timeoutSignal?.cancel();
         this.pendingRequests.delete(id);
+        this.releasePendingRequest(activePending);
       }
       throw error;
     }
@@ -384,6 +444,13 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
 
     // Process each frame, checking limit before each one
     for (const frame of frames) {
+      if (this.metrics) {
+        this.metrics.incrementCounter("framing.frames", 1, { direction: "inbound" });
+        this.metrics.recordHistogram("framing.frame_size_bytes", frame.length, {
+          direction: "inbound",
+        });
+      }
+
       // Check max inbound frames limit BEFORE processing
       if (this.maxInboundFrames !== undefined) {
         this.inboundFrameCount++;
@@ -457,16 +524,20 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
 
     // Remove from pending
     this.pendingRequests.delete(id);
-    pending.timeoutSignal.cancel();
+    pending.timeoutSignal?.cancel();
 
     // Check if error response
     if (this.responseAccessor.isErrorResponse(response)) {
       const error = this.responseAccessor.getError(response);
+      this.recordRequestLatency(pending, "error");
       pending.reject(new ProtocolError("Request failed", error));
     } else {
       const result = this.responseAccessor.getResult(response);
+      this.recordRequestLatency(pending, "success");
       pending.resolve(result);
     }
+
+    this.releasePendingRequest(pending);
   }
 
   /**
@@ -608,10 +679,32 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     }
   }
 
+  private acquirePendingRequest(): PendingRequest {
+    return this.pendingPool?.acquire() ?? createPendingRequest();
+  }
+
+  private releasePendingRequest(pending: PendingRequest): void {
+    if (this.pendingPool) {
+      this.pendingPool.release(pending);
+    }
+  }
+
+  private recordRequestLatency(pending: PendingRequest, status: string): void {
+    if (!this.metrics) {
+      return;
+    }
+    const latencyMs = Date.now() - pending.startTime;
+    this.metrics.recordHistogram("channel.request_latency_ms", latencyMs, {
+      method: pending.method,
+      status,
+    });
+  }
+
   /**
    * Emits error event.
    */
   private emitError(error: Error): void {
+    this.metrics?.incrementCounter("channel.error", 1, { type: error.name });
     this.events.emit("error", error);
   }
 }
