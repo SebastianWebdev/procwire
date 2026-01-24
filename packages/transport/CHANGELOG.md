@@ -1,5 +1,34 @@
 # @procwire/transport
 
+## 0.2.0
+
+### Minor Changes
+
+- [#28](https://github.com/SebastianWebdev/procwire/pull/28) [`3bb167b`](https://github.com/SebastianWebdev/procwire/commit/3bb167b4ff333a6c27dbf3cc509b19d54f23e8be) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - ### Stability & Reliability Fixes
+
+  **Critical Fixes:**
+  - Fix race condition in `RequestChannel.start()` - clean up transport subscriptions when `connect()` fails, preventing memory leaks
+  - Fix `maxInboundFrames` limit enforcement - check limit before processing each frame (DoS protection)
+  - Make `terminateAll()` resilient to individual failures using `Promise.allSettled`
+
+  **High Priority Fixes:**
+  - Fix memory leak in notification buffer by enforcing sliding window limit
+  - Add Unix socket path length validation (104 char limit for cross-platform compatibility)
+  - Replace hardcoded `/tmp` with configurable `baseDir` using `os.tmpdir()`
+  - Use `transitionState()` consistently in `SocketTransport` and `StdioTransport` for validated state transitions
+
+  **New Features:**
+  - Add metrics hooks (`onBytesReceived`, `onBytesSent`, `onFrameDecoded`, `onFrameEncoded`) to transports, framing, and channels
+  - Add `onMiddlewareError` callback option for middleware error handling
+  - Add optional signal handlers (SIGTERM/SIGINT) for `ProcessManager`
+  - Add constructor validation for `SocketTransport`, `StdioTransport`, `LineDelimitedFraming`, `LengthPrefixedFraming`, `ProcessManager`, `RequestChannel`
+
+  **Testing & Documentation:**
+  - Add performance benchmarks (throughput, latency percentiles, payload sizes)
+  - Add memory leak tests (repeated requests, concurrent, connect/disconnect cycles)
+  - Add comprehensive tests for all stability fixes
+  - Enhance JSDoc documentation with `@example`, `@throws`, `@see` annotations
+
 ## 0.1.3
 
 ### Patch Changes
