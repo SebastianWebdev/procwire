@@ -43,12 +43,14 @@ Demonstrates advanced IPC pattern with **separate control and data channels**:
 ## Why Dual Channels?
 
 ### Control Channel (stdio + JSON)
+
 - **Purpose**: Commands, status queries, configuration
 - **Characteristics**: Low latency, human-readable, easy to debug
 - **Best for**: Infrequent, small messages (<1KB)
 - **Examples**: `getStatus()`, `shutdown()`, `reconfigure()`
 
 ### Data Channel (pipe + MessagePack)
+
 - **Purpose**: Bulk data transfer, high-throughput processing
 - **Characteristics**: Efficient binary, high bandwidth, optimized framing
 - **Best for**: Frequent, large messages (>10KB)
@@ -161,6 +163,7 @@ await handle.requestViaData("processItems", { items: [...] });
 ### Worker Side Setup
 
 Worker must:
+
 1. Set up control channel on stdio
 2. Read `ASPECT_IPC_DATA_PATH` env var
 3. Create pipe server and listen
@@ -200,23 +203,25 @@ await server.listen(dataPath);
 
 ### When to Use Each Channel
 
-| Use Case | Channel | Reason |
-|----------|---------|--------|
-| Status check | Control | Small payload, infrequent |
-| Configuration update | Control | Human-readable, debuggable |
-| Process 1000 items | Data | Large payload, binary efficient |
-| Stream video frames | Data | High throughput, binary |
-| Heartbeat | Control | Low overhead |
-| Log aggregation | Data | High volume |
+| Use Case             | Channel | Reason                          |
+| -------------------- | ------- | ------------------------------- |
+| Status check         | Control | Small payload, infrequent       |
+| Configuration update | Control | Human-readable, debuggable      |
+| Process 1000 items   | Data    | Large payload, binary efficient |
+| Stream video frames  | Data    | High throughput, binary         |
+| Heartbeat            | Control | Low overhead                    |
+| Log aggregation      | Data    | High volume                     |
 
 ### MessagePack Benefits
 
 Compared to JSON:
+
 - **20-50% smaller** payloads
 - **2-5x faster** encode/decode
 - **Binary-safe** (no base64 needed)
 
 Example (1000 items):
+
 - JSON: ~80KB, 5ms encode
 - MessagePack: ~45KB, 2ms encode
 
@@ -246,6 +251,7 @@ const path = PipePath.forModule("my-app", "worker-1");
 **Cause**: Worker failed to start pipe server before parent tried to connect.
 
 **Solution**:
+
 - Increase `startupTimeout` in spawn options
 - Check worker logs for errors
 - Verify `ASPECT_IPC_DATA_PATH` is set
@@ -255,6 +261,7 @@ const path = PipePath.forModule("my-app", "worker-1");
 **Cause**: Stale socket file from previous run.
 
 **Solution**:
+
 ```ts
 const server = TransportFactory.createPipeServer({
   unlinkOnListen: true, // Remove stale socket

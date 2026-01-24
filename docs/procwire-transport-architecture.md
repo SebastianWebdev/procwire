@@ -165,8 +165,8 @@ interface Transport {
   on(event: TransportEvent, handler: Function): Unsubscribe;
 }
 
-type TransportState = 'disconnected' | 'connecting' | 'connected' | 'error';
-type TransportEvent = 'connect' | 'disconnect' | 'error' | 'data';
+type TransportState = "disconnected" | "connecting" | "connected" | "error";
+type TransportEvent = "connect" | "disconnect" | "error" | "data";
 ```
 
 ### 4.2 Framing
@@ -178,7 +178,7 @@ interface FramingCodec {
   readonly name: string;
 
   encode(payload: Buffer): Buffer;
-  decode(chunk: Buffer): Buffer[];  // Returns complete frames
+  decode(chunk: Buffer): Buffer[]; // Returns complete frames
 
   reset(): void;
   hasBufferedData(): boolean;
@@ -484,21 +484,21 @@ Built-in implementation following the [JSON-RPC 2.0 specification](https://www.j
 ```typescript
 // Message types
 interface JsonRpcRequest {
-  jsonrpc: '2.0';
+  jsonrpc: "2.0";
   id: string | number;
   method: string;
   params?: unknown;
 }
 
 interface JsonRpcResponse {
-  jsonrpc: '2.0';
+  jsonrpc: "2.0";
   id: string | number;
   result?: unknown;
   error?: JsonRpcError;
 }
 
 interface JsonRpcNotification {
-  jsonrpc: '2.0';
+  jsonrpc: "2.0";
   method: string;
   params?: unknown;
 }
@@ -599,7 +599,7 @@ interface PipeTransportOptions {
 class PipePath {
   static forModule(namespace: string, moduleId: string): string;
   static isWindows(): boolean;
-  static cleanup(path: string): Promise<void>;  // Remove stale Unix sockets
+  static cleanup(path: string): Promise<void>; // Remove stale Unix sockets
 }
 ```
 
@@ -626,8 +626,8 @@ class TransportFactory {
 
 ```typescript
 class JsonCodec implements SerializationCodec {
-  readonly name = 'json';
-  readonly contentType = 'application/json';
+  readonly name = "json";
+  readonly contentType = "application/json";
 
   constructor(options?: {
     replacer?: (key: string, value: unknown) => unknown;
@@ -640,11 +640,11 @@ class JsonCodec implements SerializationCodec {
 
 ```typescript
 class RawCodec implements SerializationCodec<Buffer> {
-  readonly name = 'raw';
-  readonly contentType = 'application/octet-stream';
+  readonly name = "raw";
+  readonly contentType = "application/octet-stream";
 
-  serialize(value: Buffer): Buffer;  // passthrough
-  deserialize(buffer: Buffer): Buffer;  // passthrough
+  serialize(value: Buffer): Buffer; // passthrough
+  deserialize(buffer: Buffer): Buffer; // passthrough
 }
 ```
 
@@ -655,8 +655,8 @@ class RawCodec implements SerializationCodec<Buffer> {
 ```typescript
 // Requires: @msgpack/msgpack
 class MessagePackCodec implements SerializationCodec {
-  readonly name = 'msgpack';
-  readonly contentType = 'application/x-msgpack';
+  readonly name = "msgpack";
+  readonly contentType = "application/x-msgpack";
 
   constructor(options?: MsgPackOptions);
 }
@@ -667,8 +667,8 @@ class MessagePackCodec implements SerializationCodec {
 ```typescript
 // Requires: protobufjs
 class ProtobufCodec<T> implements SerializationCodec<T> {
-  readonly name = 'protobuf';
-  readonly contentType = 'application/x-protobuf';
+  readonly name = "protobuf";
+  readonly contentType = "application/x-protobuf";
 
   constructor(messageType: protobuf.Type);
 }
@@ -679,8 +679,8 @@ class ProtobufCodec<T> implements SerializationCodec<T> {
 ```typescript
 // Requires: apache-arrow
 class ArrowCodec implements SerializationCodec<Table> {
-  readonly name = 'arrow';
-  readonly contentType = 'application/vnd.apache.arrow.stream';
+  readonly name = "arrow";
+  readonly contentType = "application/vnd.apache.arrow.stream";
 
   constructor(schema?: Schema);
 }
@@ -730,23 +730,23 @@ const manager = new ProcessManager({
 });
 
 // Spawn with dual-channel
-const handle = await manager.spawn('worker-1', {
-  executablePath: './worker',
+const handle = await manager.spawn("worker-1", {
+  executablePath: "./worker",
   controlChannel: {
-    framing: 'line-delimited',
-    serialization: 'json',
-    protocol: 'jsonrpc',
+    framing: "line-delimited",
+    serialization: "json",
+    protocol: "jsonrpc",
   },
   dataChannel: {
-    transport: 'pipe',
-    framing: 'length-prefixed',
-    serialization: 'msgpack',
+    transport: "pipe",
+    framing: "length-prefixed",
+    serialization: "msgpack",
   },
 });
 
 // Use appropriate channel
-const status = await handle.request('status');  // via control
-const result = await handle.requestViaData('process', largeData);  // via data
+const status = await handle.request("status"); // via control
+const result = await handle.requestViaData("process", largeData); // via data
 
 await manager.terminateAll();
 ```
@@ -775,23 +775,25 @@ await dataChannel.request('bulkInsert', { items: [...] });
 ### 10.1 Custom Transport
 
 ```typescript
-import { Transport, TransportState } from '@procwire/transport';
+import { Transport, TransportState } from "@procwire/transport";
 
 class WebSocketTransport implements Transport {
   private ws: WebSocket | null = null;
-  private _state: TransportState = 'disconnected';
+  private _state: TransportState = "disconnected";
 
-  get state() { return this._state; }
+  get state() {
+    return this._state;
+  }
 
   async connect(): Promise<void> {
     this.ws = new WebSocket(this.url);
     await this.waitForOpen();
-    this._state = 'connected';
+    this._state = "connected";
   }
 
   async disconnect(): Promise<void> {
     this.ws?.close();
-    this._state = 'disconnected';
+    this._state = "disconnected";
   }
 
   async write(data: Buffer): Promise<void> {
@@ -800,8 +802,8 @@ class WebSocketTransport implements Transport {
 
   onData(handler: (data: Buffer) => void): Unsubscribe {
     const listener = (event: MessageEvent) => handler(Buffer.from(event.data));
-    this.ws?.addEventListener('message', listener);
-    return () => this.ws?.removeEventListener('message', listener);
+    this.ws?.addEventListener("message", listener);
+    return () => this.ws?.removeEventListener("message", listener);
   }
 }
 ```
@@ -809,12 +811,12 @@ class WebSocketTransport implements Transport {
 ### 10.2 Custom Serialization
 
 ```typescript
-import { SerializationCodec } from '@procwire/transport';
-import cbor from 'cbor';
+import { SerializationCodec } from "@procwire/transport";
+import cbor from "cbor";
 
 class CborCodec implements SerializationCodec {
-  readonly name = 'cbor';
-  readonly contentType = 'application/cbor';
+  readonly name = "cbor";
+  readonly contentType = "application/cbor";
 
   serialize(value: unknown): Buffer {
     return cbor.encode(value);
@@ -832,18 +834,32 @@ CodecRegistry.register(new CborCodec());
 ### 10.3 Custom Protocol
 
 ```typescript
-import { Protocol, ParsedMessage } from '@procwire/transport';
+import { Protocol, ParsedMessage } from "@procwire/transport";
 
-interface MyRequest { type: 'request'; id: number; action: string; payload: unknown }
-interface MyResponse { type: 'response'; id: number; data: unknown; error?: string }
-interface MyNotification { type: 'event'; name: string; payload: unknown }
+interface MyRequest {
+  type: "request";
+  id: number;
+  action: string;
+  payload: unknown;
+}
+interface MyResponse {
+  type: "response";
+  id: number;
+  data: unknown;
+  error?: string;
+}
+interface MyNotification {
+  type: "event";
+  name: string;
+  payload: unknown;
+}
 
 class MyProtocol implements Protocol<MyRequest, MyResponse, MyNotification> {
-  readonly name = 'my-protocol';
-  readonly version = '1.0';
+  readonly name = "my-protocol";
+  readonly version = "1.0";
 
   createRequest(method: string, params?: unknown, id?: number): MyRequest {
-    return { type: 'request', id: id ?? Date.now(), action: method, payload: params };
+    return { type: "request", id: id ?? Date.now(), action: method, payload: params };
   }
 
   // ... implement other methods
@@ -864,19 +880,16 @@ interface ChannelMiddleware {
 // Example: Logging middleware
 const loggingMiddleware: ChannelMiddleware = {
   onOutgoingRequest(req) {
-    console.log('→', req);
+    console.log("→", req);
     return req;
   },
   onIncomingResponse(res) {
-    console.log('←', res);
+    console.log("←", res);
     return res;
   },
 };
 
-const channel = ChannelBuilder
-  .withTransport(transport)
-  .withMiddleware(loggingMiddleware)
-  .build();
+const channel = ChannelBuilder.withTransport(transport).withMiddleware(loggingMiddleware).build();
 ```
 
 ---
@@ -1000,22 +1013,22 @@ const channel = ChannelBuilder
 ### 13.1 Basic Stdio Communication
 
 ```typescript
-import { createStdioChannel } from '@procwire/transport';
+import { createStdioChannel } from "@procwire/transport";
 
 async function main() {
   // Start worker process with JSON-RPC channel
-  const channel = await createStdioChannel('./worker.js');
+  const channel = await createStdioChannel("./worker.js");
 
   // Request/response
-  const result = await channel.request('add', { a: 1, b: 2 });
-  console.log('Result:', result); // { sum: 3 }
+  const result = await channel.request("add", { a: 1, b: 2 });
+  console.log("Result:", result); // { sum: 3 }
 
   // Notifications
-  channel.notify('log', { message: 'Hello from parent' });
+  channel.notify("log", { message: "Hello from parent" });
 
   // Handle incoming notifications
   channel.onNotification((notif) => {
-    console.log('Worker says:', notif.method, notif.params);
+    console.log("Worker says:", notif.method, notif.params);
   });
 
   await channel.close();
@@ -1025,26 +1038,26 @@ async function main() {
 ### 13.2 Dual-Channel Setup
 
 ```typescript
-import { ProcessManager, MessagePackCodec } from '@procwire/transport';
+import { ProcessManager, MessagePackCodec } from "@procwire/transport";
 
 async function main() {
   const manager = new ProcessManager();
 
-  const handle = await manager.spawn('worker', {
-    executablePath: './worker',
+  const handle = await manager.spawn("worker", {
+    executablePath: "./worker",
     dataChannel: {
       enabled: true,
-      transport: 'pipe',
+      transport: "pipe",
       serialization: new MessagePackCodec(),
     },
   });
 
   // Small requests via control channel (JSON-RPC/stdio)
-  const status = await handle.request('getStatus');
+  const status = await handle.request("getStatus");
 
   // Bulk data via data channel (MessagePack/pipe)
   const items = generateLargeDataset();
-  const result = await handle.requestViaData('processItems', { items });
+  const result = await handle.requestViaData("processItems", { items });
 
   await manager.terminateAll();
 }
@@ -1053,10 +1066,10 @@ async function main() {
 ### 13.3 Server Mode (Multiple Clients)
 
 ```typescript
-import { PipeServer, RequestChannel, JsonRpcProtocol } from '@procwire/transport';
+import { PipeServer, RequestChannel, JsonRpcProtocol } from "@procwire/transport";
 
 async function startServer() {
-  const server = new PipeServer({ path: '/tmp/my-service.sock' });
+  const server = new PipeServer({ path: "/tmp/my-service.sock" });
 
   server.onConnection((transport) => {
     const channel = new RequestChannel({
@@ -1065,17 +1078,17 @@ async function startServer() {
     });
 
     channel.onRequest(async (method, params) => {
-      if (method === 'echo') {
+      if (method === "echo") {
         return params;
       }
-      throw new Error('Unknown method');
+      throw new Error("Unknown method");
     });
 
     channel.start();
   });
 
   await server.listen();
-  console.log('Server listening on', server.address);
+  console.log("Server listening on", server.address);
 }
 ```
 
@@ -1162,6 +1175,7 @@ fn main() {
 ### When to Use @procwire/transport
 
 ✅ **Use when:**
+
 - Building Electron apps with helper processes
 - Need pluggable serialization (JSON, MessagePack, Arrow)
 - Want process lifecycle management
@@ -1170,6 +1184,7 @@ fn main() {
 - Want full TypeScript support
 
 ❌ **Don't use when:**
+
 - Need network protocols (use gRPC, WebSocket)
 - Need message queuing (use RabbitMQ, Redis)
 - Need distributed systems (use ZeroMQ, NATS)
@@ -1199,6 +1214,7 @@ fn main() {
 ## Appendix B: Version Roadmap
 
 ### v1.0.0 (Initial Release)
+
 - Stdio transport
 - Named Pipe transport (client + server)
 - Line-delimited framing
@@ -1209,15 +1225,18 @@ fn main() {
 - Basic ProcessManager
 
 ### v1.1.0
+
 - Middleware support
 - Connection pooling
 - Improved error handling
 
 ### v1.2.0
+
 - StreamChannel for unidirectional streaming
 - Backpressure handling
 
 ### v2.0.0
+
 - Breaking: Simplified API
 - WebSocket transport (optional package)
 - Custom protocol builder

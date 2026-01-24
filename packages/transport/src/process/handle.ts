@@ -92,11 +92,7 @@ export class ProcessHandle implements IProcessHandle {
    * Sends a request via data channel.
    * @throws {Error} if data channel is not available
    */
-  async requestViaData(
-    method: string,
-    params?: unknown,
-    timeout?: number,
-  ): Promise<unknown> {
+  async requestViaData(method: string, params?: unknown, timeout?: number): Promise<unknown> {
     if (!this._dataChannel) {
       throw new Error(`Data channel not available for process '${this._id}'`);
     }

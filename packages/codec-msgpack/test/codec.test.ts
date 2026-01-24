@@ -207,7 +207,7 @@ describe("MessagePackCodec", () => {
 
     it("throws SerializationError for string input to deserialize", () => {
       expect(() => codec.deserialize("not a buffer" as unknown as Buffer)).toThrow(
-        SerializationError
+        SerializationError,
       );
     });
 

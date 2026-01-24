@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { tableFromArrays } from "apache-arrow";
-import { ArrowCodec, createFastArrowCodec, createMonitoredArrowCodec, createFileArrowCodec } from "../src/index.js";
+import {
+  ArrowCodec,
+  createFastArrowCodec,
+  createMonitoredArrowCodec,
+  createFileArrowCodec,
+} from "../src/index.js";
 import { SerializationError } from "@procwire/transport";
 
 describe("@procwire/codec-arrow", () => {
@@ -62,7 +67,7 @@ describe("@procwire/codec-arrow", () => {
         expect(decoded.numRows).toBe(5);
         expect(decoded.getChild("int32")?.toArray()).toEqual(table.getChild("int32")?.toArray());
         expect(decoded.getChild("float64")?.toArray()).toEqual(
-          table.getChild("float64")?.toArray()
+          table.getChild("float64")?.toArray(),
         );
       });
 
@@ -84,9 +89,7 @@ describe("@procwire/codec-arrow", () => {
 
         expect(decoded.numRows).toBe(4);
         expect(decoded.getChild("names")?.toArray()).toEqual(table.getChild("names")?.toArray());
-        expect(decoded.getChild("emails")?.toArray()).toEqual(
-          table.getChild("emails")?.toArray()
-        );
+        expect(decoded.getChild("emails")?.toArray()).toEqual(table.getChild("emails")?.toArray());
       });
 
       it("roundtrips table with boolean data", () => {
@@ -439,12 +442,16 @@ describe("@procwire/codec-arrow", () => {
         const table = tableFromArrays({ col: new Int32Array([2147483647, -2147483648, 0]) });
 
         const decoded = codec.deserialize(codec.serialize(table));
-        expect(decoded.getChild("col")?.toArray()).toEqual(new Int32Array([2147483647, -2147483648, 0]));
+        expect(decoded.getChild("col")?.toArray()).toEqual(
+          new Int32Array([2147483647, -2147483648, 0]),
+        );
       });
 
       it("preserves Float64 values", () => {
         const codec = new ArrowCodec();
-        const table = tableFromArrays({ col: new Float64Array([1.7976931348623157e308, 5e-324, 0]) });
+        const table = tableFromArrays({
+          col: new Float64Array([1.7976931348623157e308, 5e-324, 0]),
+        });
 
         const decoded = codec.deserialize(codec.serialize(table));
         const arr = decoded.getChild("col")?.toArray() as Float64Array;

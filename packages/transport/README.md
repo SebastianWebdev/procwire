@@ -254,11 +254,13 @@ const framing = new LineDelimitedFraming({
 ```
 
 **Best for**:
+
 - Text protocols (JSON-RPC over stdio)
 - Human-readable debugging
 - Simple implementations
 
 **Not suitable for**:
+
 - Binary data with embedded newlines
 - Very large messages (>1MB)
 
@@ -275,6 +277,7 @@ const framing = new LengthPrefixedFraming({
 ```
 
 **Best for**:
+
 - Binary protocols (MessagePack, Protobuf)
 - Large messages
 - High throughput
@@ -358,18 +361,21 @@ const protocol = new JsonRpcProtocol();
 ```
 
 **Request**:
+
 ```json
-{"jsonrpc":"2.0","id":1,"method":"add","params":{"a":2,"b":3}}
+{ "jsonrpc": "2.0", "id": 1, "method": "add", "params": { "a": 2, "b": 3 } }
 ```
 
 **Response**:
+
 ```json
-{"jsonrpc":"2.0","id":1,"result":5}
+{ "jsonrpc": "2.0", "id": 1, "result": 5 }
 ```
 
 **Notification** (no response):
+
 ```json
-{"jsonrpc":"2.0","method":"log","params":{"message":"Hello"}}
+{ "jsonrpc": "2.0", "method": "log", "params": { "message": "Hello" } }
 ```
 
 #### SimpleProtocol
@@ -383,8 +389,9 @@ const protocol = new SimpleProtocol();
 ```
 
 **Message**:
+
 ```json
-{"method":"add","params":{"a":2,"b":3}}
+{ "method": "add", "params": { "a": 2, "b": 3 } }
 ```
 
 #### Custom Protocols
@@ -576,6 +583,7 @@ const pid = getProcessId();
 - **Cleanup**: Automatic on server close
 
 Example:
+
 ```typescript
 const path = "\\\\.\\pipe\\my-app-worker-1";
 ```
@@ -588,6 +596,7 @@ const path = "\\\\.\\pipe\\my-app-worker-1";
 - **Cleanup**: Manual (remove socket file)
 
 Example:
+
 ```typescript
 const path = "/tmp/my-app-worker-1.sock";
 
@@ -618,12 +627,14 @@ const path = isWindows()
 **Symptoms**: `channel.request()` never resolves.
 
 **Common causes**:
+
 1. **Framing mismatch**: Parent uses line-delimited, child uses length-prefixed
 2. **Codec mismatch**: Parent uses JSON, child uses MessagePack
 3. **Protocol mismatch**: Parent uses JSON-RPC, child uses custom protocol
 4. **Child not responding**: Child crashed or deadlocked
 
 **Solutions**:
+
 - Verify both sides use identical framing/codec/protocol
 - Check child process stderr for errors
 - Add timeout to requests: `{ timeout: 5000 }`
@@ -634,11 +645,13 @@ const path = isWindows()
 **Symptoms**: `SocketTransport.connect()` fails with ECONNREFUSED.
 
 **Common causes**:
+
 1. Server not listening yet
 2. Wrong path
 3. Stale socket file (Unix)
 
 **Solutions**:
+
 ```typescript
 // Increase connection timeout
 const transport = new SocketTransport({
@@ -655,10 +668,12 @@ const server = new SocketServer({ unlinkOnListen: true });
 **Symptoms**: Errors about message size or buffer limits.
 
 **Common causes**:
+
 - Message exceeds `maxMessageSize` (length-prefixed)
 - Line exceeds `maxLineLength` (line-delimited)
 
 **Solutions**:
+
 ```typescript
 // Increase limits
 const framing = new LengthPrefixedFraming({
@@ -677,11 +692,13 @@ for (const chunk of chunks) {
 **Symptoms**: `ProcessManager.spawn()` fails or worker exits immediately.
 
 **Common causes**:
+
 1. Syntax error in worker code
 2. Missing dependencies
 3. Wrong executable path
 
 **Solutions**:
+
 - Test worker standalone: `node worker.js`
 - Check stderr: `startupTimeout` should be long enough
 - Verify executable path and args
@@ -691,11 +708,13 @@ for (const chunk of chunks) {
 **Symptoms**: Memory usage grows over time.
 
 **Common causes**:
+
 - Unclosed channels
 - Unremoved event listeners
 - Buffered data not consumed
 
 **Solutions**:
+
 ```typescript
 // Always close channels
 try {
@@ -812,6 +831,7 @@ MIT - See [LICENSE](../LICENSE) for details.
 ## Roadmap
 
 ### v0.1.0 (Current)
+
 - Core transport, framing, serialization, protocol layers
 - Stdio and pipe/socket transports
 - JSON-RPC 2.0 and simple protocols
@@ -819,6 +839,7 @@ MIT - See [LICENSE](../LICENSE) for details.
 - Optional codecs: MessagePack, Protobuf, Arrow
 
 ### v0.2.0 (Planned)
+
 - HTTP/WebSocket transports
 - Streaming support
 - Compression layer (gzip, brotli)
@@ -826,6 +847,7 @@ MIT - See [LICENSE](../LICENSE) for details.
 - Metrics and monitoring
 
 ### v1.0.0 (Future)
+
 - Production-ready stable API
 - Performance optimizations
 - Comprehensive docs and examples

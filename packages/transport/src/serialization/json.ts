@@ -67,7 +67,11 @@ export class JsonCodec<T = unknown> implements SerializationCodec<T> {
    */
   serialize(value: T): Buffer {
     try {
-      const json = JSON.stringify(value, this.replacer as (key: string, value: unknown) => unknown, this.space);
+      const json = JSON.stringify(
+        value,
+        this.replacer as (key: string, value: unknown) => unknown,
+        this.space,
+      );
       return Buffer.from(json, "utf8");
     } catch (error) {
       throw new SerializationError(

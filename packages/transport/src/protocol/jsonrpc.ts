@@ -74,9 +74,11 @@ export type JsonRpcResponseMessage = JsonRpcResponse | JsonRpcErrorResponse;
  * const res = protocol.createResponse(req.id, { name: 'Alice' });
  * ```
  */
-export class JsonRpcProtocol
-  implements Protocol<JsonRpcRequest, JsonRpcResponseMessage, JsonRpcNotification>
-{
+export class JsonRpcProtocol implements Protocol<
+  JsonRpcRequest,
+  JsonRpcResponseMessage,
+  JsonRpcNotification
+> {
   public readonly name = "jsonrpc";
   public readonly version = "2.0";
 

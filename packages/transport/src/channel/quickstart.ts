@@ -11,8 +11,7 @@ import { ChannelBuilder } from "./builder.js";
 /**
  * Options for stdio channel creation.
  */
-export interface StdioChannelOptions
-  extends Omit<StdioTransportOptions, "executablePath"> {
+export interface StdioChannelOptions extends Omit<StdioTransportOptions, "executablePath"> {
   /**
    * Request timeout in milliseconds.
    * @default 30000

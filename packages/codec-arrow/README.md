@@ -15,12 +15,12 @@ Provides efficient columnar data serialization using [apache-arrow](https://gith
 
 ## Performance
 
-| Metric | Value |
-|--------|-------|
-| Throughput | >1M rows/second |
-| Serialization overhead | Near-zero (zero-copy) |
-| Memory overhead | Minimal (reuses buffers) |
-| Stream format overhead | ~100-200 bytes |
+| Metric                 | Value                    |
+| ---------------------- | ------------------------ |
+| Throughput             | >1M rows/second          |
+| Serialization overhead | Near-zero (zero-copy)    |
+| Memory overhead        | Minimal (reuses buffers) |
+| Stream format overhead | ~100-200 bytes           |
 
 ## Installation
 
@@ -35,15 +35,15 @@ Note: `apache-arrow` is a peer dependency and must be installed separately.
 ### Basic Usage
 
 ```ts
-import { tableFromArrays } from 'apache-arrow';
-import { ArrowCodec } from '@procwire/codec-arrow';
+import { tableFromArrays } from "apache-arrow";
+import { ArrowCodec } from "@procwire/codec-arrow";
 
 const codec = new ArrowCodec();
 
 const table = tableFromArrays({
   id: [1, 2, 3],
-  name: ['Alice', 'Bob', 'Charlie'],
-  score: [95.5, 87.3, 92.1]
+  name: ["Alice", "Bob", "Charlie"],
+  score: [95.5, 87.3, 92.1],
 });
 
 // Serialize (zero-copy!)
@@ -57,10 +57,10 @@ console.log(decoded.numRows); // 3
 ### High-Performance Mode
 
 ```ts
-import { createFastArrowCodec } from '@procwire/codec-arrow';
+import { createFastArrowCodec } from "@procwire/codec-arrow";
 
 // For trusted environments - validation disabled
-const codec = createFastArrowCodec('stream');
+const codec = createFastArrowCodec("stream");
 
 // Process data at maximum throughput
 for (const table of tables) {
@@ -72,7 +72,7 @@ for (const table of tables) {
 ### With Metrics
 
 ```ts
-import { createMonitoredArrowCodec } from '@procwire/codec-arrow';
+import { createMonitoredArrowCodec } from "@procwire/codec-arrow";
 
 const codec = createMonitoredArrowCodec();
 
@@ -91,14 +91,14 @@ console.log(`Errors: ${metrics.serializeErrors}`);
 ### File Format (Random Access)
 
 ```ts
-import { createFileArrowCodec } from '@procwire/codec-arrow';
-import { writeFileSync } from 'fs';
+import { createFileArrowCodec } from "@procwire/codec-arrow";
+import { writeFileSync } from "fs";
 
 const codec = createFileArrowCodec();
 const buffer = codec.serialize(table);
 
 // Write to disk - format supports random access
-writeFileSync('data.arrow', buffer);
+writeFileSync("data.arrow", buffer);
 ```
 
 ## API Reference
@@ -113,11 +113,11 @@ const codec = new ArrowCodec(options?: ArrowCodecOptions);
 
 #### Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | `"arrow"` | Codec identifier |
-| `contentType` | `string` | MIME type based on format |
-| `metrics` | `ArrowCodecMetrics \| null` | Current metrics or null |
+| Property      | Type                        | Description               |
+| ------------- | --------------------------- | ------------------------- |
+| `name`        | `"arrow"`                   | Codec identifier          |
+| `contentType` | `string`                    | MIME type based on format |
+| `metrics`     | `ArrowCodecMetrics \| null` | Current metrics or null   |
 
 #### Methods
 
@@ -126,6 +126,7 @@ const codec = new ArrowCodec(options?: ArrowCodecOptions);
 Serializes an Apache Arrow Table to IPC format using zero-copy optimization.
 
 **Parameters:**
+
 - `value` - Arrow Table to serialize
 
 **Returns:** `Buffer` containing Arrow IPC data
@@ -137,6 +138,7 @@ Serializes an Apache Arrow Table to IPC format using zero-copy optimization.
 Deserializes Arrow IPC data to an Apache Arrow Table.
 
 **Parameters:**
+
 - `buffer` - Buffer containing Arrow IPC data
 
 **Returns:** Deserialized Arrow Table
@@ -149,26 +151,26 @@ Resets all collected metrics to zero. No-op if metrics collection is disabled.
 
 ### ArrowCodecOptions
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `format` | `'stream' \| 'file'` | `'stream'` | IPC format to use |
-| `validateInput` | `boolean` | `true` | Enable input type validation |
-| `collectMetrics` | `boolean` | `false` | Enable metrics collection |
+| Option           | Type                 | Default    | Description                  |
+| ---------------- | -------------------- | ---------- | ---------------------------- |
+| `format`         | `'stream' \| 'file'` | `'stream'` | IPC format to use            |
+| `validateInput`  | `boolean`            | `true`     | Enable input type validation |
+| `collectMetrics` | `boolean`            | `false`    | Enable metrics collection    |
 
 ### ArrowCodecMetrics
 
 Metrics collected when `collectMetrics: true`:
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `serializeCount` | `number` | Successful serialize() calls |
-| `deserializeCount` | `number` | Successful deserialize() calls |
-| `bytesSerialised` | `number` | Total bytes serialized |
-| `bytesDeserialized` | `number` | Total bytes deserialized |
-| `rowsSerialized` | `number` | Total rows serialized |
-| `rowsDeserialized` | `number` | Total rows deserialized |
-| `serializeErrors` | `number` | Failed serialize() calls |
-| `deserializeErrors` | `number` | Failed deserialize() calls |
+| Metric              | Type     | Description                    |
+| ------------------- | -------- | ------------------------------ |
+| `serializeCount`    | `number` | Successful serialize() calls   |
+| `deserializeCount`  | `number` | Successful deserialize() calls |
+| `bytesSerialised`   | `number` | Total bytes serialized         |
+| `bytesDeserialized` | `number` | Total bytes deserialized       |
+| `rowsSerialized`    | `number` | Total rows serialized          |
+| `rowsDeserialized`  | `number` | Total rows deserialized        |
+| `serializeErrors`   | `number` | Failed serialize() calls       |
+| `deserializeErrors` | `number` | Failed deserialize() calls     |
 
 ### Helper Functions
 
@@ -194,16 +196,16 @@ For maximum performance in trusted environments:
 
 ```ts
 const codec = new ArrowCodec({
-  format: 'stream',      // Smaller, no footer overhead
-  validateInput: false,  // Skip type checks
-  collectMetrics: false  // Skip metric collection
+  format: "stream", // Smaller, no footer overhead
+  validateInput: false, // Skip type checks
+  collectMetrics: false, // Skip metric collection
 });
 ```
 
 Or use the helper:
 
 ```ts
-const codec = createFastArrowCodec('stream');
+const codec = createFastArrowCodec("stream");
 ```
 
 ### Memory Optimization
@@ -212,28 +214,28 @@ The codec uses zero-copy serialization by wrapping the underlying ArrayBuffer:
 
 ```ts
 // Internally uses:
-Buffer.from(uint8array.buffer, uint8array.byteOffset, uint8array.byteLength)
+Buffer.from(uint8array.buffer, uint8array.byteOffset, uint8array.byteLength);
 // Instead of:
-Buffer.from(uint8array) // This copies data!
+Buffer.from(uint8array); // This copies data!
 ```
 
 This reduces memory allocation by ~50% during serialization.
 
 ### Format Selection
 
-| Use Case | Recommended Format |
-|----------|-------------------|
-| IPC streaming | `'stream'` (default) |
-| Network transfer | `'stream'` |
-| File storage | `'file'` |
-| Random access needed | `'file'` |
-| Smallest size | `'stream'` |
+| Use Case             | Recommended Format   |
+| -------------------- | -------------------- |
+| IPC streaming        | `'stream'` (default) |
+| Network transfer     | `'stream'`           |
+| File storage         | `'file'`             |
+| Random access needed | `'file'`             |
+| Smallest size        | `'stream'`           |
 
 ## Integration with @procwire/transport
 
 ```ts
-import { ChannelBuilder } from '@procwire/transport';
-import { ArrowCodec } from '@procwire/codec-arrow';
+import { ChannelBuilder } from "@procwire/transport";
+import { ArrowCodec } from "@procwire/codec-arrow";
 
 const channel = new ChannelBuilder()
   .withTransport(transport)
@@ -243,7 +245,7 @@ const channel = new ChannelBuilder()
   .build();
 
 // Send Arrow tables over the channel
-await channel.request('processAnalytics', analyticsTable);
+await channel.request("processAnalytics", analyticsTable);
 ```
 
 ## Type System Support
@@ -251,8 +253,8 @@ await channel.request('processAnalytics', analyticsTable);
 The codec provides full TypeScript support:
 
 ```ts
-import type { Table, Schema, Field, RecordBatch } from '@procwire/codec-arrow';
-import { ArrowCodec, ArrowCodecOptions, ArrowCodecMetrics } from '@procwire/codec-arrow';
+import type { Table, Schema, Field, RecordBatch } from "@procwire/codec-arrow";
+import { ArrowCodec, ArrowCodecOptions, ArrowCodecMetrics } from "@procwire/codec-arrow";
 ```
 
 ## Error Handling
@@ -260,14 +262,14 @@ import { ArrowCodec, ArrowCodecOptions, ArrowCodecMetrics } from '@procwire/code
 All errors are wrapped in `SerializationError` from `@procwire/transport`:
 
 ```ts
-import { SerializationError } from '@procwire/transport';
+import { SerializationError } from "@procwire/transport";
 
 try {
   codec.serialize(invalidTable);
 } catch (error) {
   if (error instanceof SerializationError) {
-    console.error('Serialization failed:', error.message);
-    console.error('Cause:', error.cause);
+    console.error("Serialization failed:", error.message);
+    console.error("Cause:", error.cause);
   }
 }
 ```
@@ -277,14 +279,14 @@ try {
 ### Creating Tables from Arrays
 
 ```ts
-import { tableFromArrays } from 'apache-arrow';
+import { tableFromArrays } from "apache-arrow";
 
 const table = tableFromArrays({
   // Integer column
   id: [1, 2, 3],
 
   // String column
-  name: ['Alice', 'Bob', 'Charlie'],
+  name: ["Alice", "Bob", "Charlie"],
 
   // Float column
   score: [95.5, 87.3, 92.1],
@@ -293,19 +295,19 @@ const table = tableFromArrays({
   active: [true, false, true],
 
   // Column with nulls
-  email: ['alice@example.com', null, 'charlie@example.com']
+  email: ["alice@example.com", null, "charlie@example.com"],
 });
 ```
 
 ### Typed Arrays for Performance
 
 ```ts
-import { tableFromArrays } from 'apache-arrow';
+import { tableFromArrays } from "apache-arrow";
 
 const table = tableFromArrays({
   int32_col: new Int32Array([1, 2, 3, 4, 5]),
   float64_col: new Float64Array([1.1, 2.2, 3.3, 4.4, 5.5]),
-  uint8_col: new Uint8Array([255, 128, 64, 32, 0])
+  uint8_col: new Uint8Array([255, 128, 64, 32, 0]),
 });
 ```
 
@@ -314,11 +316,11 @@ const table = tableFromArrays({
 ```ts
 const table = tableFromArrays({
   id: [1, 2, 3],
-  name: ['Alice', 'Bob', 'Charlie']
+  name: ["Alice", "Bob", "Charlie"],
 });
 
 // Get column
-const idColumn = table.getChild('id');
+const idColumn = table.getChild("id");
 const ids = idColumn?.toArray(); // [1, 2, 3]
 
 // Iterate rows
@@ -348,7 +350,7 @@ Tables serialized in one language can be deserialized in another seamlessly.
 const timeSeries = tableFromArrays({
   timestamp: timestamps,
   value: values,
-  quality: qualities
+  quality: qualities,
 });
 ```
 
@@ -359,7 +361,7 @@ const analyticsData = tableFromArrays({
   user_id: userIds,
   event_type: eventTypes,
   timestamp: timestamps,
-  properties: jsonProperties
+  properties: jsonProperties,
 });
 ```
 
@@ -369,7 +371,7 @@ const analyticsData = tableFromArrays({
 const features = tableFromArrays({
   feature1: feature1Data,
   feature2: feature2Data,
-  label: labels
+  label: labels,
 });
 ```
 

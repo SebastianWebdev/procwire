@@ -9,13 +9,7 @@ import type { Channel } from "../channel/types.js";
 /**
  * Process lifecycle states.
  */
-export type ProcessState =
-  | "starting"
-  | "running"
-  | "stopping"
-  | "stopped"
-  | "crashed"
-  | "error";
+export type ProcessState = "starting" | "running" | "stopping" | "stopped" | "crashed" | "error";
 
 /**
  * Restart policy configuration.

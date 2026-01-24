@@ -507,7 +507,7 @@ export class ArrowCodec implements SerializationCodec<Table> {
         if (this._metrics) this._metrics.serializeErrors++;
         throw new SerializationError(
           "Invalid input: expected Apache Arrow Table",
-          new TypeError("Input is not an Arrow Table")
+          new TypeError("Input is not an Arrow Table"),
         );
       }
     }
@@ -531,7 +531,7 @@ export class ArrowCodec implements SerializationCodec<Table> {
       if (this._metrics) this._metrics.serializeErrors++;
       throw new SerializationError(
         `Failed to encode Arrow table: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }
@@ -609,7 +609,7 @@ export class ArrowCodec implements SerializationCodec<Table> {
         if (this._metrics) this._metrics.deserializeErrors++;
         throw new SerializationError(
           `Invalid input: expected Buffer or Uint8Array, got ${input === null ? "null" : "undefined"}`,
-          new TypeError("Invalid input type")
+          new TypeError("Invalid input type"),
         );
       }
 
@@ -617,7 +617,7 @@ export class ArrowCodec implements SerializationCodec<Table> {
         if (this._metrics) this._metrics.deserializeErrors++;
         throw new SerializationError(
           `Invalid input: expected Buffer or Uint8Array, got ${typeof input}`,
-          new TypeError("Invalid input type")
+          new TypeError("Invalid input type"),
         );
       }
 
@@ -642,7 +642,7 @@ export class ArrowCodec implements SerializationCodec<Table> {
       if (this._metrics) this._metrics.deserializeErrors++;
       throw new SerializationError(
         `Failed to decode Arrow table: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }
@@ -764,7 +764,7 @@ export function createFastArrowCodec(format: ArrowIPCFormat = "stream"): ArrowCo
  * @see {@link ArrowCodec.resetMetrics} for resetting metrics
  */
 export function createMonitoredArrowCodec(
-  options?: Omit<ArrowCodecOptions, "collectMetrics">
+  options?: Omit<ArrowCodecOptions, "collectMetrics">,
 ): ArrowCodec {
   return new ArrowCodec({
     ...options,

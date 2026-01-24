@@ -255,7 +255,7 @@ export function createCommonExtensionCodec(): ExtensionCodec {
  * @see {@link MessagePackCodecOptions} for available configuration options
  */
 export function createExtendedCodec<T = unknown>(
-  options?: Omit<MessagePackCodecOptions, "extensionCodec">
+  options?: Omit<MessagePackCodecOptions, "extensionCodec">,
 ): MessagePackCodec<T> {
   return new MessagePackCodec<T>({
     ...options,

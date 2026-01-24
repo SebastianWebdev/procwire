@@ -97,7 +97,7 @@ export class StdioTransport implements Transport {
       executablePath: options.executablePath,
       args: options.args ?? [],
       cwd: options.cwd ?? process.cwd(),
-      env: options.env ?? process.env as Record<string, string>,
+      env: options.env ?? (process.env as Record<string, string>),
       startupTimeout: options.startupTimeout ?? 10000,
       maxStdoutBuffer: options.maxStdoutBuffer ?? 10 * 1024 * 1024, // 10MB
       maxStderrBuffer: options.maxStderrBuffer ?? 1 * 1024 * 1024, // 1MB

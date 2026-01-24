@@ -34,6 +34,7 @@ The **Transport** layer handles raw byte transfer between endpoints. It provides
 - **Custom Transports**: Implement the [Transport](/api/transport/src/interfaces/transport/) interface
 
 **Key Types:**
+
 - [Transport](/api/transport/src/interfaces/transport/) - Base transport interface
 - [StdioTransport](/api/transport/src/classes/stdiotransport/) - Child process communication
 - [SocketTransport](/api/transport/src/classes/sockettransport/) - Socket/pipe client
@@ -51,6 +52,7 @@ The **Framing** layer determines how to detect message boundaries in a byte stre
 Raw byte streams don't have built-in message boundaries. The framing layer ensures that `"hello"` and `"world"` sent separately arrive as two distinct messages, not as `"helloworld"`.
 
 **Key Types:**
+
 - [FramingCodec](/api/transport/src/interfaces/framingcodec/) - Framing interface
 - [LineDelimitedFraming](/api/transport/src/classes/linedelimitedframing/) - Newline-delimited messages
 - [LengthPrefixedFraming](/api/transport/src/classes/lengthprefixedframing/) - Binary length prefix
@@ -66,6 +68,7 @@ The **Serialization** layer converts between JavaScript objects and binary repre
 - **Custom Codecs**: Implement the [SerializationCodec](/api/transport/src/interfaces/serializationcodec/) interface
 
 **Key Types:**
+
 - [SerializationCodec](/api/transport/src/interfaces/serializationcodec/) - Serialization interface
 - [JsonCodec](/api/transport/src/classes/jsoncodec/) - JSON serialization
 - [RawCodec](/api/transport/src/classes/rawcodec/) - No-op codec (pass-through)
@@ -79,11 +82,13 @@ The **Protocol** layer defines the application-level message format and semantic
 - **Custom Protocols**: Implement the [Protocol](/api/transport/src/interfaces/protocol/) interface
 
 **Key Concepts:**
+
 - **Requests**: Method calls with parameters that expect responses
 - **Responses**: Results or errors returned for requests
 - **Notifications**: One-way messages (no response expected)
 
 **Key Types:**
+
 - [Protocol](/api/transport/src/interfaces/protocol/) - Protocol interface
 - [JsonRpcProtocol](/api/transport/src/classes/jsonrpcprotocol/) - JSON-RPC 2.0 implementation
 - [SimpleProtocol](/api/transport/src/classes/simpleprotocol/) - Lightweight protocol
@@ -97,6 +102,7 @@ The **Channel** layer combines all lower layers into a high-level communication 
 - Quickstart helpers: `createStdioChannel()`, `createPipeChannel()`
 
 **Key Features:**
+
 - Type-safe request/response handling
 - Automatic timeout management
 - Middleware support
@@ -116,6 +122,7 @@ The **Process Management** layer provides high-level abstractions for managing w
 ### Zero Dependencies
 
 The core `@procwire/transport` package has **zero runtime dependencies**. This ensures:
+
 - Minimal bundle size
 - No dependency conflicts
 - Fast installation
@@ -130,10 +137,10 @@ Each layer is independent and replaceable:
 ```javascript
 // Mix and match any combination
 const channel = new ChannelBuilder()
-  .withTransport(anyTransport)      // stdio, socket, custom
-  .withFraming(anyFraming)          // line-delimited, length-prefixed, custom
-  .withSerialization(anyCodec)      // JSON, MessagePack, Protobuf, custom
-  .withProtocol(anyProtocol)        // JSON-RPC, Simple, custom
+  .withTransport(anyTransport) // stdio, socket, custom
+  .withFraming(anyFraming) // line-delimited, length-prefixed, custom
+  .withSerialization(anyCodec) // JSON, MessagePack, Protobuf, custom
+  .withProtocol(anyProtocol) // JSON-RPC, Simple, custom
   .build();
 ```
 
@@ -193,7 +200,7 @@ ipc-bridge-core/
 The most common pattern: send a request, wait for a response.
 
 ```javascript
-const result = await channel.request('method', { params });
+const result = await channel.request("method", { params });
 ```
 
 ### Notifications
@@ -202,7 +209,7 @@ One-way messages (fire and forget):
 
 ```javascript
 // Sender
-await channel.notify('event', { data: 'value' });
+await channel.notify("event", { data: "value" });
 
 // Receiver
 channel.onNotification((method, params) => {
@@ -217,8 +224,8 @@ Both sides can send requests to each other:
 ```javascript
 // Client can handle requests from server
 channel.onRequest(async (method, params) => {
-  if (method === 'ping') {
-    return 'pong';
+  if (method === "ping") {
+    return "pong";
   }
 });
 

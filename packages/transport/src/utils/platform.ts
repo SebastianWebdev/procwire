@@ -13,7 +13,9 @@ export function isWindows(): boolean {
  * Returns true if running on Unix-like platform (Linux, macOS, BSD).
  */
 export function isUnix(): boolean {
-  return process.platform === "darwin" || process.platform === "linux" || process.platform === "freebsd";
+  return (
+    process.platform === "darwin" || process.platform === "linux" || process.platform === "freebsd"
+  );
 }
 
 /**

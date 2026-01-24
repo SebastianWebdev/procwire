@@ -186,8 +186,6 @@ describe("transitionState", () => {
   });
 
   it("should reject invalid transitions", () => {
-    expect(() => transitionState("disconnected", "connected")).toThrow(
-      "Invalid state transition",
-    );
+    expect(() => transitionState("disconnected", "connected")).toThrow("Invalid state transition");
   });
 });

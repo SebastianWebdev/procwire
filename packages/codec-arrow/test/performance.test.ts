@@ -228,7 +228,10 @@ describe("ArrowCodec performance", () => {
 
       const table = tableFromArrays({
         short_string: Array.from({ length: rows }, (_, i) => `row_${i}`),
-        longer_string: Array.from({ length: rows }, (_, i) => `This is a longer string for row number ${i}`),
+        longer_string: Array.from(
+          { length: rows },
+          (_, i) => `This is a longer string for row number ${i}`,
+        ),
       });
 
       const start = performance.now();

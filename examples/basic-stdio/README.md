@@ -83,6 +83,7 @@ Parent: Done
 ### Parent Side
 
 Uses `createStdioChannel()` which provides:
+
 - **StdioTransport** - Spawns child and manages stdio streams
 - **LineDelimitedFraming** - Splits stream by newlines
 - **JsonCodec** - JSON serialization
@@ -109,6 +110,7 @@ channel.onNotification("log", (params) => {
 ### Worker Side
 
 Implements JSON-RPC manually using only Node.js built-ins:
+
 - Uses `readline` to read line-delimited JSON from stdin
 - Uses `console.log()` to write JSON-RPC messages to stdout
 - Handler registry for methods

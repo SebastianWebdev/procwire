@@ -5,14 +5,14 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "examples/**", "**/.astro/**"]
+    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "examples/**", "**/.astro/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     languageOptions: {
-      globals: globals.node
-    }
+      globals: globals.node,
+    },
   },
   {
     files: ["**/*.ts"],
@@ -20,9 +20,9 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }
-      ]
-    }
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
   },
-  prettier
+  prettier,
 );

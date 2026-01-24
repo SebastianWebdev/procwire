@@ -61,9 +61,11 @@ export type SimpleResponseMessage = SimpleResponse | SimpleErrorResponse;
  * const res = protocol.createResponse(req.id, { name: 'Alice' });
  * ```
  */
-export class SimpleProtocol
-  implements Protocol<SimpleRequest, SimpleResponseMessage, SimpleNotification>
-{
+export class SimpleProtocol implements Protocol<
+  SimpleRequest,
+  SimpleResponseMessage,
+  SimpleNotification
+> {
   public readonly name = "simple";
   public readonly version = "1.0";
 

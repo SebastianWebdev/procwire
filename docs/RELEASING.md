@@ -58,12 +58,13 @@ OIDC Trusted Publishing eliminates the need for long-lived npm tokens. Each pack
    - **Repository owner**: `SebastianWebdev` (must match GitHub URL exactly, including capitalization!)
    - **Repository name**: `procwire`
    - **Workflow filename**: `release.yml`
-   - **Environment name**: *(leave empty)*
+   - **Environment name**: _(leave empty)_
 5. Click **"Save"**
 
 > ⚠️ **Important**: The repository owner name is **case-sensitive**. It must exactly match your GitHub username/organization as shown in the URL (e.g., `SebastianWebdev`, not `sebastianwebdev`).
 
 Repeat this for each package:
+
 - `@procwire/transport`
 - `@procwire/codec-msgpack`
 - `@procwire/codec-protobuf`
@@ -427,11 +428,13 @@ pnpm release
 **Solutions:**
 
 For CI (OIDC):
+
 - Verify Trusted Publisher is configured for the package
 - Check that `id-token: write` permission is set in workflow
 - Ensure `registry-url` is set in `setup-node` action
 
 For manual publish:
+
 ```bash
 npm login
 npm whoami  # Verify authentication
