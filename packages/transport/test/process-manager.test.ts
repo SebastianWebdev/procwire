@@ -86,7 +86,7 @@ describe("ProcessManager Integration Tests", () => {
       });
 
       // Worker sends runtime.ready on startup
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(notifications.length).toBeGreaterThan(0);
       expect(notifications[0]).toMatchObject({
