@@ -48,32 +48,13 @@ export type {
 } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Factory Functions (implemented in later tasks)
+// Factory Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-// These will be implemented in Task A.4
-// For now, export placeholder functions that throw
+export { createWorker } from "./worker.js";
 
-import type { Worker, TypedWorker, WorkerOptions } from "./types.js";
-
-/**
- * Create a new Procwire worker.
- *
- * @param options - Worker configuration
- * @returns Worker instance
- *
- * @example
- * ```ts
- * const worker = createWorker({ name: 'my-worker' });
- *
- * worker.handle('echo', (params) => params);
- * worker.start();
- * ```
- */
-export function createWorker(_options?: WorkerOptions): Worker {
-  // TODO: Implement in Task A.4
-  throw new Error("createWorker is not yet implemented. " + "This will be completed in Task A.4.");
-}
+// createTypedWorker will be added in Task A.5
+import type { TypedWorker, WorkerOptions } from "./types.js";
 
 /**
  * Create a typed worker with full type inference.
@@ -105,6 +86,13 @@ export function createTypedWorker<TMethods>(_options?: WorkerOptions): TypedWork
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Utilities (for advanced use cases)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export { HandlerRegistry } from "./handlers/index.js";
+export { ReservedMethods, isReservedMethod } from "./protocol/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Transport Layer (for advanced use cases)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -117,7 +105,7 @@ export { SocketServer, SocketClientTransport } from "./transport/index.js";
 // Handler Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { HandlerRegistry, HandlerRegistrationError } from "./handlers/index.js";
+export { HandlerRegistrationError } from "./handlers/index.js";
 export type { RegisteredHandler, RegisteredNotificationHandler } from "./handlers/index.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,8 +116,6 @@ export {
   // Reserved methods
   RESERVED_PREFIX,
   RESERVED_SUFFIX,
-  ReservedMethods,
-  isReservedMethod,
   validateUserMethod,
   WORKER_AUTO_HANDLED_METHODS,
   // Handshake
