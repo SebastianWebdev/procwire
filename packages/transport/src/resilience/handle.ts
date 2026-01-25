@@ -221,6 +221,7 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
 
   /**
    * Sends a request, optionally queueing during reconnection.
+   * Successful requests signal activity to the heartbeat manager (implicit heartbeat).
    */
   async request(method: string, params?: unknown, timeout?: number): Promise<unknown> {
     // If reconnecting and queueing is enabled, queue the request
@@ -234,7 +235,14 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
       }
     }
 
-    return this._handle.request(method, params, timeout);
+    const result = await this._handle.request(method, params, timeout);
+
+    // Signal activity to heartbeat manager (implicit heartbeat mode)
+    // This prevents healthy workers from being marked dead just because
+    // they don't respond to ping/pong while actively processing requests
+    this.heartbeatManager?.onActivity();
+
+    return result;
   }
 
   async notify(method: string, params?: unknown): Promise<void> {
