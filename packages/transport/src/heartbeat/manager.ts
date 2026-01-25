@@ -92,7 +92,7 @@ export class HeartbeatManager extends EventEmitter<HeartbeatEventMap> {
 
   /**
    * Stop heartbeat monitoring.
-   * Clears all timers and resets state.
+   * Clears all timers and resets counters for clean restart.
    */
   stop(): void {
     if (!this.state.isRunning) {
@@ -102,6 +102,7 @@ export class HeartbeatManager extends EventEmitter<HeartbeatEventMap> {
     this.clearTimers();
     this.state.isRunning = false;
     this.state.pendingPing = null;
+    this.state.consecutiveMissed = 0; // Reset for clean restart
     this.emit("heartbeat:stop", undefined);
   }
 
