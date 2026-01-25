@@ -134,6 +134,9 @@ export class ShutdownManager extends EventEmitter<ShutdownEventMap> {
 
   /**
    * Performs the graceful shutdown sequence.
+   *
+   * The gracefulTimeoutMs is enforced as a single overall limit for the entire
+   * shutdown sequence (ack + drain + complete), not as separate timeouts for each phase.
    */
   private async performGracefulShutdown(
     target: Shutdownable,
@@ -177,11 +180,18 @@ export class ShutdownManager extends EventEmitter<ShutdownEventMap> {
 
       let ackReceived = false;
 
+      // Calculate remaining time for ack phase
+      const ackTimeout = this.getRemainingTime(state.startedAt);
+      if (ackTimeout <= 0) {
+        this.forceKill(target, "timeout");
+        return;
+      }
+
       try {
         const response = (await target.request(
           ReservedMethods.SHUTDOWN,
           shutdownParams,
-          this.options.gracefulTimeoutMs,
+          ackTimeout,
         )) as ShutdownResult;
 
         ackReceived = true;
@@ -206,7 +216,15 @@ export class ShutdownManager extends EventEmitter<ShutdownEventMap> {
       if (ackReceived) {
         state.phase = "awaiting_complete";
 
-        const timeoutPromise = this.createTimeout(this.options.gracefulTimeoutMs);
+        // Calculate remaining time for complete phase
+        const completeTimeout = this.getRemainingTime(state.startedAt);
+        if (completeTimeout <= 0) {
+          state.phase = "force_killing";
+          this.forceKill(target, "timeout");
+          return;
+        }
+
+        const timeoutPromise = this.createTimeout(completeTimeout);
 
         const result = await Promise.race([
           completePromise.then(() => "complete" as const),
@@ -267,6 +285,14 @@ export class ShutdownManager extends EventEmitter<ShutdownEventMap> {
     if (state) {
       state.phase = phase;
     }
+  }
+
+  /**
+   * Calculates remaining time from the overall graceful timeout.
+   * Returns 0 if the timeout has already been exceeded.
+   */
+  private getRemainingTime(startedAt: number): number {
+    return Math.max(0, this.options.gracefulTimeoutMs - (Date.now() - startedAt));
   }
 
   /**

@@ -27,15 +27,29 @@ import type {
 
 /**
  * Creates a Reconnectable adapter from a ProcessHandle.
+ *
+ * Note: Reconnection is NOT supported for stdio-based ProcessHandle.
+ * stdio streams are bound to a specific process - when the process dies,
+ * the streams are destroyed and cannot be "reconnected".
+ *
+ * For ProcessHandle, "reconnection" means restarting the process, which is
+ * the responsibility of ProcessManager at a higher level, not ResilientProcessHandle.
+ *
+ * Reconnection IS supported for socket-based transports (TCP, named pipes as server)
+ * where a new connection can be established to a listening endpoint.
+ *
+ * @internal
  */
 function createReconnectable(_handle: ProcessHandle): Reconnectable {
   return {
     connect: async () => {
-      // For stdio-based handles, we can't truly "reconnect" -
-      // the transport would need to be recreated.
-      // This is a placeholder for when reconnection is handled at
-      // a higher level (ProcessManager).
-      throw new Error("Reconnection not implemented for ProcessHandle");
+      // stdio-based handles cannot be reconnected - the streams are bound
+      // to a specific process and are destroyed when the process exits.
+      // Use ProcessManager.restart() to restart the entire process instead.
+      throw new Error(
+        "Reconnection not supported for ProcessHandle. " +
+          "Use ProcessManager.restart() to restart the process.",
+      );
     },
   };
 }
@@ -71,10 +85,13 @@ function createShutdownable(handle: ProcessHandle, kill: (signal?: string) => vo
 
 /**
  * Default resilient process options.
+ *
+ * Note: Reconnect is disabled by default for ProcessHandle because stdio-based
+ * transports cannot be reconnected. See createReconnectable() for details.
  */
 export const DEFAULT_RESILIENT_OPTIONS: Required<ResilientProcessOptions> = {
   heartbeat: DEFAULT_HEARTBEAT_OPTIONS,
-  reconnect: DEFAULT_RECONNECT_OPTIONS,
+  reconnect: { ...DEFAULT_RECONNECT_OPTIONS, enabled: false },
   shutdown: DEFAULT_SHUTDOWN_OPTIONS,
 };
 
