@@ -1,5 +1,13 @@
 # @procwire-examples/dual-channel
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [[`be7cd05`](https://github.com/SebastianWebdev/procwire/commit/be7cd05c9f057a6a900bdab582a2914f9b1ca19c)]:
+  - @procwire/transport@0.3.0
+  - @procwire/codec-msgpack@0.2.2
+
 ## 0.0.6
 
 ### Patch Changes
