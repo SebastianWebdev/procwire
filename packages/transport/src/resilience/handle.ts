@@ -395,16 +395,23 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
   private setupHeartbeatPongListener(): void {
     if (!this.heartbeatManager) return;
 
-    // Listen for pong notifications from worker and forward to HeartbeatManager
+    // Listen for notifications from worker
     const channel = this._handle.controlChannel;
-    const unsubPong = channel.onNotification((notification: unknown) => {
+    const unsubNotification = channel.onNotification((notification: unknown) => {
       const notif = notification as { method?: string; params?: unknown };
-      if (notif.method === ReservedMethods.HEARTBEAT_PONG && this.heartbeatManager) {
-        this.heartbeatManager.handlePong(notif.params as HeartbeatPongParams);
+
+      // Forward pong to HeartbeatManager for latency tracking
+      if (notif.method === ReservedMethods.HEARTBEAT_PONG) {
+        this.heartbeatManager!.handlePong(notif.params as HeartbeatPongParams);
       }
+
+      // Any notification from worker counts as activity for implicit heartbeat.
+      // This prevents marking active workers as dead just because they don't
+      // respond to ping/pong while sending progress updates, metrics, etc.
+      this.heartbeatManager!.onActivity();
     });
 
-    this.resilienceSubscriptions.push(unsubPong);
+    this.resilienceSubscriptions.push(unsubNotification);
   }
 
   /**
