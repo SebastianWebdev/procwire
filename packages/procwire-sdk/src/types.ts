@@ -1,5 +1,5 @@
 /**
- * @procwire/procwire-sdk - Type definitions
+ * @procwire/sdk - Type definitions
  * @packageDocumentation
  */
 
@@ -252,7 +252,7 @@ export interface WorkerInternalState {
  *
  * @example Basic usage
  * ```ts
- * import { createWorker } from '@procwire/worker';
+ * import { createWorker } from '@procwire/sdk';
  *
  * const worker = createWorker({ name: 'my-worker' });
  *

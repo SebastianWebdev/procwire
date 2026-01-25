@@ -1,5 +1,5 @@
 {
-  "name": "@procwire/procwire-sdk",
+  "name": "@procwire/sdk",
   "version": "0.4.0",
   "description": "Procwire SDK for Node.js - build IPC workers with ease",
   "keywords": [

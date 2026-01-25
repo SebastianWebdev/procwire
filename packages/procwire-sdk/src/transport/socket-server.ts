@@ -26,6 +26,11 @@ export interface SocketServerOptions {
  * Worker creates this server and sends `__data_channel_ready__` to manager.
  * Manager then connects as a client.
  *
+ * @remarks
+ * This server accepts only one client connection, as each worker has
+ * exactly one manager. Additional connection attempts are ignored after
+ * the first successful connection is established via `waitForConnection()`.
+ *
  * @example
  * ```ts
  * const server = new SocketServer();

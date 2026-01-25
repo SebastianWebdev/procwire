@@ -1,12 +1,12 @@
 /**
- * @procwire/procwire-sdk - Procwire SDK for Node.js
+ * @procwire/sdk - Procwire SDK for Node.js
  *
  * Build IPC workers with ease. This package provides a simple API for creating
  * workers that communicate with a Procwire manager.
  *
  * @example
  * ```ts
- * import { createWorker } from '@procwire/procwire-sdk';
+ * import { createWorker } from '@procwire/sdk';
  *
  * const worker = createWorker({ name: 'my-worker' });
  *
@@ -103,3 +103,16 @@ export function createTypedWorker<TMethods>(_options?: WorkerOptions): TypedWork
     "createTypedWorker is not yet implemented. " + "This will be completed in Task A.5.",
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transport Layer (for advanced use cases)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type {
+  WorkerTransport,
+  TransportState,
+  SocketServerInterface,
+} from "./transport/index.js";
+
+export { StdioWorkerTransport } from "./transport/index.js";
+export { SocketServer, SocketClientTransport } from "./transport/index.js";

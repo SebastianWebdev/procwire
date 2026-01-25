@@ -1,19 +1,19 @@
-# @procwire/procwire-sdk
+# @procwire/sdk
 
 Procwire SDK for Node.js - build IPC workers with ease.
 
 ## Installation
 
 ```bash
-npm install @procwire/procwire-sdk
+npm install @procwire/sdk
 # or
-pnpm add @procwire/procwire-sdk
+pnpm add @procwire/sdk
 ```
 
 ## Quick Start
 
 ```typescript
-import { createWorker } from "@procwire/procwire-sdk";
+import { createWorker } from "@procwire/sdk";
 
 const worker = createWorker({ name: "my-worker" });
 
@@ -41,7 +41,7 @@ worker.start();
 For full type inference, use `createTypedWorker`:
 
 ```typescript
-import { createTypedWorker } from "@procwire/procwire-sdk";
+import { createTypedWorker } from "@procwire/sdk";
 
 // Define your API contract
 interface MyMethods {
@@ -68,7 +68,7 @@ worker.start();
 ## Data Channel with Custom Codec
 
 ```typescript
-import { createWorker } from "@procwire/procwire-sdk";
+import { createWorker } from "@procwire/sdk";
 import { MessagePackCodec } from "@procwire/codec-msgpack";
 
 const worker = createWorker({
@@ -81,7 +81,7 @@ const worker = createWorker({
 
 ## API Reference
 
-See the [full documentation](https://procwire.dev/api/procwire-sdk).
+See the [full documentation](https://procwire.dev/api/sdk).
 
 ## License
 
