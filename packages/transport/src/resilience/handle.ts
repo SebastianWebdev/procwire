@@ -114,7 +114,8 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
   private reconnectManager: ReconnectManager | null = null;
   private shutdownManager: ShutdownManager | null = null;
 
-  private readonly subscriptions: Unsubscribe[] = [];
+  private readonly handleEventSubscriptions: Unsubscribe[] = [];
+  private readonly resilienceSubscriptions: Unsubscribe[] = [];
   private _isHealthy = true;
   private killFn: ((signal?: string) => void) | null = null;
 
@@ -235,7 +236,8 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
    */
   async shutdown(reason: ShutdownReason = "user_requested"): Promise<void> {
     if (!this.shutdownManager) {
-      // No graceful shutdown - just close
+      // No graceful shutdown - force kill and close
+      this.forceKill();
       await this.close();
       return;
     }
@@ -261,6 +263,7 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
 
   async close(): Promise<void> {
     this.stop();
+    this.cleanupAllSubscriptions();
     await this._handle.close();
   }
 
@@ -283,16 +286,17 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
 
   /**
    * Stops resilience features.
+   * Note: Base handle event forwarding continues after stop().
    */
   stop(): void {
     this.heartbeatManager?.stop();
     this.reconnectManager?.cancel();
 
-    // Cleanup subscriptions
-    for (const unsub of this.subscriptions) {
+    // Cleanup resilience subscriptions only (not handle event forwarding)
+    for (const unsub of this.resilienceSubscriptions) {
       unsub();
     }
-    this.subscriptions.length = 0;
+    this.resilienceSubscriptions.length = 0;
   }
 
   // Private methods
@@ -360,7 +364,7 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
       this.events.emit("error", error);
     });
 
-    this.subscriptions.push(unsub1, unsub2, unsub3);
+    this.handleEventSubscriptions.push(unsub1, unsub2, unsub3);
   }
 
   private setupHeartbeatPongListener(): void {
@@ -375,6 +379,36 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
       }
     });
 
-    this.subscriptions.push(unsubPong);
+    this.resilienceSubscriptions.push(unsubPong);
+  }
+
+  /**
+   * Force kills the process with SIGKILL.
+   */
+  private forceKill(): void {
+    if (this.killFn) {
+      this.killFn("SIGKILL");
+    } else if (this._handle.pid !== null) {
+      try {
+        process.kill(this._handle.pid, "SIGKILL");
+      } catch {
+        // Process may already be dead
+      }
+    }
+  }
+
+  /**
+   * Cleanup all subscriptions (called by close()).
+   */
+  private cleanupAllSubscriptions(): void {
+    for (const unsub of this.resilienceSubscriptions) {
+      unsub();
+    }
+    this.resilienceSubscriptions.length = 0;
+
+    for (const unsub of this.handleEventSubscriptions) {
+      unsub();
+    }
+    this.handleEventSubscriptions.length = 0;
   }
 }
