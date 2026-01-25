@@ -23,7 +23,8 @@
       "Bash(git commit:*)",
       "Bash(pnpm format:*)",
       "Bash(git show:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(pnpm vitest run:*)"
     ]
   }
 }
