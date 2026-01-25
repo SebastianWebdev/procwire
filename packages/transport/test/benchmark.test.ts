@@ -181,7 +181,7 @@ describe("Performance Benchmarks", () => {
 
         const elapsed = performance.now() - start;
         const totalBytes = size * iterations * 2; // Request + response
-        const throughputMBps = (totalBytes / 1024 / 1024) / (elapsed / 1000);
+        const throughputMBps = totalBytes / 1024 / 1024 / (elapsed / 1000);
 
         results.push({
           size,

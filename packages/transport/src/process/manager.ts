@@ -78,7 +78,10 @@ export class ProcessManager implements IProcessManager {
       if (config.restartPolicy.backoffMs !== undefined && config.restartPolicy.backoffMs < 0) {
         throw new Error("ProcessManager: restartPolicy.backoffMs cannot be negative");
       }
-      if (config.restartPolicy.maxBackoffMs !== undefined && config.restartPolicy.maxBackoffMs < 0) {
+      if (
+        config.restartPolicy.maxBackoffMs !== undefined &&
+        config.restartPolicy.maxBackoffMs < 0
+      ) {
         throw new Error("ProcessManager: restartPolicy.maxBackoffMs cannot be negative");
       }
     }

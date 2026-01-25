@@ -110,15 +110,13 @@ describe("Metrics hooks", () => {
 
     expect(
       clientMetrics.histograms.some(
-        (entry) =>
-          entry.name === "channel.request_latency_ms" && entry.tags?.status === "success",
+        (entry) => entry.name === "channel.request_latency_ms" && entry.tags?.status === "success",
       ),
     ).toBe(true);
 
     expect(
       clientMetrics.histograms.some(
-        (entry) =>
-          entry.name === "framing.frame_size_bytes" && entry.tags?.direction === "inbound",
+        (entry) => entry.name === "framing.frame_size_bytes" && entry.tags?.direction === "inbound",
       ),
     ).toBe(true);
   });
