@@ -52,70 +52,26 @@ export type {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { createWorker } from "./worker.js";
-
-// createTypedWorker will be added in Task A.5
-import type { TypedWorker, WorkerOptions } from "./types.js";
-
-/**
- * Create a typed worker with full type inference.
- *
- * @typeParam TMethods - Interface defining all methods
- * @param options - Worker configuration
- * @returns Typed worker instance
- *
- * @example
- * ```ts
- * interface MyMethods {
- *   greet: { params: { name: string }; result: { message: string } };
- * }
- *
- * const worker = createTypedWorker<MyMethods>();
- *
- * worker.handle('greet', (params) => ({
- *   message: `Hello, ${params.name}!`
- * }));
- *
- * worker.start();
- * ```
- */
-export function createTypedWorker<TMethods>(_options?: WorkerOptions): TypedWorker<TMethods> {
-  // TODO: Implement in Task A.5
-  throw new Error(
-    "createTypedWorker is not yet implemented. " + "This will be completed in Task A.5.",
-  );
-}
+export { createTypedWorker } from "./typed-worker.js";
+export type { DefineWorkerMethods } from "./typed-worker.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Utilities (for advanced use cases)
+// Handler Registry (for advanced use cases)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { HandlerRegistry } from "./handlers/index.js";
-export { ReservedMethods, isReservedMethod } from "./protocol/index.js";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Transport Layer (for advanced use cases)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type { WorkerTransport, TransportState, SocketServerInterface } from "./transport/index.js";
-
-export { StdioWorkerTransport } from "./transport/index.js";
-export { SocketServer, SocketClientTransport } from "./transport/index.js";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Handler Registry
-// ─────────────────────────────────────────────────────────────────────────────
-
-export { HandlerRegistrationError } from "./handlers/index.js";
+export { HandlerRegistry, HandlerRegistrationError } from "./handlers/index.js";
 export type { RegisteredHandler, RegisteredNotificationHandler } from "./handlers/index.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Protocol
+// Protocol (for advanced use cases)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export {
   // Reserved methods
   RESERVED_PREFIX,
   RESERVED_SUFFIX,
+  ReservedMethods,
+  isReservedMethod,
   validateUserMethod,
   WORKER_AUTO_HANDLED_METHODS,
   // Handshake
@@ -143,3 +99,25 @@ export type {
   ShutdownResult,
   ShutdownCompleteParams,
 } from "./protocol/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transport Layer (for advanced use cases)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type { WorkerTransport, TransportState, SocketServerInterface } from "./transport/index.js";
+
+export { StdioWorkerTransport } from "./transport/index.js";
+export { SocketServer, SocketClientTransport } from "./transport/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Channel Types (for advanced use cases)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type {
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcError,
+  JsonRpcNotification,
+} from "./channel/types.js";
+
+export { JsonRpcErrorCodes } from "./channel/types.js";

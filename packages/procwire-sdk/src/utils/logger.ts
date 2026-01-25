@@ -32,6 +32,8 @@ export function createLogger(name: string, enabled: boolean): Logger {
     };
   }
 
+  // All logs go to stderr to keep stdout clean for protocol messages.
+  // Workers use stdout exclusively for JSON-RPC communication with the manager.
   return {
     debug: (...args) => console.error(prefix, "[DEBUG]", ...args),
     info: (...args) => console.error(prefix, "[INFO]", ...args),

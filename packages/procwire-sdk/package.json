@@ -51,7 +51,9 @@
     "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run test/integration/",
+    "test:fixtures": "npx tsx test/integration/fixtures/echo-worker.ts"
   },
   "peerDependencies": {
     "@procwire/transport": "^0.3.0"
