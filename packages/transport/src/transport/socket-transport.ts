@@ -100,9 +100,7 @@ export class SocketTransport implements Transport {
       options.maxReconnectDelay !== undefined &&
       options.reconnectDelay > options.maxReconnectDelay
     ) {
-      throw new Error(
-        "SocketTransport: reconnectDelay cannot be greater than maxReconnectDelay",
-      );
+      throw new Error("SocketTransport: reconnectDelay cannot be greater than maxReconnectDelay");
     }
 
     this.options = {

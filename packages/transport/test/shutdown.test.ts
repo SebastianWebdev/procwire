@@ -7,14 +7,16 @@ import type { ShutdownResult, ShutdownCompleteParams } from "../src/protocol/res
 /**
  * Creates a mock shutdownable target for testing.
  */
-function createMockTarget(options: {
-  id?: string;
-  pid?: number | null;
-  requestBehavior?: "success" | "timeout" | "error";
-  sendCompleteAfterMs?: number;
-  pendingRequests?: number;
-  exitCode?: number;
-} = {}): Shutdownable & {
+function createMockTarget(
+  options: {
+    id?: string;
+    pid?: number | null;
+    requestBehavior?: "success" | "timeout" | "error";
+    sendCompleteAfterMs?: number;
+    pendingRequests?: number;
+    exitCode?: number;
+  } = {},
+): Shutdownable & {
   requestCalls: Array<{ method: string; params: unknown; timeout?: number }>;
   killCalls: string[];
   notificationHandlers: Map<string, Set<(params: unknown) => void>>;
@@ -29,52 +31,56 @@ function createMockTarget(options: {
     killCalls: [] as string[],
     notificationHandlers,
 
-    request: vi.fn().mockImplementation(async (method: string, params: unknown, timeout?: number) => {
-      mock.requestCalls.push({ method, params, ...(timeout !== undefined && { timeout }) });
+    request: vi
+      .fn()
+      .mockImplementation(async (method: string, params: unknown, timeout?: number) => {
+        mock.requestCalls.push({ method, params, ...(timeout !== undefined && { timeout }) });
 
-      if (options.requestBehavior === "timeout") {
-        await new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("Request timeout")), 50);
-        });
-      }
+        if (options.requestBehavior === "timeout") {
+          await new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Request timeout")), 50);
+          });
+        }
 
-      if (options.requestBehavior === "error") {
-        throw new Error("Request failed");
-      }
+        if (options.requestBehavior === "error") {
+          throw new Error("Request failed");
+        }
 
-      // Default: success response
-      const response: ShutdownResult = {
-        status: "shutting_down",
-        pending_requests: options.pendingRequests ?? 0,
-      };
+        // Default: success response
+        const response: ShutdownResult = {
+          status: "shutting_down",
+          pending_requests: options.pendingRequests ?? 0,
+        };
 
-      // Schedule __shutdown_complete__ notification if configured
-      if (options.sendCompleteAfterMs !== undefined) {
-        setTimeout(() => {
-          const completeParams: ShutdownCompleteParams = {
-            exit_code: options.exitCode ?? 0,
-          };
-          mock.triggerNotification(ReservedMethods.SHUTDOWN_COMPLETE, completeParams);
-        }, options.sendCompleteAfterMs);
-      }
+        // Schedule __shutdown_complete__ notification if configured
+        if (options.sendCompleteAfterMs !== undefined) {
+          setTimeout(() => {
+            const completeParams: ShutdownCompleteParams = {
+              exit_code: options.exitCode ?? 0,
+            };
+            mock.triggerNotification(ReservedMethods.SHUTDOWN_COMPLETE, completeParams);
+          }, options.sendCompleteAfterMs);
+        }
 
-      return response;
-    }),
+        return response;
+      }),
 
     kill: vi.fn().mockImplementation((signal?: string) => {
       mock.killCalls.push(signal ?? "SIGTERM");
     }),
 
-    onNotification: vi.fn().mockImplementation((method: string, handler: (params: unknown) => void) => {
-      if (!notificationHandlers.has(method)) {
-        notificationHandlers.set(method, new Set());
-      }
-      notificationHandlers.get(method)!.add(handler);
+    onNotification: vi
+      .fn()
+      .mockImplementation((method: string, handler: (params: unknown) => void) => {
+        if (!notificationHandlers.has(method)) {
+          notificationHandlers.set(method, new Set());
+        }
+        notificationHandlers.get(method)!.add(handler);
 
-      return () => {
-        notificationHandlers.get(method)?.delete(handler);
-      };
-    }),
+        return () => {
+          notificationHandlers.get(method)?.delete(handler);
+        };
+      }),
 
     triggerNotification: (method: string, params: unknown) => {
       const handlers = notificationHandlers.get(method);
@@ -403,9 +409,7 @@ describe("ShutdownManager", () => {
         await vi.advanceTimersByTimeAsync(1000);
         await promise;
 
-        expect(target.requestCalls[0]?.params).toEqual(
-          expect.objectContaining({ reason }),
-        );
+        expect(target.requestCalls[0]?.params).toEqual(expect.objectContaining({ reason }));
       }
     });
   });
@@ -431,6 +435,54 @@ describe("ShutdownManager", () => {
         processId: "test-process",
         exitCode: 42,
       });
+    });
+  });
+
+  describe("cleanup", () => {
+    it("should unsubscribe notification handler on graceful shutdown", async () => {
+      const target = createMockTarget({ sendCompleteAfterMs: 10 });
+      const shutdown = new ShutdownManager();
+
+      const promise = shutdown.initiateShutdown(target, "user_requested");
+
+      // Handler should be registered during shutdown
+      expect(target.notificationHandlers.get(ReservedMethods.SHUTDOWN_COMPLETE)?.size).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+
+      // Handler should be cleaned up after shutdown
+      expect(target.notificationHandlers.get(ReservedMethods.SHUTDOWN_COMPLETE)?.size).toBe(0);
+    });
+
+    it("should unsubscribe notification handler on timeout force kill", async () => {
+      const target = createMockTarget(); // No sendCompleteAfterMs, so it will timeout
+      const shutdown = new ShutdownManager({ gracefulTimeoutMs: 100 });
+
+      const promise = shutdown.initiateShutdown(target, "user_requested");
+
+      // Handler should be registered during shutdown
+      expect(target.notificationHandlers.get(ReservedMethods.SHUTDOWN_COMPLETE)?.size).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(200);
+      await promise;
+
+      // Handler should be cleaned up even after force kill
+      expect(target.notificationHandlers.get(ReservedMethods.SHUTDOWN_COMPLETE)?.size).toBe(0);
+    });
+
+    it("should unsubscribe notification handler on no_response force kill", async () => {
+      const target = createMockTarget({ requestBehavior: "error" });
+      const shutdown = new ShutdownManager();
+
+      const promise = shutdown.initiateShutdown(target, "user_requested");
+
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
+
+      // Handler should be cleaned up even after error force kill
+      expect(target.notificationHandlers.get(ReservedMethods.SHUTDOWN_COMPLETE)?.size).toBe(0);
     });
   });
 });

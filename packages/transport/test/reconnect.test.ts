@@ -111,15 +111,24 @@ describe("ReconnectManager", () => {
 
       // First attempt: min(1000 * 10^0, 5000) = 1000ms
       await vi.advanceTimersByTimeAsync(1000);
-      expect(attemptingHandler).toHaveBeenNthCalledWith(1, expect.objectContaining({ delay: 1000 }));
+      expect(attemptingHandler).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ delay: 1000 }),
+      );
 
       // Second attempt: min(1000 * 10^1, 5000) = 5000ms (capped)
       await vi.advanceTimersByTimeAsync(5000);
-      expect(attemptingHandler).toHaveBeenNthCalledWith(2, expect.objectContaining({ delay: 5000 }));
+      expect(attemptingHandler).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ delay: 5000 }),
+      );
 
       // Third attempt: min(1000 * 10^2, 5000) = 5000ms (capped)
       await vi.advanceTimersByTimeAsync(5000);
-      expect(attemptingHandler).toHaveBeenNthCalledWith(3, expect.objectContaining({ delay: 5000 }));
+      expect(attemptingHandler).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ delay: 5000 }),
+      );
 
       await disconnectPromise;
     });

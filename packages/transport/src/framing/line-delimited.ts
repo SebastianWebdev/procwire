@@ -113,12 +113,7 @@ export class LineDelimitedFraming implements FramingCodec {
 
       const frameEndOffset = this.stripDelimiter ? delimiterIndex : delimiterIndex + 1;
       frames.push(
-        this.buildFrame(
-          frameStartBufferIndex,
-          frameStartOffset,
-          bufferIndex,
-          frameEndOffset,
-        ),
+        this.buildFrame(frameStartBufferIndex, frameStartOffset, bufferIndex, frameEndOffset),
       );
 
       // Move past delimiter

@@ -14,7 +14,11 @@
 
 import { EventEmitter } from "../utils/events.js";
 import { ReservedMethods } from "../protocol/reserved-methods.js";
-import type { ShutdownParams, ShutdownResult, ShutdownCompleteParams } from "../protocol/reserved-types.js";
+import type {
+  ShutdownParams,
+  ShutdownResult,
+  ShutdownCompleteParams,
+} from "../protocol/reserved-types.js";
 import { DEFAULT_SHUTDOWN_OPTIONS } from "./constants.js";
 import type {
   ShutdownOptions,
@@ -174,11 +178,11 @@ export class ShutdownManager extends EventEmitter<ShutdownEventMap> {
       let ackReceived = false;
 
       try {
-        const response = await target.request(
+        const response = (await target.request(
           ReservedMethods.SHUTDOWN,
           shutdownParams,
           this.options.gracefulTimeoutMs,
-        ) as ShutdownResult;
+        )) as ShutdownResult;
 
         ackReceived = true;
         state.pendingRequests = response.pending_requests;

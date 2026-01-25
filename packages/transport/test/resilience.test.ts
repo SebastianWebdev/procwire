@@ -26,10 +26,12 @@ function createMockChannel(): Channel & {
     start: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
 
-    request: vi.fn().mockImplementation(async (method: string, params: unknown, timeout?: number) => {
-      requestCalls.push({ method, params, ...(timeout !== undefined && { timeout }) });
-      return {};
-    }),
+    request: vi
+      .fn()
+      .mockImplementation(async (method: string, params: unknown, timeout?: number) => {
+        requestCalls.push({ method, params, ...(timeout !== undefined && { timeout }) });
+        return {};
+      }),
 
     notify: vi.fn().mockImplementation(async (method: string, params: unknown) => {
       notifyCalls.push({ method, params });
@@ -57,11 +59,13 @@ function createMockChannel(): Channel & {
 /**
  * Creates a mock ProcessHandle for testing.
  */
-function createMockHandle(options: {
-  id?: string;
-  pid?: number | null;
-  state?: ProcessState;
-} = {}): ProcessHandle & {
+function createMockHandle(
+  options: {
+    id?: string;
+    pid?: number | null;
+    state?: ProcessState;
+  } = {},
+): ProcessHandle & {
   channel: ReturnType<typeof createMockChannel>;
   eventHandlers: Map<string, Set<(data: unknown) => void>>;
   emitEvent: (event: string, data: unknown) => void;
@@ -189,7 +193,9 @@ describe("ResilientProcessHandle", () => {
       const handle = createMockHandle();
       const resilient = new ResilientProcessHandle(handle);
 
-      await expect(resilient.requestViaData("method")).rejects.toThrow(/Data channel not available/);
+      await expect(resilient.requestViaData("method")).rejects.toThrow(
+        /Data channel not available/,
+      );
     });
   });
 
@@ -238,9 +244,9 @@ describe("ResilientProcessHandle", () => {
 
       // Wait for 2 intervals + timeouts
       await vi.advanceTimersByTimeAsync(100); // First interval
-      await vi.advanceTimersByTimeAsync(50);  // First timeout (miss 1)
+      await vi.advanceTimersByTimeAsync(50); // First timeout (miss 1)
       await vi.advanceTimersByTimeAsync(100); // Second interval
-      await vi.advanceTimersByTimeAsync(50);  // Second timeout (miss 2 = dead)
+      await vi.advanceTimersByTimeAsync(50); // Second timeout (miss 2 = dead)
 
       expect(deadHandler).toHaveBeenCalledWith({
         missedCount: 2,

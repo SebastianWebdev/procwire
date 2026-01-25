@@ -267,7 +267,9 @@ describe("Memory Tests", () => {
       console.log(`Memory test - large payloads:`);
       console.log(`  Payload size: ${(payloadSize / 1024).toFixed(0)} KB`);
       console.log(`  Iterations: ${iterations}`);
-      console.log(`  Total transferred: ${((payloadSize * iterations * 2) / 1024 / 1024).toFixed(1)} MB`);
+      console.log(
+        `  Total transferred: ${((payloadSize * iterations * 2) / 1024 / 1024).toFixed(1)} MB`,
+      );
       console.log(`  Heap before: ${heapBefore.toFixed(2)} MB`);
       console.log(`  Heap after: ${heapAfter.toFixed(2)} MB`);
       console.log(`  Growth: ${growth.toFixed(2)} MB`);

@@ -43,10 +43,7 @@ function createReconnectable(_handle: ProcessHandle): Reconnectable {
 /**
  * Creates a Shutdownable adapter from a ProcessHandle and control channel.
  */
-function createShutdownable(
-  handle: ProcessHandle,
-  kill: (signal?: string) => void,
-): Shutdownable {
+function createShutdownable(handle: ProcessHandle, kill: (signal?: string) => void): Shutdownable {
   return {
     id: handle.id,
     pid: handle.pid,
@@ -152,10 +149,7 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
         ...DEFAULT_RECONNECT_OPTIONS,
         ...(options.reconnect ?? {}),
       };
-      this.reconnectManager = new ReconnectManager(
-        createReconnectable(handle),
-        reconnectOptions,
-      );
+      this.reconnectManager = new ReconnectManager(createReconnectable(handle), reconnectOptions);
       this.setupReconnectListeners();
     }
 
@@ -252,6 +246,13 @@ export class ResilientProcessHandle implements IResilientProcessHandle {
     const shutdownable = createShutdownable(this._handle, (signal) => {
       if (this.killFn) {
         this.killFn(signal);
+      } else if (this._handle.pid !== null) {
+        // Fallback to process.kill() if no killFn provided
+        try {
+          process.kill(this._handle.pid, signal ?? "SIGTERM");
+        } catch {
+          // Process may already be dead
+        }
       }
     });
 

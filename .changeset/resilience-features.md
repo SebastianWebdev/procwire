@@ -69,7 +69,12 @@ export type { HeartbeatOptions, HeartbeatEventMap, HeartbeatState, WorkerLoad } 
 
 // Reconnect
 export { ReconnectManager, DEFAULT_RECONNECT_OPTIONS } from "./reconnect";
-export type { ReconnectOptions, ReconnectEventMap, ReconnectState, Reconnectable } from "./reconnect";
+export type {
+  ReconnectOptions,
+  ReconnectEventMap,
+  ReconnectState,
+  Reconnectable,
+} from "./reconnect";
 
 // Shutdown
 export { ShutdownManager, DEFAULT_SHUTDOWN_OPTIONS } from "./shutdown";
@@ -77,11 +82,21 @@ export type { ShutdownOptions, ShutdownEventMap, ShutdownState, Shutdownable } f
 
 // Resilience (unified)
 export { ResilientProcessHandle, DEFAULT_RESILIENT_OPTIONS } from "./resilience";
-export type { ResilientProcessOptions, ResilientProcessEvents, IResilientProcessHandle } from "./resilience";
+export type {
+  ResilientProcessOptions,
+  ResilientProcessEvents,
+  IResilientProcessHandle,
+} from "./resilience";
 
 // Reserved methods
 export { ReservedMethods, isReservedMethod, validateReservedMethod } from "./protocol";
-export type { HeartbeatPingParams, HeartbeatPongParams, ShutdownParams, ShutdownAckResult, ShutdownReason } from "./protocol";
+export type {
+  HeartbeatPingParams,
+  HeartbeatPongParams,
+  ShutdownParams,
+  ShutdownAckResult,
+  ShutdownReason,
+} from "./protocol";
 ```
 
 ### Example Usage
@@ -100,7 +115,9 @@ const resilient = new ResilientProcessHandle(handle, {
 
 resilient.on("heartbeatDead", () => console.log("Worker unresponsive"));
 resilient.on("reconnecting", ({ attempt }) => console.log(`Reconnect attempt ${attempt}`));
-resilient.on("shutdownComplete", ({ graceful }) => console.log(`Shutdown ${graceful ? "graceful" : "forced"}`));
+resilient.on("shutdownComplete", ({ graceful }) =>
+  console.log(`Shutdown ${graceful ? "graceful" : "forced"}`),
+);
 
 resilient.start();
 

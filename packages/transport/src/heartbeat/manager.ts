@@ -107,11 +107,21 @@ export class HeartbeatManager extends EventEmitter<HeartbeatEventMap> {
 
   /**
    * Call when any activity occurs on the channel.
-   * If implicitHeartbeat is enabled, resets the missed counter.
+   * If implicitHeartbeat is enabled, resets the missed counter and clears pending ping.
    */
   onActivity(): void {
     if (this.options.implicitHeartbeat) {
       this.state.consecutiveMissed = 0;
+
+      // Clear pending ping and timeout since we received activity
+      if (this.state.pendingPing) {
+        this.state.pendingPing = null;
+        if (this.timeoutHandle) {
+          clearTimeout(this.timeoutHandle);
+          this.timeoutHandle = null;
+        }
+        this.state.lastPongAt = Date.now();
+      }
     }
   }
 
