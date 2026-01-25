@@ -108,11 +108,52 @@ export function createTypedWorker<TMethods>(_options?: WorkerOptions): TypedWork
 // Transport Layer (for advanced use cases)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type {
-  WorkerTransport,
-  TransportState,
-  SocketServerInterface,
-} from "./transport/index.js";
+export type { WorkerTransport, TransportState, SocketServerInterface } from "./transport/index.js";
 
 export { StdioWorkerTransport } from "./transport/index.js";
 export { SocketServer, SocketClientTransport } from "./transport/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler Registry
+// ─────────────────────────────────────────────────────────────────────────────
+
+export { HandlerRegistry, HandlerRegistrationError } from "./handlers/index.js";
+export type { RegisteredHandler, RegisteredNotificationHandler } from "./handlers/index.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Protocol
+// ─────────────────────────────────────────────────────────────────────────────
+
+export {
+  // Reserved methods
+  RESERVED_PREFIX,
+  RESERVED_SUFFIX,
+  ReservedMethods,
+  isReservedMethod,
+  validateUserMethod,
+  WORKER_AUTO_HANDLED_METHODS,
+  // Handshake
+  createHandshakeResponse,
+  validateHandshakeParams,
+  // Heartbeat
+  createHeartbeatPong,
+  collectLoadMetrics,
+  validateHeartbeatPingParams,
+  // Shutdown
+  createShutdownResponse,
+  createShutdownCompleteParams,
+  validateShutdownParams,
+} from "./protocol/index.js";
+
+export type {
+  ReservedMethod,
+  HandshakeParams,
+  HandshakeResult,
+  HeartbeatPingParams,
+  HeartbeatPongParams,
+  WorkerLoadMetrics,
+  ShutdownReason,
+  ShutdownParams,
+  ShutdownResult,
+  ShutdownCompleteParams,
+} from "./protocol/index.js";
