@@ -107,10 +107,12 @@ export class HeartbeatManager extends EventEmitter<HeartbeatEventMap> {
 
   /**
    * Call when any activity occurs on the channel.
-   * If implicitHeartbeat is enabled, resets the missed counter and clears pending ping.
+   * If implicitHeartbeat is enabled, resets the missed counter, clears pending ping,
+   * and emits heartbeat:recovered if the worker was previously considered unhealthy.
    */
   onActivity(): void {
     if (this.options.implicitHeartbeat) {
+      const previousMissed = this.state.consecutiveMissed;
       this.state.consecutiveMissed = 0;
 
       // Clear pending ping and timeout since we received activity
@@ -120,7 +122,17 @@ export class HeartbeatManager extends EventEmitter<HeartbeatEventMap> {
           clearTimeout(this.timeoutHandle);
           this.timeoutHandle = null;
         }
-        this.state.lastPongAt = Date.now();
+      }
+
+      // Always update lastPongAt on activity
+      this.state.lastPongAt = Date.now();
+
+      // Emit recovered if we had missed pongs before (same behavior as handlePong)
+      // This ensures ResilientProcessHandle._isHealthy returns to true
+      if (previousMissed > 0) {
+        this.emit("heartbeat:recovered", {
+          missedCount: previousMissed,
+        });
       }
     }
   }
