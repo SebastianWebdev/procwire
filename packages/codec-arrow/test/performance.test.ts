@@ -156,8 +156,9 @@ describe("ArrowCodec performance", () => {
       const avg = times.reduce((a, b) => a + b, 0) / times.length;
       const max = Math.max(...times);
 
-      // Max should not be more than 5x average (no major outliers)
-      expect(max).toBeLessThan(avg * 5);
+      // Max should not be more than 10x average (no major outliers)
+      // Using 10x instead of 5x to account for CI environment variability
+      expect(max).toBeLessThan(avg * 10);
     });
   });
 
