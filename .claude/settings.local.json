@@ -1,5 +1,8 @@
 {
   "permissions": {
+    "deny": [
+      "Bash(git push:*)"
+    ],
     "allow": [
       "Bash(pnpm build:*)",
       "Bash(pnpm install:*)",
@@ -24,7 +27,11 @@
       "Bash(pnpm format:*)",
       "Bash(git show:*)",
       "Bash(git diff:*)",
-      "Bash(pnpm vitest run:*)"
+      "Bash(git diff * >:*)",
+      "Bash(pnpm vitest run:*)",
+      "Bash(pnpm clean:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx prettier:*)"
     ]
   }
 }

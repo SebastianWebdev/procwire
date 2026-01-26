@@ -254,6 +254,22 @@ pnpm test                # Run all tests
 
 All four checks MUST pass before considering a task complete. Fix any errors before committing.
 
+## Git Diff for Review
+
+When the user requests a git diff (for code review purposes), **always save it to a file** instead of outputting to console. Use this pattern:
+
+```bash
+git diff <commit-range> > <filename>.diff
+```
+
+Examples:
+
+- `git diff HEAD~1 > task-a5.diff` - Last commit
+- `git diff main..HEAD > feature-branch.diff` - All commits on current branch vs main
+- `git diff --staged > staged-changes.diff` - Staged changes only
+
+This allows for easier review of larger diffs in an editor with syntax highlighting.
+
 ## CI/CD
 
 - CI workflow: `.github/workflows/release.yml` (for automated releases)
