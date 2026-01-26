@@ -41,7 +41,10 @@ function getDefaultWorkerName(): string {
     return "worker";
   }
 
-  const basename = path.basename(scriptPath);
+  // Handle both Unix and Windows path separators cross-platform
+  // path.basename on Linux doesn't recognize Windows backslashes
+  const normalizedPath = scriptPath.replace(/\\/g, "/");
+  const basename = path.basename(normalizedPath);
   // Remove extension
   return basename.replace(/\.[^/.]+$/, "");
 }
