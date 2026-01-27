@@ -1,6 +1,6 @@
 {
   "name": "@procwire-examples/dual-channel",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "description": "Dual-channel IPC example using control + data channels",
   "type": "module",

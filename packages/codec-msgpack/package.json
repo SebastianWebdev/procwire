@@ -1,6 +1,6 @@
 {
   "name": "@procwire/codec-msgpack",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "MessagePack codec for @procwire/transport.",
   "keywords": [
     "ipc",
