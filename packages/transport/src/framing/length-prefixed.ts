@@ -49,11 +49,13 @@ export class LengthPrefixedFraming implements FramingCodec {
 
   /**
    * Encodes a payload with length prefix.
+   * Uses pre-allocated buffer to avoid Buffer.concat overhead.
    */
   encode(payload: Buffer): Buffer {
-    const header = Buffer.allocUnsafe(LengthPrefixedFraming.HEADER_SIZE);
-    header.writeUInt32BE(payload.length, 0);
-    return Buffer.concat([header, payload]);
+    const frame = Buffer.allocUnsafe(LengthPrefixedFraming.HEADER_SIZE + payload.length);
+    frame.writeUInt32BE(payload.length, 0);
+    payload.copy(frame, LengthPrefixedFraming.HEADER_SIZE);
+    return frame;
   }
 
   /**
@@ -153,22 +155,28 @@ export class LengthPrefixedFraming implements FramingCodec {
     }
 
     const first = this.buffers[0]!;
+    // Fast path: entire requested bytes in first buffer (common case)
     if (first.length >= length) {
       return first.subarray(0, length);
     }
 
-    const parts: Buffer[] = [];
+    // Slow path: need to gather from multiple buffers
+    // Pre-allocate output buffer and copy into it (avoids Buffer.concat overhead)
+    const result = Buffer.allocUnsafe(length);
+    let offset = 0;
     let remaining = length;
+
     for (const buffer of this.buffers) {
-      const slice = buffer.subarray(0, Math.min(buffer.length, remaining));
-      parts.push(slice);
-      remaining -= slice.length;
+      const toCopy = Math.min(buffer.length, remaining);
+      buffer.copy(result, offset, 0, toCopy);
+      offset += toCopy;
+      remaining -= toCopy;
       if (remaining === 0) {
         break;
       }
     }
 
-    return Buffer.concat(parts, length);
+    return result;
   }
 
   private takeBytes(length: number): Buffer {
@@ -181,30 +189,37 @@ export class LengthPrefixedFraming implements FramingCodec {
     }
 
     const first = this.buffers[0]!;
+    // Fast path: entire payload is in first buffer (common case)
     if (first.length >= length) {
       const slice = first.subarray(0, length);
       this.consumeBytes(length);
       return slice;
     }
 
-    const parts: Buffer[] = [];
+    // Slow path: need to gather from multiple buffers
+    // Pre-allocate output buffer and copy into it (avoids Buffer.concat overhead)
+    const result = Buffer.allocUnsafe(length);
+    let offset = 0;
     let remaining = length;
 
     while (remaining > 0 && this.buffers.length > 0) {
       const buffer = this.buffers[0]!;
       if (remaining >= buffer.length) {
-        parts.push(buffer);
-        this.buffers.shift();
+        // Copy entire buffer
+        buffer.copy(result, offset);
+        offset += buffer.length;
         remaining -= buffer.length;
+        this.buffers.shift();
       } else {
-        parts.push(buffer.subarray(0, remaining));
+        // Copy partial buffer
+        buffer.copy(result, offset, 0, remaining);
         this.buffers[0] = buffer.subarray(remaining);
         remaining = 0;
       }
     }
 
     this.totalLength -= length;
-    return parts.length === 1 ? parts[0]! : Buffer.concat(parts, length);
+    return result;
   }
 
   private consumeBytes(length: number): void {

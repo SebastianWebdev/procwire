@@ -230,7 +230,9 @@ export class WorkerChannel {
 
     try {
       const result = await this.onRequest(method, params, id);
-      await this.respond(id, result);
+      // Convert undefined to null for JSON serialization compatibility
+      // JSON.stringify omits undefined values, which would create invalid JSON-RPC response
+      await this.respond(id, result === undefined ? null : result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.respondError(id, JsonRpcErrorCodes.INTERNAL_ERROR, message);

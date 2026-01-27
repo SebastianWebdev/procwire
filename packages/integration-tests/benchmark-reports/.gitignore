@@ -1,0 +1,7 @@
+# Ignore timestamped benchmark reports (they're machine-specific)
+benchmark-*.json
+benchmark-*.md
+
+# Keep latest reports as reference
+!latest.json
+!latest.md

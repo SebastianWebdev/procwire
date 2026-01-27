@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["node"],
+    "paths": {
+      "@procwire/transport": ["../transport/src/index.ts"],
+      "@procwire/transport/*": ["../transport/src/*"],
+      "@procwire/sdk": ["../procwire-sdk/src/index.ts"],
+      "@procwire/codec-msgpack": ["../codec-msgpack/src/index.ts"],
+      "@procwire/codec-protobuf": ["../codec-protobuf/src/index.ts"]
+    }
+  },
+  "include": ["test/**/*.ts", "workers/**/*.ts", "utils/**/*.ts"]
+}

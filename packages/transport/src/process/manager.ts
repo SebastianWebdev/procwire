@@ -20,6 +20,7 @@ import { JsonCodec } from "../serialization/json.js";
 import { RawCodec } from "../serialization/raw.js";
 import { JsonRpcProtocol } from "../protocol/jsonrpc.js";
 import { SimpleProtocol } from "../protocol/simple.js";
+import { ReservedMethods } from "../protocol/reserved-methods.js";
 import { PipePath } from "../utils/pipe-path.js";
 import { sleep } from "../utils/time.js";
 import type { Transport } from "../transport/types.js";
@@ -155,15 +156,12 @@ export class ProcessManager implements IProcessManager {
     // Build control channel (stdio-based)
     const controlChannel = await this.buildControlChannel(transport, options.controlChannel);
 
-    // Build data channel if enabled
-    let dataChannel: Channel | null = null;
-    if (options.dataChannel?.enabled) {
-      const dataPath = options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
-      dataChannel = await this.buildDataChannel(dataPath, options.dataChannel.channel);
-    }
+    // Data channel is NOT built here - per Wire Protocol Spec, we must wait
+    // for __data_channel_ready__ notification from worker before connecting.
+    // The handle starts with null data channel and it's set later.
 
-    // Create handle
-    const handle = new ProcessHandle(id, null, controlChannel, dataChannel);
+    // Create handle (data channel will be set when worker notifies us)
+    const handle = new ProcessHandle(id, null, controlChannel, null);
 
     // Store managed process
     const managed: ManagedProcess = {
@@ -181,7 +179,7 @@ export class ProcessManager implements IProcessManager {
 
     // Start transport and channels
     try {
-      await this.startManagedProcess(id, handle, transport, dataChannel);
+      await this.startManagedProcess(id, handle, transport);
     } catch (error) {
       // Cleanup on failure
       this.processes.delete(id);
@@ -194,6 +192,11 @@ export class ProcessManager implements IProcessManager {
 
   /**
    * Terminates a managed process.
+   * Follows Wire Protocol Spec 7.3 for graceful shutdown:
+   * 1. Send __shutdown__ request to worker
+   * 2. Wait for worker to drain pending requests
+   * 3. Wait for __shutdown_complete__ or timeout
+   * 4. Cleanup resources
    */
   async terminate(id: string): Promise<void> {
     const managed = this.processes.get(id);
@@ -204,10 +207,55 @@ export class ProcessManager implements IProcessManager {
     managed.manualStop = true;
     managed.handle.setState("stopping");
 
+    // Try graceful shutdown per Wire Protocol Spec
+    try {
+      await this.performGracefulShutdown(managed);
+    } catch {
+      // Worker may not support graceful shutdown, proceed with cleanup
+    }
+
     await this.cleanupProcess(managed);
     this.processes.delete(id);
 
     managed.handle.setState("stopped");
+  }
+
+  /**
+   * Performs graceful shutdown sequence per Wire Protocol Spec 7.3.
+   * Sends __shutdown__ request and waits for worker to drain pending requests.
+   */
+  private async performGracefulShutdown(managed: ManagedProcess): Promise<void> {
+    const timeoutMs = this.config.gracefulShutdownMs;
+
+    try {
+      // Create promise that resolves when process exits
+      const exitPromise = new Promise<void>((resolve) => {
+        const unsubscribe = managed.handle.on("exit", () => {
+          unsubscribe();
+          resolve();
+        });
+      });
+
+      // Send __shutdown__ request via control channel
+      await managed.handle.request(
+        ReservedMethods.SHUTDOWN,
+        {
+          timeout_ms: timeoutMs,
+          reason: "user_requested" as const,
+        },
+        Math.min(timeoutMs, 5000), // Ack timeout
+      );
+
+      // Wait for process to exit or timeout
+      // Worker will drain pending requests, send __shutdown_complete__, and exit
+      await Promise.race([
+        exitPromise,
+        sleep(timeoutMs),
+      ]);
+    } catch {
+      // Worker may have crashed or not implement shutdown protocol
+      // Proceed with forced cleanup
+    }
   }
 
   /**
@@ -311,6 +359,10 @@ export class ProcessManager implements IProcessManager {
         managed.handle.emitError(err);
       }
     } else {
+      // IMPORTANT: Remove from map immediately to allow respawn with same ID
+      // This must happen synchronously before any async operations to prevent race conditions
+      this.processes.delete(id);
+
       // No restart - mark as crashed or stopped
       if (managed.manualStop || code === 0) {
         managed.handle.setState("stopped");
@@ -320,9 +372,8 @@ export class ProcessManager implements IProcessManager {
         this.events.emit("crash", { id, error });
       }
 
-      // Cleanup
+      // Cleanup resources (process already removed from map)
       await this.cleanupProcess(managed);
-      this.processes.delete(id);
     }
   }
 
@@ -346,22 +397,17 @@ export class ProcessManager implements IProcessManager {
       managed.options.controlChannel,
     );
 
-    // Build new data channel if needed
-    let dataChannel: Channel | null = null;
-    if (managed.options.dataChannel?.enabled) {
-      const dataPath =
-        managed.options.dataChannel.path ?? PipePath.forModule(this.config.namespace, id);
-      dataChannel = await this.buildDataChannel(dataPath, managed.options.dataChannel.channel);
-    }
+    // Data channel is NOT built here - per Wire Protocol Spec, we wait for
+    // __data_channel_ready__ notification from worker before connecting
 
-    // Update handle
+    // Update handle (data channel will be set when worker notifies us)
     const oldHandle = managed.handle;
-    const newHandle = new ProcessHandle(id, null, controlChannel, dataChannel);
+    const newHandle = new ProcessHandle(id, null, controlChannel, null);
     managed.handle = newHandle;
     managed.transport = transport;
 
     this.setupProcessListeners(id, transport, newHandle);
-    await this.startManagedProcess(id, newHandle, transport, dataChannel);
+    await this.startManagedProcess(id, newHandle, transport);
 
     // Close old handle
     await oldHandle.close().catch(() => {});
@@ -426,7 +472,6 @@ export class ProcessManager implements IProcessManager {
     id: string,
     handle: ProcessHandle,
     transport: StdioTransport,
-    dataChannel: Channel | null,
   ): Promise<void> {
     // IMPORTANT: Start control channel BEFORE connecting transport
     // This ensures the channel subscribes to transport events before
@@ -436,13 +481,79 @@ export class ProcessManager implements IProcessManager {
     const pid = transport.pid;
     handle.setPid(pid);
 
-    if (dataChannel) {
-      await dataChannel.start();
+    // Setup data channel notification listener if data channel is enabled
+    // Per Wire Protocol Spec, we wait for __data_channel_ready__ notification
+    // from worker before connecting to the data channel pipe/socket
+    const managed = this.processes.get(id);
+    if (managed?.options.dataChannel?.enabled) {
+      this.setupDataChannelListener(id, handle, managed.options);
     }
 
     handle.setState("running");
     this.events.emit("spawn", { id, pid: pid ?? 0 });
     this.events.emit("ready", { id });
+  }
+
+  /**
+   * Sets up a listener for __data_channel_ready__ notification from worker.
+   * When received, connects to the data channel.
+   */
+  private setupDataChannelListener(
+    id: string,
+    handle: ProcessHandle,
+    options: SpawnOptions,
+  ): void {
+    let handled = false;
+
+    const unsubscribe = handle.controlChannel.onNotification(
+      (notification: unknown) => {
+        // Check if this is the __data_channel_ready__ notification
+        const notif = notification as { method?: string; params?: unknown };
+        if (notif.method !== ReservedMethods.DATA_CHANNEL_READY) {
+          return; // Not our notification
+        }
+
+        // Only handle once
+        if (handled) {
+          return;
+        }
+        handled = true;
+        unsubscribe();
+
+        // Handle async in background
+        void (async () => {
+          try {
+            // Extract path from notification params
+            const readyParams = notif.params as { path?: string } | undefined;
+            const dataPath =
+              readyParams?.path ??
+              options.dataChannel?.path ??
+              PipePath.forModule(this.config.namespace, id);
+
+            // Build and start data channel
+            const dataChannel = await this.buildDataChannel(
+              dataPath,
+              options.dataChannel?.channel,
+            );
+            await dataChannel.start();
+
+            // Set on handle so it's available for requestViaData
+            handle.setDataChannel(dataChannel);
+
+            this.events.emit("dataChannelReady", { id, path: dataPath });
+          } catch (error) {
+            // Log error but don't crash - data channel is optional
+            this.events.emit("error", {
+              id,
+              error:
+                error instanceof Error
+                  ? error
+                  : new Error(`Data channel setup failed: ${String(error)}`),
+            });
+          }
+        })();
+      },
+    );
   }
 
   /**
