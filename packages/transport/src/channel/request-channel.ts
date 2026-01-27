@@ -539,7 +539,14 @@ export class RequestChannel<TReq = unknown, TRes = unknown, TNotif = unknown> im
     if (this.responseAccessor.isErrorResponse(response)) {
       const error = this.responseAccessor.getError(response);
       this.recordRequestLatency(pending, "error");
-      pending.reject(new ProtocolError("Request failed", error));
+      // Extract error message from JSON-RPC error object if available
+      const errorMessage =
+        error &&
+        typeof error === "object" &&
+        typeof (error as Record<string, unknown>).message === "string"
+          ? ((error as Record<string, unknown>).message as string)
+          : "Request failed";
+      pending.reject(new ProtocolError(errorMessage, error));
     } else {
       const result = this.responseAccessor.getResult(response);
       this.recordRequestLatency(pending, "success");

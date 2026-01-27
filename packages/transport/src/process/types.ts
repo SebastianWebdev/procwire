@@ -219,6 +219,13 @@ export interface ProcessManagerEvents extends EventMap {
   ready: { id: string };
 
   /**
+   * Fired when data channel becomes ready.
+   * Per Wire Protocol Spec, data channel connects after receiving
+   * __data_channel_ready__ notification from worker.
+   */
+  dataChannelReady: { id: string; path: string };
+
+  /**
    * Fired when an error occurs.
    */
   error: { id: string; error: Error };

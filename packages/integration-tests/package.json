@@ -1,0 +1,39 @@
+{
+  "name": "@procwire/integration-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end integration tests for @procwire packages",
+  "type": "module",
+  "scripts": {
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:lifecycle": "vitest run test/lifecycle/",
+    "test:communication": "vitest run test/communication/",
+    "test:codecs": "vitest run test/codecs/",
+    "test:stress": "vitest run test/stress/ --timeout=60000",
+    "test:edge-cases": "vitest run test/edge-cases/",
+    "test:all": "vitest run --reporter=verbose",
+    "benchmark": "tsx benchmark/codec-performance.bench.ts",
+    "benchmark:serialization": "tsx benchmark/serialization-overhead.bench.ts",
+    "benchmark:transport": "tsx benchmark/transport-breakdown.bench.ts",
+    "benchmark:codecs": "tsx benchmark/codec-comparison.bench.ts",
+    "benchmark:codec-e2e": "tsx benchmark/codec-e2e.bench.ts"
+  },
+  "devDependencies": {
+    "@msgpack/msgpack": "^3.1.3",
+    "@procwire/codec-arrow": "workspace:*",
+    "@procwire/codec-msgpack": "workspace:*",
+    "@procwire/codec-protobuf": "workspace:*",
+    "@procwire/sdk": "workspace:*",
+    "@procwire/transport": "workspace:*",
+    "@types/node": "^22.0.0",
+    "apache-arrow": "^21.1.0",
+    "protobufjs": "^7.4.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  }
+}

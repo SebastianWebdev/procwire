@@ -16,7 +16,7 @@ export class ProcessHandle implements IProcessHandle {
   private _pid: number | null;
   private _state: ProcessState;
   private readonly _controlChannel: Channel;
-  private readonly _dataChannel: Channel | null;
+  private _dataChannel: Channel | null;
   private readonly events = new EventEmitter<ProcessHandleEvents>();
 
   constructor(
@@ -58,6 +58,14 @@ export class ProcessHandle implements IProcessHandle {
    */
   setPid(pid: number | null): void {
     this._pid = pid;
+  }
+
+  /**
+   * Sets the data channel.
+   * @internal Used by ProcessManager when data channel becomes ready
+   */
+  setDataChannel(channel: Channel): void {
+    this._dataChannel = channel;
   }
 
   /**

@@ -17,6 +17,7 @@ import { SocketServer } from "./transport/socket-server.js";
 import { WorkerChannel } from "./channel/worker-channel.js";
 import { resolveWorkerOptions } from "./utils/options.js";
 import { createLogger, type Logger } from "./utils/logger.js";
+import { createCodecByName, ENV_DATA_CODEC } from "./utils/codec-factory.js";
 import {
   ReservedMethods,
   isReservedMethod,
@@ -179,6 +180,18 @@ export class WorkerImpl implements Worker {
       return;
     }
 
+    // Determine serialization codec
+    // Priority: 1. options.dataChannel.serialization, 2. env var, 3. default (JSON)
+    let serialization = this.options.dataChannel?.serialization;
+
+    if (!serialization) {
+      const codecName = process.env[ENV_DATA_CODEC];
+      if (codecName) {
+        this.logger.debug(`Using codec from environment: ${codecName}`);
+        serialization = createCodecByName(codecName);
+      }
+    }
+
     // Create socket server
     this.socketServer = new SocketServer();
     await this.socketServer.listen(dataPath);
@@ -193,13 +206,14 @@ export class WorkerImpl implements Worker {
     const clientTransport = await this.socketServer.waitForConnection();
     this.logger.debug("Manager connected to data channel");
 
-    // Build data channel
+    // Build data channel with configured serialization
     this.dataChannel = new WorkerChannel({
       transport: clientTransport,
       framing: "length-prefixed",
       logger: this.logger,
       onRequest: (method, params, id) => this.handleRequest(method, params, id, "data"),
       onNotification: (method, params) => this.handleNotification(method, params),
+      ...(serialization && { serialization }),
     });
 
     await this.dataChannel.start();

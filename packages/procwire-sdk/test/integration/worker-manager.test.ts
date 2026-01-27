@@ -244,24 +244,20 @@ describe("Worker ↔ ProcessManager Integration", () => {
       expect((stats as { max: number }).max).toBeGreaterThan(1);
     });
 
-    it(
-      "should handle long-running tasks",
-      async () => {
-        const handle = await spawnAndHandshake(manager, "worker-long", "async");
+    it("should handle long-running tasks", async () => {
+      const handle = await spawnAndHandshake(manager, "worker-long", "async");
 
-        const start = Date.now();
-        const result = (await handle.request("long_task", {
-          steps: 5,
-          step_delay: 50,
-        })) as { completed: boolean; results: number[] };
-        const elapsed = Date.now() - start;
+      const start = Date.now();
+      const result = (await handle.request("long_task", {
+        steps: 5,
+        step_delay: 50,
+      })) as { completed: boolean; results: number[] };
+      const elapsed = Date.now() - start;
 
-        expect(result.completed).toBe(true);
-        expect(result.results).toEqual([0, 1, 2, 3, 4]);
-        expect(elapsed).toBeGreaterThanOrEqual(240); // 5 steps * 50ms each, with some tolerance
-      },
-      15000,
-    );
+      expect(result.completed).toBe(true);
+      expect(result.results).toEqual([0, 1, 2, 3, 4]);
+      expect(elapsed).toBeGreaterThanOrEqual(240); // 5 steps * 50ms each, with some tolerance
+    }, 15000);
   });
 
   describe("Multiple Workers", () => {

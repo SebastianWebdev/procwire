@@ -1,8 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Bash(git push:*)"
-    ],
     "allow": [
       "Bash(pnpm build:*)",
       "Bash(pnpm install:*)",
@@ -31,7 +28,22 @@
       "Bash(pnpm vitest run:*)",
       "Bash(pnpm clean:*)",
       "Bash(npx eslint:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest run:*)",
+      "Bash(DEBUG=true npx vitest:*)",
+      "Bash(pnpm benchmark:*)",
+      "Bash(pnpm benchmark:serialization:*)",
+      "Bash(pnpm benchmark:transport:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm benchmark:codecs:*)",
+      "Bash(pnpm benchmark:codec-e2e:*)",
+      "Bash(npx tsx -e \"\nimport { ArrowCodec } from ''./packages/codec-arrow/src/index.js'';\nimport { tableFromArrays } from ''apache-arrow'';\n\nconst codec = new ArrowCodec\\(\\);\nconst table = tableFromArrays\\({ id: [1, 2, 3] }\\);\n\nconst buffer = codec.serialize\\(table\\);\nconsole.log\\(''from tsx \\(source\\), length:'', buffer.length\\);\n\")",
+      "Bash(gh issue create:*)"
+    ],
+    "deny": ["Bash(git push:*)"],
+    "additionalDirectories": [
+      "c:\\Users\\Sebastian\\Projects\\Professional\\ipc-bridge-core\\packages\\integration-tests\\{test"
     ]
   }
 }

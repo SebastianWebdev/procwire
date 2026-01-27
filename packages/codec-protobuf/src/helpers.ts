@@ -7,8 +7,11 @@
  * @internal
  */
 
-import * as protobuf from "protobufjs";
+import protobufModule from "protobufjs";
 import { ProtobufCodec, type ProtobufCodecOptions } from "./codec.js";
+
+// Handle protobufjs ESM/CJS interop - the module exports everything via default
+const protobuf = (protobufModule as { default?: typeof protobufModule }).default ?? protobufModule;
 
 /**
  * Creates a ProtobufCodec by loading a .proto file.
