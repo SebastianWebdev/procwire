@@ -2,6 +2,8 @@
  * Worker channel - handles message framing and JSON-RPC
  */
 
+import type { SerializationCodec } from "@procwire/transport";
+import { JsonCodec } from "@procwire/transport";
 import type { WorkerTransport } from "../transport/types.js";
 import type { JsonRpcRequest, JsonRpcResponse, JsonRpcNotification } from "./types.js";
 import {
@@ -42,6 +44,8 @@ export interface WorkerChannelOptions {
   logger: Logger;
   onRequest: RequestHandler;
   onNotification: NotificationHandler;
+  /** Serialization codec for encoding/decoding messages. @default JsonCodec */
+  serialization?: SerializationCodec;
 }
 
 /**
@@ -53,6 +57,7 @@ export class WorkerChannel {
   private readonly logger: Logger;
   private readonly onRequest: RequestHandler;
   private readonly onNotification: NotificationHandler;
+  private readonly serialization: SerializationCodec;
 
   private buffer = Buffer.alloc(0);
   private isRunning = false;
@@ -64,6 +69,7 @@ export class WorkerChannel {
     this.logger = options.logger;
     this.onRequest = options.onRequest;
     this.onNotification = options.onNotification;
+    this.serialization = options.serialization ?? new JsonCodec();
   }
 
   /**
@@ -203,7 +209,8 @@ export class WorkerChannel {
    */
   private async handleMessage(data: Buffer): Promise<void> {
     try {
-      const msg: unknown = JSON.parse(data.toString("utf8"));
+      // Use configured serialization codec instead of hardcoded JSON
+      const msg: unknown = this.serialization.deserialize(data);
 
       if (isRequest(msg)) {
         await this.handleRequest(msg);
@@ -213,7 +220,7 @@ export class WorkerChannel {
         this.logger.warn("Unknown message type:", msg);
       }
     } catch (error) {
-      this.logger.error("Failed to parse message:", error);
+      this.logger.error("Failed to deserialize message:", error);
     }
   }
 
@@ -256,13 +263,15 @@ export class WorkerChannel {
    * Send a message.
    */
   private async send(msg: JsonRpcResponse | JsonRpcNotification): Promise<void> {
-    const json = JSON.stringify(msg);
+    // Use configured serialization codec instead of hardcoded JSON
+    const payload = this.serialization.serialize(msg);
 
     let data: Buffer;
     if (this.framing === "line-delimited") {
-      data = Buffer.from(json + "\n", "utf8");
+      // Line-delimited: append newline to serialized payload
+      data = Buffer.concat([payload, Buffer.from("\n", "utf8")]);
     } else {
-      const payload = Buffer.from(json, "utf8");
+      // Length-prefixed: prepend 4-byte length header
       data = Buffer.alloc(4 + payload.length);
       data.writeUInt32BE(payload.length, 0);
       payload.copy(data, 4);

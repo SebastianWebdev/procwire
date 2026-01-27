@@ -248,10 +248,7 @@ export class ProcessManager implements IProcessManager {
 
       // Wait for process to exit or timeout
       // Worker will drain pending requests, send __shutdown_complete__, and exit
-      await Promise.race([
-        exitPromise,
-        sleep(timeoutMs),
-      ]);
+      await Promise.race([exitPromise, sleep(timeoutMs)]);
     } catch {
       // Worker may have crashed or not implement shutdown protocol
       // Proceed with forced cleanup
@@ -447,9 +444,22 @@ export class ProcessManager implements IProcessManager {
     if (options.cwd !== undefined) {
       transportOptions.cwd = options.cwd;
     }
-    if (options.env !== undefined) {
-      transportOptions.env = options.env;
+
+    // Build env with codec configuration for data channel
+    const env = { ...options.env };
+
+    // Set data channel codec in environment if configured
+    // This allows the worker to know which codec to use for deserialization
+    if (options.dataChannel?.enabled && options.dataChannel.channel?.serialization) {
+      const codec = options.dataChannel.channel.serialization;
+      const codecName = typeof codec === "string" ? codec : codec.name;
+      env.PROCWIRE_DATA_CODEC = codecName;
     }
+
+    if (Object.keys(env).length > 0) {
+      transportOptions.env = env;
+    }
+
     return new StdioTransport(transportOptions);
   }
 
@@ -498,62 +508,53 @@ export class ProcessManager implements IProcessManager {
    * Sets up a listener for __data_channel_ready__ notification from worker.
    * When received, connects to the data channel.
    */
-  private setupDataChannelListener(
-    id: string,
-    handle: ProcessHandle,
-    options: SpawnOptions,
-  ): void {
+  private setupDataChannelListener(id: string, handle: ProcessHandle, options: SpawnOptions): void {
     let handled = false;
 
-    const unsubscribe = handle.controlChannel.onNotification(
-      (notification: unknown) => {
-        // Check if this is the __data_channel_ready__ notification
-        const notif = notification as { method?: string; params?: unknown };
-        if (notif.method !== ReservedMethods.DATA_CHANNEL_READY) {
-          return; // Not our notification
+    const unsubscribe = handle.controlChannel.onNotification((notification: unknown) => {
+      // Check if this is the __data_channel_ready__ notification
+      const notif = notification as { method?: string; params?: unknown };
+      if (notif.method !== ReservedMethods.DATA_CHANNEL_READY) {
+        return; // Not our notification
+      }
+
+      // Only handle once
+      if (handled) {
+        return;
+      }
+      handled = true;
+      unsubscribe();
+
+      // Handle async in background
+      void (async () => {
+        try {
+          // Extract path from notification params
+          const readyParams = notif.params as { path?: string } | undefined;
+          const dataPath =
+            readyParams?.path ??
+            options.dataChannel?.path ??
+            PipePath.forModule(this.config.namespace, id);
+
+          // Build and start data channel
+          const dataChannel = await this.buildDataChannel(dataPath, options.dataChannel?.channel);
+          await dataChannel.start();
+
+          // Set on handle so it's available for requestViaData
+          handle.setDataChannel(dataChannel);
+
+          this.events.emit("dataChannelReady", { id, path: dataPath });
+        } catch (error) {
+          // Log error but don't crash - data channel is optional
+          this.events.emit("error", {
+            id,
+            error:
+              error instanceof Error
+                ? error
+                : new Error(`Data channel setup failed: ${String(error)}`),
+          });
         }
-
-        // Only handle once
-        if (handled) {
-          return;
-        }
-        handled = true;
-        unsubscribe();
-
-        // Handle async in background
-        void (async () => {
-          try {
-            // Extract path from notification params
-            const readyParams = notif.params as { path?: string } | undefined;
-            const dataPath =
-              readyParams?.path ??
-              options.dataChannel?.path ??
-              PipePath.forModule(this.config.namespace, id);
-
-            // Build and start data channel
-            const dataChannel = await this.buildDataChannel(
-              dataPath,
-              options.dataChannel?.channel,
-            );
-            await dataChannel.start();
-
-            // Set on handle so it's available for requestViaData
-            handle.setDataChannel(dataChannel);
-
-            this.events.emit("dataChannelReady", { id, path: dataPath });
-          } catch (error) {
-            // Log error but don't crash - data channel is optional
-            this.events.emit("error", {
-              id,
-              error:
-                error instanceof Error
-                  ? error
-                  : new Error(`Data channel setup failed: ${String(error)}`),
-            });
-          }
-        })();
-      },
-    );
+      })();
+    });
   }
 
   /**
