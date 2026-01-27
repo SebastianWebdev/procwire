@@ -1,5 +1,12 @@
 # @procwire-examples/rust-worker
 
+## 0.0.7
+
+### Patch Changes
+
+- Updated dependencies [[`3a50087`](https://github.com/SebastianWebdev/procwire/commit/3a50087247dd2fc9fe5c4e177e2a734e295d3b32)]:
+  - @procwire/transport@0.4.0
+
 ## 0.0.6
 
 ### Patch Changes

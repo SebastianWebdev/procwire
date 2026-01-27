@@ -1,6 +1,6 @@
 {
   "name": "@procwire/transport",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Standalone IPC transport building blocks for Node.js (core; zero runtime dependencies).",
   "keywords": [
     "ipc",

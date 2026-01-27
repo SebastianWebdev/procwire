@@ -1,6 +1,6 @@
 {
   "name": "@procwire-examples/rust-worker",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "description": "Cross-language IPC example - Node.js parent with Rust worker",
   "type": "module",

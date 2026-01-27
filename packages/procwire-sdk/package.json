@@ -1,6 +1,6 @@
 {
   "name": "@procwire/sdk",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Procwire SDK for Node.js - build IPC workers with ease",
   "keywords": [
     "procwire",
@@ -56,7 +56,7 @@
     "test:fixtures": "npx tsx test/integration/fixtures/echo-worker.ts"
   },
   "peerDependencies": {
-    "@procwire/transport": "^0.3.0"
+    "@procwire/transport": "^0.4.0"
   },
   "peerDependenciesMeta": {
     "@procwire/codec-msgpack": {
