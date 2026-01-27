@@ -34,12 +34,8 @@ worker.handle("fibonacci", (params: { n: number }) => {
 // Matrix multiplication (memory + CPU)
 worker.handle("matrix_multiply", (params: { size: number }) => {
   const size = Math.min(params.size, 100); // Cap size
-  const a = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => Math.random()),
-  );
-  const b = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => Math.random()),
-  );
+  const a = Array.from({ length: size }, () => Array.from({ length: size }, () => Math.random()));
+  const b = Array.from({ length: size }, () => Array.from({ length: size }, () => Math.random()));
 
   const c = Array.from({ length: size }, () => Array(size).fill(0) as number[]);
 
@@ -84,22 +80,19 @@ worker.handle("get_max_concurrent", () => {
 });
 
 // Long running task with steps
-worker.handle(
-  "long_task",
-  async (params: { steps: number; step_delay: number }, context) => {
-    const results: number[] = [];
+worker.handle("long_task", async (params: { steps: number; step_delay: number }, context) => {
+  const results: number[] = [];
 
-    for (let i = 0; i < params.steps; i++) {
-      if (context.signal.aborted) {
-        throw new Error("Task cancelled");
-      }
-      await new Promise((r) => setTimeout(r, params.step_delay));
-      results.push(i);
+  for (let i = 0; i < params.steps; i++) {
+    if (context.signal.aborted) {
+      throw new Error("Task cancelled");
     }
+    await new Promise((r) => setTimeout(r, params.step_delay));
+    results.push(i);
+  }
 
-    return { completed: true, results };
-  },
-);
+  return { completed: true, results };
+});
 
 worker.hooks({
   onReady: () => {

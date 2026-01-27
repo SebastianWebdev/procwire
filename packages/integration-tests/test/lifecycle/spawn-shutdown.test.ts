@@ -46,9 +46,9 @@ describe("Worker Lifecycle - Spawn and Shutdown", () => {
     it("should reject duplicate worker IDs", async () => {
       await spawnWorker(manager, "duplicate-worker", "echo-worker.ts");
 
-      await expect(
-        spawnWorker(manager, "duplicate-worker", "echo-worker.ts"),
-      ).rejects.toThrow(/already exists/i);
+      await expect(spawnWorker(manager, "duplicate-worker", "echo-worker.ts")).rejects.toThrow(
+        /already exists/i,
+      );
     });
 
     it("should spawn multiple workers with different IDs", async () => {
@@ -117,8 +117,11 @@ describe("Worker Lifecycle - Spawn and Shutdown", () => {
     });
 
     it("should emit exit event on shutdown", async () => {
-      const { promise, resolve } =
-        createDeferred<{ id: string; code: number | null; signal: string | null }>();
+      const { promise, resolve } = createDeferred<{
+        id: string;
+        code: number | null;
+        signal: string | null;
+      }>();
       manager.on("exit", resolve);
 
       await spawnWorker(manager, "exit-event-worker", "echo-worker.ts");

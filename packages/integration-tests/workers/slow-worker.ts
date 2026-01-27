@@ -52,23 +52,20 @@ worker.handle("hang", async (_params, context) => {
 });
 
 // Step-by-step processing with delays
-worker.handle(
-  "slow_steps",
-  async (params: { steps: number; step_delay: number }, context) => {
-    const results: number[] = [];
+worker.handle("slow_steps", async (params: { steps: number; step_delay: number }, context) => {
+  const results: number[] = [];
 
-    for (let i = 0; i < params.steps; i++) {
-      if (context.signal.aborted) {
-        throw new Error("Cancelled during step " + i);
-      }
-
-      await new Promise((r) => setTimeout(r, params.step_delay));
-      results.push(i);
+  for (let i = 0; i < params.steps; i++) {
+    if (context.signal.aborted) {
+      throw new Error("Cancelled during step " + i);
     }
 
-    return { completed: true, steps: results };
-  },
-);
+    await new Promise((r) => setTimeout(r, params.step_delay));
+    results.push(i);
+  }
+
+  return { completed: true, steps: results };
+});
 
 worker.hooks({
   onReady: () => {

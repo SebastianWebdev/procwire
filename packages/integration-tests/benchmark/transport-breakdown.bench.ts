@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function formatSize(bytes: number): string {
+function _formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
@@ -29,7 +29,8 @@ function formatSize(bytes: number): string {
 }
 
 function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 * 1024 * 1024) return `${(bytesPerSec / 1024 / 1024 / 1024).toFixed(2)} GB/s`;
+  if (bytesPerSec >= 1024 * 1024 * 1024)
+    return `${(bytesPerSec / 1024 / 1024 / 1024).toFixed(2)} GB/s`;
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(2)} MB/s`;
   if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(2)} KB/s`;
   return `${bytesPerSec.toFixed(2)} B/s`;
@@ -50,7 +51,10 @@ function generateBinaryPayload(sizeBytes: number): Buffer {
 // Raw Pipe Benchmark (no framing, no serialization)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function benchmarkRawPipe(sizeBytes: number, iterations: number): Promise<{
+async function benchmarkRawPipe(
+  sizeBytes: number,
+  iterations: number,
+): Promise<{
   avgMs: number;
   throughputMBps: number;
 }> {
@@ -59,12 +63,16 @@ async function benchmarkRawPipe(sizeBytes: number, iterations: number): Promise<
 
   // Cleanup any existing socket
   if (process.platform !== "win32") {
-    try { fs.unlinkSync(pipePath); } catch {}
+    try {
+      fs.unlinkSync(pipePath);
+    } catch {
+      // Ignore errors when cleaning up Unix socket
+    }
   }
 
   return new Promise((resolve, reject) => {
     let received = 0;
-    let expectedTotal = sizeBytes * iterations;
+    const expectedTotal = sizeBytes * iterations;
     let startTime: number;
     let clientSocket: net.Socket;
 
@@ -77,7 +85,11 @@ async function benchmarkRawPipe(sizeBytes: number, iterations: number): Promise<
           socket.end();
           server.close(() => {
             if (process.platform !== "win32") {
-              try { fs.unlinkSync(pipePath); } catch {}
+              try {
+                fs.unlinkSync(pipePath);
+              } catch {
+                // Ignore cleanup errors
+              }
             }
             const totalMB = (sizeBytes * iterations) / (1024 * 1024);
             resolve({
@@ -119,7 +131,10 @@ async function benchmarkRawPipe(sizeBytes: number, iterations: number): Promise<
 // Pipe with Length-Prefixed Framing
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function benchmarkLengthPrefixedPipe(sizeBytes: number, iterations: number): Promise<{
+async function benchmarkLengthPrefixedPipe(
+  sizeBytes: number,
+  iterations: number,
+): Promise<{
   avgMs: number;
   throughputMBps: number;
 }> {
@@ -128,7 +143,11 @@ async function benchmarkLengthPrefixedPipe(sizeBytes: number, iterations: number
 
   // Cleanup any existing socket
   if (process.platform !== "win32") {
-    try { fs.unlinkSync(pipePath); } catch {}
+    try {
+      fs.unlinkSync(pipePath);
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 
   return new Promise((resolve, reject) => {
@@ -202,7 +221,11 @@ async function benchmarkLengthPrefixedPipe(sizeBytes: number, iterations: number
             socket.end();
             server.close(() => {
               if (process.platform !== "win32") {
-                try { fs.unlinkSync(pipePath); } catch {}
+                try {
+                  fs.unlinkSync(pipePath);
+                } catch {
+                  // Ignore cleanup errors
+                }
               }
               const totalMB = (sizeBytes * iterations) / (1024 * 1024);
               resolve({
@@ -251,7 +274,10 @@ async function benchmarkLengthPrefixedPipe(sizeBytes: number, iterations: number
 // Stdio Benchmark (for comparison)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function benchmarkRawStdio(sizeBytes: number, iterations: number): Promise<{
+async function benchmarkRawStdio(
+  sizeBytes: number,
+  iterations: number,
+): Promise<{
   avgMs: number;
   throughputMBps: number;
 }> {
@@ -260,7 +286,11 @@ async function benchmarkRawStdio(sizeBytes: number, iterations: number): Promise
 
   return new Promise((resolve, reject) => {
     // Spawn a simple echo process
-    const child = spawn("node", ["-e", `
+    const child = spawn(
+      "node",
+      [
+        "-e",
+        `
       let received = 0;
       const expected = ${sizeBytes * iterations};
       process.stdin.on("data", (data) => {
@@ -269,11 +299,14 @@ async function benchmarkRawStdio(sizeBytes: number, iterations: number): Promise
           process.exit(0);
         }
       });
-    `], {
-      stdio: ["pipe", "pipe", "inherit"],
-    });
+    `,
+      ],
+      {
+        stdio: ["pipe", "pipe", "inherit"],
+      },
+    );
 
-    let startTime: number;
+    let startTime = 0;
 
     child.on("error", reject);
     child.on("exit", () => {
@@ -308,7 +341,10 @@ async function benchmarkRawStdio(sizeBytes: number, iterations: number): Promise
 // Request/Response Round-trip (simulates actual usage)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function benchmarkRoundTrip(sizeBytes: number, iterations: number): Promise<{
+async function benchmarkRoundTrip(
+  sizeBytes: number,
+  iterations: number,
+): Promise<{
   avgMs: number;
   throughputMBps: number;
 }> {
@@ -317,7 +353,11 @@ async function benchmarkRoundTrip(sizeBytes: number, iterations: number): Promis
 
   // Cleanup any existing socket
   if (process.platform !== "win32") {
-    try { fs.unlinkSync(pipePath); } catch {}
+    try {
+      fs.unlinkSync(pipePath);
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 
   // Helper class for efficient buffer management (avoids Buffer.concat)
@@ -453,7 +493,11 @@ async function benchmarkRoundTrip(sizeBytes: number, iterations: number): Promis
               clientSocket.end();
               server.close(() => {
                 if (process.platform !== "win32") {
-                  try { fs.unlinkSync(pipePath); } catch {}
+                  try {
+                    fs.unlinkSync(pipePath);
+                  } catch {
+                    // Ignore cleanup errors
+                  }
                 }
                 const totalMB = (sizeBytes * iterations * 2) / (1024 * 1024); // *2 for round-trip
                 resolve({
@@ -500,7 +544,7 @@ async function main(): Promise<void> {
 
   const testCases = [
     { sizeKB: 100, iterations: 100 },
-    { sizeKB: 1024, iterations: 50 },      // 1 MB
+    { sizeKB: 1024, iterations: 50 }, // 1 MB
     { sizeKB: 10 * 1024, iterations: 20 }, // 10 MB
     { sizeKB: 100 * 1024, iterations: 5 }, // 100 MB
   ];

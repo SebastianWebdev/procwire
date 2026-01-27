@@ -62,3 +62,48 @@ export function generateNestedObject(depth: number, breadth: number): unknown {
 export function generateBinaryData(length: number): number[] {
   return Array.from({ length }, () => Math.floor(Math.random() * 256));
 }
+
+/**
+ * Generate tabular data for Arrow codec testing.
+ *
+ * Creates typed arrays suitable for Apache Arrow Table creation.
+ */
+export function generateTabularData(rows: number): {
+  ids: Int32Array;
+  values: Float64Array;
+  names: string[];
+  flags: boolean[];
+} {
+  return {
+    ids: new Int32Array(Array.from({ length: rows }, (_, i) => i)),
+    values: new Float64Array(Array.from({ length: rows }, () => Math.random() * 1000)),
+    names: Array.from({ length: rows }, (_, i) => `item_${i}`),
+    flags: Array.from({ length: rows }, () => Math.random() > 0.5),
+  };
+}
+
+/**
+ * Generate protobuf-compatible test records.
+ *
+ * Creates data matching the complex Record schema used in protobuf tests.
+ */
+export function generateProtobufRecords(count: number): Array<{
+  id: string;
+  name: string;
+  value: number;
+  status: number;
+  tags: string[];
+  metadata: Array<{ key: string; value: string }>;
+}> {
+  return Array.from({ length: count }, (_, i) => ({
+    id: String(i),
+    name: `Record ${i}`,
+    value: Math.random() * 1000,
+    status: i % 3, // 0=PENDING, 1=ACTIVE, 2=COMPLETED
+    tags: [`tag${i % 10}`, `category${i % 5}`],
+    metadata: [
+      { key: "index", value: String(i) },
+      { key: "timestamp", value: new Date().toISOString() },
+    ],
+  }));
+}

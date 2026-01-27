@@ -8,6 +8,7 @@ perf(framing): optimize LengthPrefixedFraming to avoid Buffer.concat overhead
 Replace `Buffer.concat()` calls with pre-allocated buffers and direct copying in `encode()`, `peekBytes()`, and `takeBytes()` methods. This eliminates the O(n) memory reallocation that occurred with each TCP chunk for large payloads.
 
 **Performance improvement for 100MB payloads:**
+
 - Before: ~7 MB/s throughput
 - After: ~1.1 GB/s throughput (~150x faster)
 

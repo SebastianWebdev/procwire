@@ -1,86 +1,159 @@
-# Channel Performance Benchmark Report
+# Codec Performance Benchmark Report
 
-**Generated:** 2026-01-26T20:10:11.832Z
+## What This Benchmark Measures
 
-## System Information
+This benchmark compares serialization codec performance for IPC (Inter-Process Communication):
 
-| Property | Value |
-|----------|-------|
-| Platform | win32 |
-| Architecture | x64 |
-| CPU | AMD Ryzen 9 7900X 12-Core Processor             |
-| CPU Cores | 24 |
-| Total Memory | 63.1 GB |
-| Node.js | v24.11.1 |
+| Codec                        | Transport   | Use Case                               |
+| ---------------------------- | ----------- | -------------------------------------- |
+| 🔴 **JSON/stdio** (baseline) | stdio       | Traditional IPC without procwire       |
+| 🟢 **Raw binary** (baseline) | Named Pipes | Maximum theoretical throughput         |
+| 🔵 **MessagePack**           | Named Pipes | General-purpose, 2-5x faster than JSON |
+| 🟣 **Protobuf**              | Named Pipes | Schema-validated, compact payloads     |
+| 🟠 **Arrow**                 | In-memory   | Columnar data, analytics workloads     |
 
-## Summary Comparison
+## Key Findings
 
-| Test | Payload | Control (ms) | Data (ms) | Speedup | Throughput Diff |
-|------|---------|--------------|-----------|---------|-----------------|
-| payload_1KB_1KB | 1 KB | 0.21 | 0.16 | **1.26x faster** | +26.3% |
-| payload_10KB_10KB | 10 KB | 0.23 | 0.26 | 0.89x | -11.2% |
-| payload_100KB_100KB | 100 KB | 0.78 | 0.75 | **1.05x faster** | +4.6% |
-| payload_500KB_500KB | 500 KB | 3.48 | 3.53 | 0.99x | -1.3% |
-| payload_1024KB_1024KB | 1024 KB | 8.40 | 8.38 | **1.00x faster** | +0.3% |
-| payload_2048KB_2048KB | 2048 KB | 17.53 | 16.46 | **1.06x faster** | +6.5% |
-| payload_5120KB_5120KB | 5120 KB | 63.85 | 61.91 | **1.03x faster** | +3.1% |
-| payload_10240KB_10240KB | 10240 KB | 203.03 | 180.75 | **1.12x faster** | +12.3% |
-| payload_51200KB_51200KB | 51200 KB | 4178.35 | 3494.57 | **1.20x faster** | +19.6% |
-| payload_102400KB_102400KB | 102400 KB | 17137.71 | 13914.02 | **1.23x faster** | +23.2% |
-| throughput_100_0KB | minimal | 2.51 | 3.16 | 0.80x | -14.1% |
-| throughput_500_0KB | minimal | 7.30 | 9.48 | 0.77x | -19.6% |
-| throughput_1000_0KB | minimal | 10.78 | 12.87 | 0.84x | -5.1% |
-| throughput_2000_0KB | minimal | 21.46 | 22.31 | 0.96x | +18.7% |
+- 🚀 **Best throughput**: msgpack at **176.6 MB/s** for 1MB+ payloads
+- 📊 **vs JSON baseline**: 1.0x faster
+- 📉 **vs Raw baseline**: -82% overhead from serialization
+- 🟠 **Arrow** (100K+ rows): **4409.4 MB/s** columnar throughput
 
-## Detailed Results
+---
 
-### Payload Transfer Performance
+## Baseline Measurements
 
-| Channel | Payload | Iterations | Avg (ms) | P50 (ms) | P95 (ms) | P99 (ms) | Throughput (MB/s) |
-|---------|---------|------------|----------|----------|----------|----------|-------------------|
-| control | 1 KB | 50 | 0.21 | 0.18 | 0.50 | 0.63 | 4.67 |
-| data | 1 KB | 50 | 0.16 | 0.16 | 0.25 | 0.31 | 5.90 |
-| control | 10 KB | 50 | 0.23 | 0.21 | 0.32 | 0.35 | 42.85 |
-| data | 10 KB | 50 | 0.26 | 0.21 | 0.53 | 1.11 | 38.04 |
-| control | 100 KB | 50 | 0.78 | 0.76 | 1.15 | 1.25 | 124.33 |
-| data | 100 KB | 50 | 0.75 | 0.73 | 0.98 | 1.48 | 129.99 |
-| control | 500 KB | 50 | 3.48 | 3.27 | 5.32 | 5.49 | 140.31 |
-| data | 500 KB | 50 | 3.53 | 3.46 | 4.19 | 4.96 | 138.42 |
-| control | 1024 KB | 50 | 8.40 | 7.83 | 12.44 | 13.58 | 118.97 |
-| data | 1024 KB | 50 | 8.38 | 7.85 | 11.57 | 12.59 | 119.30 |
-| control | 2048 KB | 50 | 17.53 | 17.41 | 19.05 | 20.37 | 114.08 |
-| data | 2048 KB | 50 | 16.46 | 16.45 | 17.96 | 18.91 | 121.47 |
-| control | 5120 KB | 20 | 63.85 | 63.81 | 67.32 | 67.75 | 78.31 |
-| data | 5120 KB | 20 | 61.91 | 60.62 | 70.79 | 75.04 | 80.76 |
-| control | 10240 KB | 10 | 203.03 | 204.05 | 212.22 | 212.22 | 49.25 |
-| data | 10240 KB | 10 | 180.75 | 178.64 | 191.68 | 191.68 | 55.33 |
-| control | 51200 KB | 5 | 4178.35 | 4183.55 | 4232.94 | 4232.94 | 11.97 |
-| data | 51200 KB | 5 | 3494.57 | 3422.73 | 3753.02 | 3753.02 | 14.31 |
-| control | 102400 KB | 5 | 17137.71 | 17219.05 | 17396.33 | 17396.33 | 5.84 |
-| data | 102400 KB | 5 | 13914.02 | 13934.05 | 14016.93 | 14016.93 | 7.19 |
+_These baselines show the performance range: JSON/stdio (minimum) to Raw/pipes (maximum)_
 
-### Message Throughput Performance
+### 🔴 Lower Baseline: JSON over stdio
 
-| Channel | Messages | Total (ms) | Avg (ms) | P50 (ms) | P95 (ms) | P99 (ms) | Messages/sec |
-|---------|----------|------------|----------|----------|----------|----------|--------------|
-| control | 100 | 3 | 2.51 | 2.50 | 2.76 | 2.79 | 32617 |
-| data | 100 | 4 | 3.16 | 3.20 | 3.42 | 3.44 | 28009 |
-| control | 500 | 9 | 7.30 | 7.41 | 8.22 | 8.27 | 58196 |
-| data | 500 | 11 | 9.48 | 9.49 | 10.04 | 10.09 | 46781 |
-| control | 1000 | 14 | 10.78 | 11.52 | 12.29 | 12.40 | 73343 |
-| data | 1000 | 14 | 12.87 | 12.86 | 14.00 | 14.04 | 69592 |
-| control | 2000 | 31 | 21.46 | 24.25 | 29.37 | 29.76 | 64655 |
-| data | 2000 | 26 | 22.31 | 22.09 | 25.38 | 25.52 | 76770 |
+_Traditional IPC without procwire - line-delimited JSON over stdin/stdout_
 
-## Interpretation
+| Payload | Avg Latency | P95       | P99       | Throughput |
+| ------- | ----------- | --------- | --------- | ---------- |
+| 1 KB    | 0.12 ms     | 0.22 ms   | 0.23 ms   | 8.0 MB/s   |
+| 10 KB   | 0.14 ms     | 0.21 ms   | 0.24 ms   | 67.8 MB/s  |
+| 100 KB  | 0.55 ms     | 0.75 ms   | 1.02 ms   | 178.1 MB/s |
+| 1 MB    | 5.91 ms     | 7.81 ms   | 8.27 ms   | 169.0 MB/s |
+| 10 MB   | 165.13 ms   | 170.31 ms | 170.31 ms | 60.6 MB/s  |
 
-- **Speedup > 1**: Data channel is faster than control channel
-- **Speedup < 1**: Control channel is faster than data channel
-- **Throughput Diff**: Positive means data channel has higher throughput
+### 🟢 Upper Baseline: Raw Binary over Named Pipes
 
-### Notes
+_Theoretical maximum - no serialization overhead, just framing_
 
-- Control channel uses stdio (stdin/stdout) with line-delimited framing
-- Data channel uses named pipes (Windows) or Unix sockets with length-prefixed framing
-- Length-prefixed framing is more efficient for binary/large payloads
-- Results may vary based on system load and hardware
+| Payload | Avg Latency | P95        | P99        | Throughput |
+| ------- | ----------- | ---------- | ---------- | ---------- |
+| 1 KB    | 0.12 ms     | 0.16 ms    | 0.25 ms    | 8.1 MB/s   |
+| 10 KB   | 0.31 ms     | 0.62 ms    | 0.90 ms    | 31.4 MB/s  |
+| 100 KB  | 2.40 ms     | 2.83 ms    | 2.98 ms    | 40.7 MB/s  |
+| 1 MB    | 32.17 ms    | 33.42 ms   | 35.03 ms   | 31.1 MB/s  |
+| 10 MB   | 1087.48 ms  | 1096.50 ms | 1096.50 ms | 9.2 MB/s   |
+
+---
+
+## Codec Performance (via Named Pipes)
+
+### 🔵 MessagePack Codec
+
+_Best for: General-purpose IPC, moderate payloads, Date/Map/Set support_
+
+| Payload | Avg Latency | P95       | P99       | Throughput | vs JSON | vs Raw |
+| ------- | ----------- | --------- | --------- | ---------- | ------- | ------ |
+| 1 KB    | 0.12 ms     | 0.22 ms   | 0.25 ms   | 8.4 MB/s   | 1.0x    | 103%   |
+| 10 KB   | 0.15 ms     | 0.21 ms   | 0.50 ms   | 66.2 MB/s  | 1.0x    | 211%   |
+| 100 KB  | 0.51 ms     | 0.62 ms   | 1.09 ms   | 192.6 MB/s | 1.1x    | 473%   |
+| 1 MB    | 5.66 ms     | 6.50 ms   | 7.01 ms   | 176.6 MB/s | 1.0x    | 568%   |
+| 10 MB   | 137.28 ms   | 141.89 ms | 141.89 ms | 72.8 MB/s  | 1.2x    | 792%   |
+
+### 🟣 Protobuf Codec
+
+_Best for: Schema validation, cross-language, compact payloads_
+
+| Payload | Avg Latency | P95       | P99       | Throughput | vs JSON | vs Raw |
+| ------- | ----------- | --------- | --------- | ---------- | ------- | ------ |
+| 1 KB    | 0.10 ms     | 0.15 ms   | 0.22 ms   | 9.9 MB/s   | 1.2x    | 122%   |
+| 10 KB   | 0.16 ms     | 0.32 ms   | 0.78 ms   | 60.4 MB/s  | 0.9x    | 193%   |
+| 100 KB  | 0.51 ms     | 0.67 ms   | 0.93 ms   | 191.2 MB/s | 1.1x    | 469%   |
+| 1 MB    | 5.95 ms     | 7.85 ms   | 8.28 ms   | 168.1 MB/s | 1.0x    | 541%   |
+| 10 MB   | 138.89 ms   | 142.30 ms | 142.30 ms | 72.0 MB/s  | 1.2x    | 783%   |
+
+---
+
+## Pure Serialization Performance (In-Memory)
+
+_Codec overhead without IPC transport - serialize + deserialize round-trip_
+
+| Codec          | Payload | Avg Latency | Throughput | Serialized Size |
+| -------------- | ------- | ----------- | ---------- | --------------- |
+| 🔵 MessagePack | 1 KB    | 0.011 ms    | 85.3 MB/s  | 0.9 KB          |
+| 🔵 MessagePack | 10 KB   | 0.030 ms    | 325.3 MB/s | 9.9 KB          |
+| 🔵 MessagePack | 100 KB  | 0.285 ms    | 342.4 MB/s | 99.9 KB         |
+| 🔵 MessagePack | 1 MB    | 1.907 ms    | 524.2 MB/s | 1023.9 KB       |
+| 🟣 Protobuf    | 1 KB    | 0.007 ms    | 130.7 MB/s | 0.8 KB          |
+| 🟣 Protobuf    | 10 KB   | 0.021 ms    | 453.2 MB/s | 9.8 KB          |
+| 🟣 Protobuf    | 100 KB  | 0.111 ms    | 876.6 MB/s | 99.8 KB         |
+| 🟣 Protobuf    | 1 MB    | 1.046 ms    | 955.8 MB/s | 1023.8 KB       |
+
+### 🟠 Arrow Codec (Columnar Data)
+
+_Best for: Analytics, batch processing, cross-language data exchange_
+
+_Note: Arrow is tested in isolation (serialize + deserialize round-trip) as it's designed for columnar data, not JSON-RPC._
+
+| Rows | Avg Latency | P95      | P99      | Throughput  | Serialized Size |
+| ---- | ----------- | -------- | -------- | ----------- | --------------- |
+| 100  | 0.22 ms     | 0.42 ms  | 0.51 ms  | 15.3 MB/s   | 5.0 KB          |
+| 1K   | 0.17 ms     | 0.25 ms  | 0.41 ms  | 207.0 MB/s  | 40.2 KB         |
+| 10K  | 0.24 ms     | 0.47 ms  | 0.86 ms  | 1417.8 MB/s | 400.6 KB        |
+| 100K | 0.78 ms     | 0.86 ms  | 0.86 ms  | 4409.4 MB/s | 4.0 MB          |
+| 1.0M | 8.90 ms     | 17.27 ms | 17.27 ms | 3855.5 MB/s | 40.9 MB         |
+
+---
+
+## Message Throughput (Small Messages)
+
+_How many small messages can we send per second?_
+
+| Codec          | 100 msgs     | 500 msgs     | 1000 msgs     |
+| -------------- | ------------ | ------------ | ------------- |
+| 🔴 JSON/stdio  | 65 738 msg/s | 46 729 msg/s | 111 264 msg/s |
+| 🔵 MessagePack | 64 897 msg/s | 56 987 msg/s | 117 684 msg/s |
+| 🟣 Protobuf    | 72 322 msg/s | 78 709 msg/s | 115 138 msg/s |
+
+---
+
+## Test Environment
+
+**Generated:** 2026-01-27T20:13:22.174Z
+
+| Property     | Value                               |
+| ------------ | ----------------------------------- |
+| Platform     | win32                               |
+| Architecture | x64                                 |
+| CPU          | AMD Ryzen 9 7900X 12-Core Processor |
+| CPU Cores    | 24                                  |
+| Total Memory | 63.1 GB                             |
+| Node.js      | v24.11.1                            |
+
+## Methodology
+
+### Codec Descriptions
+
+- **JSON/stdio**: Line-delimited JSON over stdin/stdout. Baseline for traditional IPC.
+- **Raw binary**: Length-prefixed binary over Named Pipes. No serialization, shows transport max.
+- **MessagePack**: Binary JSON-like format. 2-5x faster, supports Date/Map/Set.
+- **Protobuf**: Schema-validated binary. 3-10x smaller than JSON.
+- **Arrow**: Columnar IPC format. Optimized for analytics and batch processing.
+
+### Metrics
+
+- **vs JSON**: Throughput relative to JSON/stdio baseline (higher is better)
+- **vs Raw**: Throughput as percentage of raw binary baseline (100% = no serialization overhead)
+- **P95/P99**: 95th and 99th percentile latencies (tail latency)
+
+### Test Parameters
+
+- **Warmup**: 5-10 iterations before measurement
+- **Iterations**: 50 for small payloads, fewer for large to keep test reasonable
+- **Payloads**: 1 KB to 10 MB structured data
+- **Arrow**: 100 to 1M rows with 5 columns

@@ -206,7 +206,7 @@ describe("Edge Cases - Race Conditions", { timeout: 60000 }, () => {
 
       // Wait for spawn to complete or fail
       try {
-        const handle = await spawnPromise;
+        const _handle = await spawnPromise;
         // If spawn completed, verify worker state
         if (manager.isRunning("during-handshake")) {
           await manager.terminate("during-handshake");

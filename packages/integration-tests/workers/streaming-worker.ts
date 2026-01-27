@@ -53,18 +53,15 @@ worker.handle("generate_large", (params: { size: number }) => {
 });
 
 // Transform array items
-worker.handle(
-  "transform_items",
-  (params: { items: Array<{ id: number; value: number }> }) => {
-    return {
-      items: params.items.map((item) => ({
-        ...item,
-        value: item.value * 2,
-        transformed: true,
-      })),
-    };
-  },
-);
+worker.handle("transform_items", (params: { items: Array<{ id: number; value: number }> }) => {
+  return {
+    items: params.items.map((item) => ({
+      ...item,
+      value: item.value * 2,
+      transformed: true,
+    })),
+  };
+});
 
 // Aggregate values
 worker.handle("aggregate", (params: { values: number[] }) => {

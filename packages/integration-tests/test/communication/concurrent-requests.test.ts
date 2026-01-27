@@ -27,9 +27,7 @@ describe("Communication - Concurrent Requests", () => {
     it("should handle 10 concurrent requests", async () => {
       const handle = await spawnWorker(manager, "concurrent-10", "echo-worker.ts");
 
-      const requests = Array.from({ length: 10 }, (_, i) =>
-        handle.request("echo", { id: i }),
-      );
+      const requests = Array.from({ length: 10 }, (_, i) => handle.request("echo", { id: i }));
 
       const results = await Promise.all(requests);
 
@@ -42,9 +40,7 @@ describe("Communication - Concurrent Requests", () => {
     it("should handle 100 concurrent requests", async () => {
       const handle = await spawnWorker(manager, "concurrent-100", "echo-worker.ts");
 
-      const requests = Array.from({ length: 100 }, (_, i) =>
-        handle.request("echo", { seq: i }),
-      );
+      const requests = Array.from({ length: 100 }, (_, i) => handle.request("echo", { seq: i }));
 
       const results = await Promise.all(requests);
 

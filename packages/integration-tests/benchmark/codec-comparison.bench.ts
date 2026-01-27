@@ -3,16 +3,17 @@
  *
  * Compares performance of different serialization codecs:
  * 1. JSON (baseline/fallback)
- * 2. MessagePack (binary, schema-less)
- * 3. Protobuf (binary, schema-based)
- * 4. Arrow (columnar, for tabular data)
+ * 2. MessagePack (@procwire/codec-msgpack)
+ * 3. Protobuf (@procwire/codec-protobuf)
+ * 4. Arrow (@procwire/codec-arrow)
  *
  * Run with: pnpm benchmark:codecs
  */
 
-import { encode as msgpackEncode, decode as msgpackDecode } from "@msgpack/msgpack";
-import protobuf from "protobufjs";
-import { tableFromArrays, tableToIPC, tableFromIPC } from "apache-arrow";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+import { ArrowCodec } from "@procwire/codec-arrow";
+import { tableFromArrays } from "apache-arrow";
+import { createCodecFromJSON } from "@procwire/codec-protobuf";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -68,10 +69,10 @@ function generateBinaryPayload(sizeKB: number): { data: Uint8Array } {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Protobuf Schema
+// Protobuf Schemas (using @procwire/codec-protobuf)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const protoSchema = protobuf.Root.fromJSON({
+const recordListSchema = {
   nested: {
     Metadata: {
       fields: {
@@ -94,16 +95,37 @@ const protoSchema = protobuf.Root.fromJSON({
         records: { type: "TestRecord", id: 1, rule: "repeated" },
       },
     },
+  },
+};
+
+const binaryPayloadSchema = {
+  nested: {
     BinaryPayload: {
       fields: {
         data: { type: "bytes", id: 1 },
       },
     },
   },
-});
+};
 
-const RecordListType = protoSchema.lookupType("RecordList");
-const BinaryPayloadType = protoSchema.lookupType("BinaryPayload");
+interface RecordList {
+  records: TestRecord[];
+}
+
+interface BinaryPayload {
+  data: Uint8Array;
+}
+
+// Create protobuf codecs using @procwire/codec-protobuf
+const recordListCodec = createCodecFromJSON<RecordList>(recordListSchema, "RecordList");
+const binaryPayloadCodec = createCodecFromJSON<BinaryPayload>(binaryPayloadSchema, "BinaryPayload");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Codec Instances
+// ─────────────────────────────────────────────────────────────────────────────
+
+const msgpackCodec = new MessagePackCodec();
+const arrowCodec = new ArrowCodec();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Benchmark Functions
@@ -164,21 +186,21 @@ async function benchmarkMessagePack(data: unknown, dataType: string): Promise<Be
 
   // Warmup
   for (let i = 0; i < 5; i++) {
-    msgpackDecode(msgpackEncode(data));
+    msgpackCodec.deserialize(msgpackCodec.serialize(data));
   }
 
   // Serialize
   const serializeStart = performance.now();
-  let serialized: Uint8Array = new Uint8Array(0);
+  let serialized: Buffer = Buffer.alloc(0);
   for (let i = 0; i < 10; i++) {
-    serialized = msgpackEncode(data);
+    serialized = msgpackCodec.serialize(data);
   }
   const serializeTime = (performance.now() - serializeStart) / 10;
 
   // Deserialize
   const deserializeStart = performance.now();
   for (let i = 0; i < 10; i++) {
-    msgpackDecode(serialized);
+    msgpackCodec.deserialize(serialized);
   }
   const deserializeTime = (performance.now() - deserializeStart) / 10;
 
@@ -196,33 +218,69 @@ async function benchmarkMessagePack(data: unknown, dataType: string): Promise<Be
   };
 }
 
-async function benchmarkProtobuf(
-  data: { records: TestRecord[] } | { data: Uint8Array },
+async function benchmarkProtobufRecords(
+  data: RecordList,
   dataType: string,
-  type: protobuf.Type,
 ): Promise<BenchmarkResult> {
   const originalSize = JSON.stringify(data).length;
 
   // Warmup
   for (let i = 0; i < 5; i++) {
-    const msg = type.create(data);
-    const buf = type.encode(msg).finish();
-    type.decode(buf);
+    recordListCodec.deserialize(recordListCodec.serialize(data));
   }
 
   // Serialize
   const serializeStart = performance.now();
-  let serialized: Uint8Array = new Uint8Array(0);
+  let serialized: Buffer = Buffer.alloc(0);
   for (let i = 0; i < 10; i++) {
-    const msg = type.create(data);
-    serialized = type.encode(msg).finish();
+    serialized = recordListCodec.serialize(data);
   }
   const serializeTime = (performance.now() - serializeStart) / 10;
 
   // Deserialize
   const deserializeStart = performance.now();
   for (let i = 0; i < 10; i++) {
-    type.decode(serialized);
+    recordListCodec.deserialize(serialized);
+  }
+  const deserializeTime = (performance.now() - deserializeStart) / 10;
+
+  return {
+    codec: "Protobuf",
+    dataType,
+    originalSize,
+    serializedSize: serialized.length,
+    compressionRatio: originalSize / serialized.length,
+    serializeTimeMs: serializeTime,
+    deserializeTimeMs: deserializeTime,
+    roundTripTimeMs: serializeTime + deserializeTime,
+    serializeThroughput: originalSize / (serializeTime / 1000),
+    deserializeThroughput: serialized.length / (deserializeTime / 1000),
+  };
+}
+
+async function benchmarkProtobufBinary(
+  data: BinaryPayload,
+  dataType: string,
+): Promise<BenchmarkResult> {
+  const originalSize = data.data.length;
+
+  // Warmup
+  for (let i = 0; i < 5; i++) {
+    binaryPayloadCodec.deserialize(binaryPayloadCodec.serialize(data));
+  }
+
+  // Serialize
+  const serializeStart = performance.now();
+  let serialized: Buffer = Buffer.alloc(0);
+  for (let i = 0; i < 10; i++) {
+    serialized = binaryPayloadCodec.serialize(data);
+  }
+  const serializeTime = (performance.now() - serializeStart) / 10;
+
+  // Deserialize
+  const deserializeStart = performance.now();
+  for (let i = 0; i < 10; i++) {
+    binaryPayloadCodec.deserialize(serialized);
   }
   const deserializeTime = (performance.now() - deserializeStart) / 10;
 
@@ -249,26 +307,26 @@ async function benchmarkArrow(records: TestRecord[]): Promise<BenchmarkResult> {
   const values = Float64Array.from(records.map((r) => r.value));
   const actives = records.map((r) => r.active);
 
+  // Create table once for serialization tests
+  const table = tableFromArrays({ id: ids, name: names, value: values, active: actives });
+
   // Warmup
   for (let i = 0; i < 5; i++) {
-    const table = tableFromArrays({ id: ids, name: names, value: values, active: actives });
-    const buf = tableToIPC(table, "stream");
-    tableFromIPC(buf);
+    arrowCodec.deserialize(arrowCodec.serialize(table));
   }
 
   // Serialize
   const serializeStart = performance.now();
-  let serialized: Uint8Array = new Uint8Array(0);
+  let serialized: Buffer = Buffer.alloc(0);
   for (let i = 0; i < 10; i++) {
-    const table = tableFromArrays({ id: ids, name: names, value: values, active: actives });
-    serialized = tableToIPC(table, "stream");
+    serialized = arrowCodec.serialize(table);
   }
   const serializeTime = (performance.now() - serializeStart) / 10;
 
   // Deserialize
   const deserializeStart = performance.now();
   for (let i = 0; i < 10; i++) {
-    tableFromIPC(serialized);
+    arrowCodec.deserialize(serialized);
   }
   const deserializeTime = (performance.now() - deserializeStart) / 10;
 
@@ -293,6 +351,7 @@ async function benchmarkArrow(records: TestRecord[]): Promise<BenchmarkResult> {
 async function main(): Promise<void> {
   console.log("═══════════════════════════════════════════════════════════════");
   console.log("  Codec Comparison Benchmark");
+  console.log("  Using @procwire codecs: codec-msgpack, codec-protobuf, codec-arrow");
   console.log("═══════════════════════════════════════════════════════════════");
   console.log("");
 
@@ -306,21 +365,21 @@ async function main(): Promise<void> {
     console.log(`\n─── ${count.toLocaleString()} Records ───\n`);
 
     const records = generateRecords(count);
-    const recordsWrapper = { records };
+    const recordsWrapper: RecordList = { records };
 
     console.log("  JSON...");
     const jsonResult = await benchmarkJSON(records, `${count} records`);
     results.push(jsonResult);
 
-    console.log("  MessagePack...");
+    console.log("  MessagePack (@procwire/codec-msgpack)...");
     const msgpackResult = await benchmarkMessagePack(records, `${count} records`);
     results.push(msgpackResult);
 
-    console.log("  Protobuf...");
-    const protobufResult = await benchmarkProtobuf(recordsWrapper, `${count} records`, RecordListType);
+    console.log("  Protobuf (@procwire/codec-protobuf)...");
+    const protobufResult = await benchmarkProtobufRecords(recordsWrapper, `${count} records`);
     results.push(protobufResult);
 
-    console.log("  Arrow...");
+    console.log("  Arrow (@procwire/codec-arrow)...");
     const arrowResult = await benchmarkArrow(records);
     results.push(arrowResult);
 
@@ -352,12 +411,12 @@ async function main(): Promise<void> {
     const jsonResult = await benchmarkJSON(jsonBinaryData, `${sizeLabel} binary`);
     results.push(jsonResult);
 
-    console.log("  MessagePack...");
+    console.log("  MessagePack (@procwire/codec-msgpack)...");
     const msgpackResult = await benchmarkMessagePack(binaryData, `${sizeLabel} binary`);
     results.push(msgpackResult);
 
-    console.log("  Protobuf...");
-    const protobufResult = await benchmarkProtobuf(binaryData, `${sizeLabel} binary`, BinaryPayloadType);
+    console.log("  Protobuf (@procwire/codec-protobuf)...");
+    const protobufResult = await benchmarkProtobufBinary(binaryData, `${sizeLabel} binary`);
     results.push(protobufResult);
 
     // Print comparison
@@ -373,20 +432,56 @@ async function main(): Promise<void> {
     }
   }
 
-  // ─── Summary ────────────────────────────────────────────────────────────────
+  // ─── Per-Codec Summary ─────────────────────────────────────────────────────
 
   console.log("\n═══════════════════════════════════════════════════════════════");
-  console.log("  Summary");
+  console.log("  Per-Codec Summary");
   console.log("═══════════════════════════════════════════════════════════════");
-  console.log("\nRecommendations:");
-  console.log("  - JSON: Fallback only, human-readable debugging");
+
+  // Group results by codec
+  const byCodec = results.reduce(
+    (acc, r) => {
+      if (!acc[r.codec]) acc[r.codec] = [];
+      acc[r.codec].push(r);
+      return acc;
+    },
+    {} as Record<string, BenchmarkResult[]>,
+  );
+
+  for (const [codecName, codecResults] of Object.entries(byCodec)) {
+    const avgCompression =
+      codecResults.reduce((s, r) => s + r.compressionRatio, 0) / codecResults.length;
+    const avgRoundTrip =
+      codecResults.reduce((s, r) => s + r.roundTripTimeMs, 0) / codecResults.length;
+    const totalBytes = codecResults.reduce((s, r) => s + r.serializedSize, 0);
+    const avgSerializeSpeed =
+      codecResults.reduce((s, r) => s + r.serializeThroughput, 0) / codecResults.length;
+
+    console.log(`\n  ┌─────────────────────────────────────────┐`);
+    console.log(`  │  CODEC: ${codecName.padEnd(31)}│`);
+    console.log(`  ├─────────────────────────────────────────┤`);
+    console.log(`  │  Tests run:           ${String(codecResults.length).padStart(16)} │`);
+    console.log(`  │  Avg compression:     ${avgCompression.toFixed(2).padStart(14)}x │`);
+    console.log(`  │  Avg round-trip:      ${avgRoundTrip.toFixed(2).padStart(13)}ms │`);
+    console.log(`  │  Avg serialize speed: ${formatSpeed(avgSerializeSpeed).padStart(16)} │`);
+    console.log(`  │  Total bytes output:  ${formatSize(totalBytes).padStart(16)} │`);
+    console.log(`  └─────────────────────────────────────────┘`);
+  }
+
+  // ─── Recommendations ──────────────────────────────────────────────────────
+
+  console.log("\n═══════════════════════════════════════════════════════════════");
+  console.log("  Recommendations");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("\nCodec selection guide:");
+  console.log("  - JSON:        Fallback only, human-readable debugging");
   console.log("  - MessagePack: General-purpose binary, schema-less, good balance");
-  console.log("  - Protobuf: Best compression for structured data, requires schema");
-  console.log("  - Arrow: Best for large tabular/columnar data, analytics workloads");
+  console.log("  - Protobuf:    Best compression for structured data, requires schema");
+  console.log("  - Arrow:       Best for large tabular/columnar data, analytics workloads");
   console.log("\nFor high-throughput data channel transfers:");
   console.log("  - Small messages (<10KB): MessagePack or Protobuf");
-  console.log("  - Large binary blobs: MessagePack (no base64 overhead)");
-  console.log("  - Tabular data: Arrow (columnar format, zero-copy)");
+  console.log("  - Large binary blobs:     MessagePack (no base64 overhead)");
+  console.log("  - Tabular data:           Arrow (columnar format, zero-copy)");
 }
 
 main().catch(console.error);

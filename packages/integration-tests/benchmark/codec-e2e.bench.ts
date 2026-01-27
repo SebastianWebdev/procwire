@@ -4,6 +4,8 @@
  * Tests actual throughput of different codecs through the full
  * transport stack (data channel with named pipes/Unix sockets).
  *
+ * Uses @procwire codecs: codec-msgpack, codec-protobuf, codec-arrow
+ *
  * Run with: pnpm benchmark:codec-e2e
  */
 
@@ -12,8 +14,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as net from "node:net";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-import { encode as msgpackEncode, decode as msgpackDecode } from "@msgpack/msgpack";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+import { ArrowCodec } from "@procwire/codec-arrow";
+import { tableFromArrays } from "apache-arrow";
+import { createCodecFromJSON } from "@procwire/codec-protobuf";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -127,7 +131,7 @@ class BufferList {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Codec Interfaces
+// Codec Interfaces and Instances
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Codec {
@@ -136,30 +140,79 @@ interface Codec {
   decode(buffer: Buffer): unknown;
 }
 
+// JSON codec (baseline)
 const jsonCodec: Codec = {
   name: "JSON",
   encode: (data) => Buffer.from(JSON.stringify(data)),
   decode: (buffer) => JSON.parse(buffer.toString()),
 };
 
+// MessagePack codec using @procwire/codec-msgpack
+const msgpackCodecInstance = new MessagePackCodec();
 const msgpackCodec: Codec = {
   name: "MessagePack",
-  encode: (data) => {
-    const uint8 = msgpackEncode(data);
-    return Buffer.from(uint8.buffer, uint8.byteOffset, uint8.byteLength);
-  },
-  decode: (buffer) => msgpackDecode(buffer),
+  encode: (data) => msgpackCodecInstance.serialize(data),
+  decode: (buffer) => msgpackCodecInstance.deserialize(buffer),
 };
 
-const rawCodec: Codec = {
+// Raw codec (no serialization - baseline for transport overhead)
+const _rawCodec: Codec = {
   name: "Raw (no serialization)",
   encode: (data) => data as Buffer,
   decode: (buffer) => buffer,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON-RPC Protocol Wrapper
+// Protobuf Schema for JSON-RPC wrapper (using @procwire/codec-protobuf)
 // ─────────────────────────────────────────────────────────────────────────────
+
+const jsonRpcRequestSchema = {
+  nested: {
+    JsonRpcRequest: {
+      fields: {
+        jsonrpc: { type: "string", id: 1 },
+        id: { type: "int32", id: 2 },
+        method: { type: "string", id: 3 },
+        params: { type: "bytes", id: 4 }, // Encode params as bytes
+      },
+    },
+  },
+};
+
+const jsonRpcResponseSchema = {
+  nested: {
+    JsonRpcResponse: {
+      fields: {
+        jsonrpc: { type: "string", id: 1 },
+        id: { type: "int32", id: 2 },
+        result: { type: "bytes", id: 3 }, // Encode result as bytes
+      },
+    },
+  },
+};
+
+interface ProtoJsonRpcRequest {
+  jsonrpc: string;
+  id: number;
+  method: string;
+  params: Uint8Array;
+}
+
+interface ProtoJsonRpcResponse {
+  jsonrpc: string;
+  id: number;
+  result: Uint8Array;
+}
+
+// Create protobuf codecs using @procwire/codec-protobuf
+const jsonRpcRequestCodec = createCodecFromJSON<ProtoJsonRpcRequest>(
+  jsonRpcRequestSchema,
+  "JsonRpcRequest",
+);
+const jsonRpcResponseCodec = createCodecFromJSON<ProtoJsonRpcResponse>(
+  jsonRpcResponseSchema,
+  "JsonRpcResponse",
+);
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -174,6 +227,59 @@ interface JsonRpcResponse {
   result?: unknown;
   error?: { code: number; message: string };
 }
+
+// Protobuf codec using @procwire/codec-protobuf
+const protobufCodec: Codec = {
+  name: "Protobuf",
+  encode: (data) => {
+    const rpcData = data as JsonRpcRequest | JsonRpcResponse;
+    if ("method" in rpcData) {
+      // Request: encode params as raw bytes
+      const paramsBytes = Buffer.from(JSON.stringify(rpcData.params));
+      const protoData: ProtoJsonRpcRequest = {
+        jsonrpc: rpcData.jsonrpc,
+        id: rpcData.id,
+        method: rpcData.method,
+        params: paramsBytes,
+      };
+      return jsonRpcRequestCodec.serialize(protoData);
+    } else {
+      // Response: encode result as raw bytes
+      const resultBytes = Buffer.from(JSON.stringify(rpcData.result));
+      const protoData: ProtoJsonRpcResponse = {
+        jsonrpc: rpcData.jsonrpc,
+        id: rpcData.id,
+        result: resultBytes,
+      };
+      return jsonRpcResponseCodec.serialize(protoData);
+    }
+  },
+  decode: (buffer) => {
+    // Try to decode as response first (most common in benchmarks)
+    try {
+      const decoded = jsonRpcResponseCodec.deserialize(buffer);
+      if (decoded.result) {
+        return {
+          jsonrpc: decoded.jsonrpc,
+          id: decoded.id,
+          result: JSON.parse(Buffer.from(decoded.result).toString()),
+        };
+      }
+    } catch {
+      // Try as request
+    }
+    const decoded = jsonRpcRequestCodec.deserialize(buffer);
+    return {
+      jsonrpc: decoded.jsonrpc,
+      id: decoded.id,
+      method: decoded.method,
+      params: JSON.parse(Buffer.from(decoded.params).toString()),
+    };
+  },
+};
+
+// Arrow codec using @procwire/codec-arrow
+const arrowCodecInstance = new ArrowCodec();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Benchmark: Full Round-trip with Protocol
@@ -200,7 +306,9 @@ async function benchmarkCodecRoundTrip(
   if (process.platform !== "win32") {
     try {
       fs.unlinkSync(pipePath);
-    } catch {}
+    } catch {
+      // Ignore if file doesn't exist
+    }
   }
 
   return new Promise((resolve, reject) => {
@@ -263,7 +371,9 @@ async function benchmarkCodecRoundTrip(
                 if (process.platform !== "win32") {
                   try {
                     fs.unlinkSync(pipePath);
-                  } catch {}
+                  } catch {
+                    // Ignore cleanup errors
+                  }
                 }
                 const totalMB = (payloadSizeKB * iterations * 2) / 1024; // *2 for round-trip
                 resolve({
@@ -324,7 +434,9 @@ async function benchmarkRawBinary(
   if (process.platform !== "win32") {
     try {
       fs.unlinkSync(pipePath);
-    } catch {}
+    } catch {
+      // Ignore if file doesn't exist
+    }
   }
 
   return new Promise((resolve, reject) => {
@@ -356,8 +468,8 @@ async function benchmarkRawBinary(
         clientSocket.on("data", (data) => {
           clientBuffer.push(data);
 
-          let frame: Buffer | null;
-          while ((frame = clientBuffer.takeFrame()) !== null) {
+          let _frame: Buffer | null;
+          while ((_frame = clientBuffer.takeFrame()) !== null) {
             completedRequests++;
 
             if (completedRequests >= iterations) {
@@ -367,7 +479,9 @@ async function benchmarkRawBinary(
                 if (process.platform !== "win32") {
                   try {
                     fs.unlinkSync(pipePath);
-                  } catch {}
+                  } catch {
+                    // Ignore cleanup errors
+                  }
                 }
                 const totalMB = (payloadSizeKB * iterations * 2) / 1024;
                 resolve({
@@ -411,6 +525,7 @@ async function benchmarkRawBinary(
 async function main(): Promise<void> {
   console.log("═══════════════════════════════════════════════════════════════");
   console.log("  End-to-End Codec Performance (Full Stack)");
+  console.log("  Using @procwire codecs: codec-msgpack, codec-protobuf, codec-arrow");
   console.log("═══════════════════════════════════════════════════════════════");
   console.log("");
   console.log("Testing: Named Pipe + Length-Prefixed Framing + Codec + JSON-RPC");
@@ -435,15 +550,19 @@ async function main(): Promise<void> {
     console.log("  JSON + JSON-RPC...");
     const jsonResult = await benchmarkCodecRoundTrip(jsonCodec, sizeKB, iterations);
 
-    // MessagePack codec
-    console.log("  MessagePack + JSON-RPC...");
+    // MessagePack codec (@procwire/codec-msgpack)
+    console.log("  MessagePack (@procwire/codec-msgpack) + JSON-RPC...");
     const msgpackResult = await benchmarkCodecRoundTrip(msgpackCodec, sizeKB, iterations);
+
+    // Protobuf codec (@procwire/codec-protobuf)
+    console.log("  Protobuf (@procwire/codec-protobuf) + JSON-RPC...");
+    const protobufResult = await benchmarkCodecRoundTrip(protobufCodec, sizeKB, iterations);
 
     // Print results
     console.log("\n  Results:");
     console.log("  | Codec              | Serialized | Avg Time | Throughput |");
     console.log("  |--------------------|------------|----------|------------|");
-    for (const r of [rawResult, jsonResult, msgpackResult]) {
+    for (const r of [rawResult, jsonResult, msgpackResult, protobufResult]) {
       console.log(
         `  | ${r.codec.padEnd(18)} | ${formatSize(r.serializedSize).padEnd(10)} | ${r.avgTimeMs.toFixed(2).padStart(6)}ms | ${formatSpeed(r.throughputMBps * 1024 * 1024).padEnd(10)} |`,
       );
@@ -452,15 +571,152 @@ async function main(): Promise<void> {
     // Speedup comparison
     const jsonVsRaw = rawResult.throughputMBps / jsonResult.throughputMBps;
     const msgpackVsJson = msgpackResult.throughputMBps / jsonResult.throughputMBps;
+    const protobufVsJson = protobufResult.throughputMBps / jsonResult.throughputMBps;
     const msgpackVsRaw = rawResult.throughputMBps / msgpackResult.throughputMBps;
+    const protobufVsRaw = rawResult.throughputMBps / protobufResult.throughputMBps;
 
-    console.log("\n  Comparisons:");
-    console.log(`    Raw vs JSON:      ${jsonVsRaw.toFixed(2)}x faster (serialization overhead)`);
+    console.log("\n  Comparisons (vs JSON baseline):");
+    console.log(
+      `    Raw vs JSON:         ${jsonVsRaw.toFixed(2)}x faster (serialization overhead)`,
+    );
     console.log(
       `    MessagePack vs JSON: ${msgpackVsJson.toFixed(2)}x ${msgpackVsJson > 1 ? "faster" : "slower"}`,
     );
+    console.log(
+      `    Protobuf vs JSON:    ${protobufVsJson.toFixed(2)}x ${protobufVsJson > 1 ? "faster" : "slower"}`,
+    );
+    console.log(`\n  Comparisons (vs Raw baseline):`);
     console.log(`    Raw vs MessagePack:  ${msgpackVsRaw.toFixed(2)}x faster`);
+    console.log(`    Raw vs Protobuf:     ${protobufVsRaw.toFixed(2)}x faster`);
   }
+
+  // ─── Arrow Tabular Data Benchmark ──────────────────────────────────────────
+
+  console.log("\n═══════════════════════════════════════════════════════════════");
+  console.log("  Arrow Tabular Data Benchmark (@procwire/codec-arrow)");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("\nNote: Arrow is optimized for columnar/tabular data, not binary blobs.");
+  console.log("This benchmark shows Arrow's performance with its natural data format.\n");
+
+  const rowCounts = [1000, 10000, 100000];
+
+  for (const rows of rowCounts) {
+    console.log(`\n─── ${rows.toLocaleString()} rows tabular data ───\n`);
+
+    // Generate columnar data
+    const ids = new Int32Array(Array.from({ length: rows }, (_, i) => i));
+    const values = new Float64Array(Array.from({ length: rows }, () => Math.random() * 1000));
+    const names = Array.from({ length: rows }, (_, i) => `item_${i}`);
+    const flags = Array.from({ length: rows }, () => Math.random() > 0.5);
+
+    // Create equivalent JSON data for comparison
+    const jsonData = Array.from({ length: rows }, (_, i) => ({
+      id: ids[i],
+      value: values[i],
+      name: names[i],
+      flag: flags[i],
+    }));
+
+    // Benchmark Arrow using @procwire/codec-arrow
+    console.log("  Arrow (@procwire/codec-arrow)...");
+    const table = tableFromArrays({ id: ids, value: values, name: names, flag: flags });
+
+    // Warmup
+    for (let i = 0; i < 3; i++) {
+      arrowCodecInstance.deserialize(arrowCodecInstance.serialize(table));
+    }
+
+    // Measure serialize
+    const arrowSerStart = performance.now();
+    let arrowBuffer: Buffer = Buffer.alloc(0);
+    for (let i = 0; i < 10; i++) {
+      arrowBuffer = arrowCodecInstance.serialize(table);
+    }
+    const arrowSerTime = (performance.now() - arrowSerStart) / 10;
+
+    // Measure deserialize
+    const arrowDeserStart = performance.now();
+    for (let i = 0; i < 10; i++) {
+      arrowCodecInstance.deserialize(arrowBuffer);
+    }
+    const arrowDeserTime = (performance.now() - arrowDeserStart) / 10;
+
+    // Benchmark JSON
+    console.log("  JSON (row-oriented)...");
+
+    // Warmup
+    for (let i = 0; i < 3; i++) {
+      JSON.parse(JSON.stringify(jsonData));
+    }
+
+    // Measure serialize
+    const jsonSerStart = performance.now();
+    let jsonStr = "";
+    for (let i = 0; i < 10; i++) {
+      jsonStr = JSON.stringify(jsonData);
+    }
+    const jsonSerTime = (performance.now() - jsonSerStart) / 10;
+
+    // Measure deserialize
+    const jsonDeserStart = performance.now();
+    for (let i = 0; i < 10; i++) {
+      JSON.parse(jsonStr);
+    }
+    const jsonDeserTime = (performance.now() - jsonDeserStart) / 10;
+
+    // Benchmark MessagePack using @procwire/codec-msgpack
+    console.log("  MessagePack (@procwire/codec-msgpack)...");
+
+    // Warmup
+    for (let i = 0; i < 3; i++) {
+      msgpackCodecInstance.deserialize(msgpackCodecInstance.serialize(jsonData));
+    }
+
+    // Measure serialize
+    const msgSerStart = performance.now();
+    let msgBuffer: Buffer = Buffer.alloc(0);
+    for (let i = 0; i < 10; i++) {
+      msgBuffer = msgpackCodecInstance.serialize(jsonData);
+    }
+    const msgSerTime = (performance.now() - msgSerStart) / 10;
+
+    // Measure deserialize
+    const msgDeserStart = performance.now();
+    for (let i = 0; i < 10; i++) {
+      msgpackCodecInstance.deserialize(msgBuffer);
+    }
+    const msgDeserTime = (performance.now() - msgDeserStart) / 10;
+
+    // Print results
+    console.log("\n  Results:");
+    console.log("  | Codec       | Size       | Serialize | Deserialize | Round-trip |");
+    console.log("  |-------------|------------|-----------|-------------|------------|");
+    console.log(
+      `  | Arrow       | ${formatSize(arrowBuffer.length).padEnd(10)} | ${arrowSerTime.toFixed(2).padStart(7)}ms | ${arrowDeserTime.toFixed(2).padStart(9)}ms | ${(arrowSerTime + arrowDeserTime).toFixed(2).padStart(8)}ms |`,
+    );
+    console.log(
+      `  | JSON        | ${formatSize(jsonStr.length).padEnd(10)} | ${jsonSerTime.toFixed(2).padStart(7)}ms | ${jsonDeserTime.toFixed(2).padStart(9)}ms | ${(jsonSerTime + jsonDeserTime).toFixed(2).padStart(8)}ms |`,
+    );
+    console.log(
+      `  | MessagePack | ${formatSize(msgBuffer.length).padEnd(10)} | ${msgSerTime.toFixed(2).padStart(7)}ms | ${msgDeserTime.toFixed(2).padStart(9)}ms | ${(msgSerTime + msgDeserTime).toFixed(2).padStart(8)}ms |`,
+    );
+
+    // Comparisons
+    const arrowVsJsonSize = jsonStr.length / arrowBuffer.length;
+    const arrowVsJsonSpeed = (jsonSerTime + jsonDeserTime) / (arrowSerTime + arrowDeserTime);
+    const arrowVsMsgSize = msgBuffer.length / arrowBuffer.length;
+    const arrowVsMsgSpeed = (msgSerTime + msgDeserTime) / (arrowSerTime + arrowDeserTime);
+
+    console.log("\n  Comparisons:");
+    console.log(
+      `    Arrow vs JSON:        ${arrowVsJsonSize.toFixed(2)}x smaller, ${arrowVsJsonSpeed.toFixed(2)}x ${arrowVsJsonSpeed > 1 ? "faster" : "slower"}`,
+    );
+    console.log(
+      `    Arrow vs MessagePack: ${arrowVsMsgSize.toFixed(2)}x ${arrowVsMsgSize > 1 ? "smaller" : "larger"}, ${arrowVsMsgSpeed.toFixed(2)}x ${arrowVsMsgSpeed > 1 ? "faster" : "slower"}`,
+    );
+  }
+
+  // ─── Summary ──────────────────────────────────────────────────────────────────
 
   console.log("\n═══════════════════════════════════════════════════════════════");
   console.log("  Summary");
@@ -469,7 +725,13 @@ async function main(): Promise<void> {
   console.log("  - Raw binary shows maximum achievable throughput (transport only)");
   console.log("  - JSON has base64 overhead for binary data (+33% size)");
   console.log("  - MessagePack handles binary natively (no base64)");
-  console.log("  - JSON-RPC protocol wrapper adds minimal overhead");
+  console.log("  - Protobuf provides schema-based encoding with good compression");
+  console.log("  - Arrow excels at columnar/tabular data (analytics workloads)");
+  console.log("\nCodec selection guide:");
+  console.log("  - Binary blobs:      MessagePack or Protobuf");
+  console.log("  - Structured data:   Protobuf (best compression with schema)");
+  console.log("  - Tabular analytics: Arrow (columnar format, cross-language)");
+  console.log("  - Human-readable:    JSON (debugging, logging)");
 }
 
 main().catch(console.error);

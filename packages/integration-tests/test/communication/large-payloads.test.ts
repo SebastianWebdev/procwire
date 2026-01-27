@@ -218,9 +218,7 @@ describe("Communication - Large Payloads", () => {
       const handle = await spawnWorker(manager, "perf-1mb", "streaming-worker.ts");
 
       const payload = generatePayload(1024 * 1024);
-      const { elapsed } = await measureTime(() =>
-        handle.request("echo_large", payload),
-      );
+      const { elapsed } = await measureTime(() => handle.request("echo_large", payload));
 
       // Should complete within 5 seconds
       expect(elapsed).toBeLessThan(5000);

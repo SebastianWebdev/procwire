@@ -235,7 +235,9 @@ describe("Data Channel Communication", () => {
       const elapsed = Date.now() - startTime;
       const rate = (messageCount / elapsed) * 1000;
 
-      console.log(`Data channel throughput: ${rate.toFixed(0)} msg/sec (${messageCount} messages in ${elapsed}ms)`);
+      console.log(
+        `Data channel throughput: ${rate.toFixed(0)} msg/sec (${messageCount} messages in ${elapsed}ms)`,
+      );
 
       // Should achieve at least 50 msg/sec even on slow machines
       expect(rate).toBeGreaterThan(50);

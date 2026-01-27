@@ -67,9 +67,7 @@ describe("Stress - High Throughput", { timeout: 60000 }, () => {
       const handle = await spawnWorker(manager, "burst-correlation", "echo-worker.ts");
 
       const count = 1000;
-      const requests = Array.from({ length: count }, (_, i) =>
-        handle.request("echo", { seq: i }),
-      );
+      const requests = Array.from({ length: count }, (_, i) => handle.request("echo", { seq: i }));
 
       const results = (await Promise.all(requests)) as Array<{ seq: number }>;
 
@@ -146,9 +144,7 @@ describe("Stress - High Throughput", { timeout: 60000 }, () => {
         payload: { a: 10, b: 20 },
       });
 
-      console.log(
-        `Compute (add) 200 req/s: ${result.messagesPerSecond.toFixed(0)} msg/s`,
-      );
+      console.log(`Compute (add) 200 req/s: ${result.messagesPerSecond.toFixed(0)} msg/s`);
 
       // Throughput varies significantly based on hardware and system load
       // CI has lower throughput due to shared resources and slower I/O
@@ -214,9 +210,7 @@ describe("Stress - High Throughput", { timeout: 60000 }, () => {
       });
 
       // Verify still responsive
-      const { elapsed } = await measureTime(() =>
-        handle.request("ping"),
-      );
+      const { elapsed } = await measureTime(() => handle.request("ping"));
 
       expect(elapsed).toBeLessThan(100);
     });
@@ -240,9 +234,7 @@ describe("Stress - High Throughput", { timeout: 60000 }, () => {
       }
 
       // Final responsiveness check
-      const { elapsed } = await measureTime(() =>
-        handle.request("ping"),
-      );
+      const { elapsed } = await measureTime(() => handle.request("ping"));
       expect(elapsed).toBeLessThan(100);
     });
   });

@@ -25,8 +25,11 @@ describe("Worker Lifecycle - Crash and Recovery", () => {
 
   describe("crash detection", () => {
     it("should detect worker exit", async () => {
-      const { promise, resolve } =
-        createDeferred<{ id: string; code: number | null; signal: string | null }>();
+      const { promise, resolve } = createDeferred<{
+        id: string;
+        code: number | null;
+        signal: string | null;
+      }>();
       manager.on("exit", resolve);
 
       const handle = await spawnWorker(manager, "crash-exit-worker", "crash-worker.ts");
@@ -41,8 +44,11 @@ describe("Worker Lifecycle - Crash and Recovery", () => {
     });
 
     it("should detect worker crash with non-zero exit code", async () => {
-      const { promise, resolve } =
-        createDeferred<{ id: string; code: number | null; signal: string | null }>();
+      const { promise, resolve } = createDeferred<{
+        id: string;
+        code: number | null;
+        signal: string | null;
+      }>();
       manager.on("exit", resolve);
 
       const handle = await spawnWorker(manager, "crash-code-worker", "crash-worker.ts");
@@ -58,15 +64,14 @@ describe("Worker Lifecycle - Crash and Recovery", () => {
     });
 
     it("should handle delayed worker exit", async () => {
-      const { promise, resolve } =
-        createDeferred<{ id: string; code: number | null; signal: string | null }>();
+      const { promise, resolve } = createDeferred<{
+        id: string;
+        code: number | null;
+        signal: string | null;
+      }>();
       manager.on("exit", resolve);
 
-      const handle = await spawnWorker(
-        manager,
-        "crash-delayed-worker",
-        "crash-worker.ts",
-      );
+      const handle = await spawnWorker(manager, "crash-delayed-worker", "crash-worker.ts");
 
       // Tell worker to exit after delay
       handle.request("exit_delayed", { code: 0, delay: 200 }).catch(() => {
@@ -92,11 +97,7 @@ describe("Worker Lifecycle - Crash and Recovery", () => {
           restartEvents.push(event);
         });
 
-        const handle = await spawnWorker(
-          restartManager,
-          "restart-worker",
-          "crash-worker.ts",
-        );
+        const handle = await spawnWorker(restartManager, "restart-worker", "crash-worker.ts");
 
         // Tell worker to exit
         handle.request("exit", { code: 1 }).catch(() => {
@@ -149,7 +150,7 @@ describe("Worker Lifecycle - Crash and Recovery", () => {
           restartEvents.push(event);
         });
 
-        const handle = await spawnWorker(
+        const _handle = await spawnWorker(
           restartManager,
           "limited-restart-worker",
           "crash-worker.ts",

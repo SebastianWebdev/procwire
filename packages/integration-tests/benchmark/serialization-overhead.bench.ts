@@ -9,7 +9,13 @@
  * Run with: pnpm benchmark:serialization
  */
 
-import { encode, decode } from "@msgpack/msgpack";
+import { MessagePackCodec } from "@procwire/codec-msgpack";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Codec Instance
+// ─────────────────────────────────────────────────────────────────────────────
+
+const msgpackCodec = new MessagePackCodec();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -30,7 +36,8 @@ function formatSize(bytes: number): string {
 }
 
 function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 * 1024 * 1024) return `${(bytesPerSec / 1024 / 1024 / 1024).toFixed(2)} GB/s`;
+  if (bytesPerSec >= 1024 * 1024 * 1024)
+    return `${(bytesPerSec / 1024 / 1024 / 1024).toFixed(2)} GB/s`;
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(2)} MB/s`;
   if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(2)} KB/s`;
   return `${bytesPerSec.toFixed(2)} B/s`;
@@ -70,10 +77,12 @@ async function benchmarkJsonSerialization(sizeKB: number, iterations: number): P
   const serializeSpeed = (totalDataMB * 1024 * 1024) / (serializeTime / 1000);
   const deserializeSpeed = (totalDataMB * 1024 * 1024) / (deserializeTime / 1000);
 
-  console.log(`  JSON (${sizeKB >= 1024 ? `${sizeKB/1024}MB` : `${sizeKB}KB`} string):`);
+  console.log(`  JSON (${sizeKB >= 1024 ? `${sizeKB / 1024}MB` : `${sizeKB}KB`} string):`);
   console.log(`    Serialized size: ${formatSize(serializedSize)}`);
   console.log(`    Serialize:   ${serializeTime.toFixed(2)}ms (${formatSpeed(serializeSpeed)})`);
-  console.log(`    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`);
+  console.log(
+    `    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`,
+  );
   console.log(`    Round-trip:  ${(serializeTime + deserializeTime).toFixed(2)}ms`);
 }
 
@@ -85,24 +94,24 @@ async function benchmarkMsgpackSerialization(sizeKB: number, iterations: number)
   {
     // Warmup
     for (let i = 0; i < 5; i++) {
-      const buf = encode(stringPayload);
-      decode(buf);
+      const buf = msgpackCodec.serialize(stringPayload);
+      msgpackCodec.deserialize(buf);
     }
 
     // Serialize benchmark
     const serializeStart = performance.now();
     let serializedSize = 0;
     for (let i = 0; i < iterations; i++) {
-      const buf = encode(stringPayload);
+      const buf = msgpackCodec.serialize(stringPayload);
       serializedSize = buf.byteLength;
     }
     const serializeTime = performance.now() - serializeStart;
 
     // Deserialize benchmark
-    const serialized = encode(stringPayload);
+    const serialized = msgpackCodec.serialize(stringPayload);
     const deserializeStart = performance.now();
     for (let i = 0; i < iterations; i++) {
-      decode(serialized);
+      msgpackCodec.deserialize(serialized);
     }
     const deserializeTime = performance.now() - deserializeStart;
 
@@ -110,10 +119,14 @@ async function benchmarkMsgpackSerialization(sizeKB: number, iterations: number)
     const serializeSpeed = (totalDataMB * 1024 * 1024) / (serializeTime / 1000);
     const deserializeSpeed = (totalDataMB * 1024 * 1024) / (deserializeTime / 1000);
 
-    console.log(`  MessagePack (${sizeKB >= 1024 ? `${sizeKB/1024}MB` : `${sizeKB}KB`} string):`);
+    console.log(
+      `  MessagePack (@procwire/codec-msgpack) (${sizeKB >= 1024 ? `${sizeKB / 1024}MB` : `${sizeKB}KB`} string):`,
+    );
     console.log(`    Serialized size: ${formatSize(serializedSize)}`);
     console.log(`    Serialize:   ${serializeTime.toFixed(2)}ms (${formatSpeed(serializeSpeed)})`);
-    console.log(`    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`);
+    console.log(
+      `    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`,
+    );
     console.log(`    Round-trip:  ${(serializeTime + deserializeTime).toFixed(2)}ms`);
   }
 
@@ -121,24 +134,24 @@ async function benchmarkMsgpackSerialization(sizeKB: number, iterations: number)
   {
     // Warmup
     for (let i = 0; i < 5; i++) {
-      const buf = encode(binaryPayload);
-      decode(buf);
+      const buf = msgpackCodec.serialize(binaryPayload);
+      msgpackCodec.deserialize(buf);
     }
 
     // Serialize benchmark
     const serializeStart = performance.now();
     let serializedSize = 0;
     for (let i = 0; i < iterations; i++) {
-      const buf = encode(binaryPayload);
+      const buf = msgpackCodec.serialize(binaryPayload);
       serializedSize = buf.byteLength;
     }
     const serializeTime = performance.now() - serializeStart;
 
     // Deserialize benchmark
-    const serialized = encode(binaryPayload);
+    const serialized = msgpackCodec.serialize(binaryPayload);
     const deserializeStart = performance.now();
     for (let i = 0; i < iterations; i++) {
-      decode(serialized);
+      msgpackCodec.deserialize(serialized);
     }
     const deserializeTime = performance.now() - deserializeStart;
 
@@ -146,10 +159,14 @@ async function benchmarkMsgpackSerialization(sizeKB: number, iterations: number)
     const serializeSpeed = (totalDataMB * 1024 * 1024) / (serializeTime / 1000);
     const deserializeSpeed = (totalDataMB * 1024 * 1024) / (deserializeTime / 1000);
 
-    console.log(`  MessagePack (${sizeKB >= 1024 ? `${sizeKB/1024}MB` : `${sizeKB}KB`} binary):`);
+    console.log(
+      `  MessagePack (@procwire/codec-msgpack) (${sizeKB >= 1024 ? `${sizeKB / 1024}MB` : `${sizeKB}KB`} binary):`,
+    );
     console.log(`    Serialized size: ${formatSize(serializedSize)}`);
     console.log(`    Serialize:   ${serializeTime.toFixed(2)}ms (${formatSpeed(serializeSpeed)})`);
-    console.log(`    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`);
+    console.log(
+      `    Deserialize: ${deserializeTime.toFixed(2)}ms (${formatSpeed(deserializeSpeed)})`,
+    );
     console.log(`    Round-trip:  ${(serializeTime + deserializeTime).toFixed(2)}ms`);
   }
 }
@@ -166,9 +183,9 @@ async function main(): Promise<void> {
 
   const testSizes = [
     { sizeKB: 100, iterations: 100 },
-    { sizeKB: 1024, iterations: 50 },      // 1 MB
-    { sizeKB: 10240, iterations: 10 },     // 10 MB
-    { sizeKB: 102400, iterations: 3 },     // 100 MB
+    { sizeKB: 1024, iterations: 50 }, // 1 MB
+    { sizeKB: 10240, iterations: 10 }, // 10 MB
+    { sizeKB: 102400, iterations: 3 }, // 100 MB
   ];
 
   for (const { sizeKB, iterations } of testSizes) {

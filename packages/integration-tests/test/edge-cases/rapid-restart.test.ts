@@ -204,10 +204,8 @@ describe("Edge Cases - Rapid Restart", { timeout: 60000 }, () => {
   describe("stress recovery", () => {
     it("should recover from multiple terminated workers", async () => {
       // Spawn 10 workers
-      const handles = await Promise.all(
-        Array.from({ length: 10 }, (_, i) =>
-          spawnWorker(manager, `stress-${i}`, "echo-worker.ts"),
-        ),
+      const _handles = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => spawnWorker(manager, `stress-${i}`, "echo-worker.ts")),
       );
 
       // Terminate all
@@ -215,9 +213,7 @@ describe("Edge Cases - Rapid Restart", { timeout: 60000 }, () => {
 
       // Respawn all
       const newHandles = await Promise.all(
-        Array.from({ length: 10 }, (_, i) =>
-          spawnWorker(manager, `stress-${i}`, "echo-worker.ts"),
-        ),
+        Array.from({ length: 10 }, (_, i) => spawnWorker(manager, `stress-${i}`, "echo-worker.ts")),
       );
 
       // All should be functional

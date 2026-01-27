@@ -41,8 +41,7 @@ describe("Stress - Long Running", { timeout: 120000 }, () => {
       }
 
       // Calculate stats
-      const avgResponseTime =
-        responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+      const avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
       const maxResponseTime = Math.max(...responseTimes);
 
       console.log(

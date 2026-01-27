@@ -4,13 +4,13 @@ End-to-end integration tests for the `@procwire/*` packages. This package tests 
 
 ## Test Categories
 
-| Category | Description |
-|----------|-------------|
-| `lifecycle` | Worker spawn, shutdown, crash recovery, signal handling |
+| Category        | Description                                                          |
+| --------------- | -------------------------------------------------------------------- |
+| `lifecycle`     | Worker spawn, shutdown, crash recovery, signal handling              |
 | `communication` | Request/response, notifications, concurrent requests, large payloads |
-| `codecs` | JSON, MessagePack, Protocol Buffers serialization |
-| `stress` | High throughput, many workers, long-running, memory stability |
-| `edge-cases` | Rapid restart, orphan cleanup, race conditions |
+| `codecs`        | JSON, MessagePack, Protocol Buffers serialization                    |
+| `stress`        | High throughput, many workers, long-running, memory stability        |
+| `edge-cases`    | Rapid restart, orphan cleanup, race conditions                       |
 
 ## Running Tests
 
@@ -53,6 +53,7 @@ Test workers are located in `workers/` directory:
 ```
 
 The tests verify the complete round-trip communication, including:
+
 - Handshake protocol
 - Request/response correlation
 - Error propagation

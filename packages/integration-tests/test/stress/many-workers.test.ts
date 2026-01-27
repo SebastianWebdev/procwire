@@ -76,9 +76,7 @@ describe("Stress - Many Workers", { timeout: 60000 }, () => {
       );
 
       // Send requests to all workers simultaneously
-      const requests = handles.map((handle, i) =>
-        handle.request("echo", { workerId: i }),
-      );
+      const requests = handles.map((handle, i) => handle.request("echo", { workerId: i }));
 
       const results = (await Promise.all(requests)) as Array<{ workerId: number }>;
 
@@ -117,9 +115,7 @@ describe("Stress - Many Workers", { timeout: 60000 }, () => {
 
       // Send 100 requests to each worker
       const allRequests = handles.flatMap((handle, workerId) =>
-        Array.from({ length: 100 }, (_, reqId) =>
-          handle.request("echo", { workerId, reqId }),
-        ),
+        Array.from({ length: 100 }, (_, reqId) => handle.request("echo", { workerId, reqId })),
       );
 
       const results = await Promise.all(allRequests);
@@ -153,9 +149,7 @@ describe("Stress - Many Workers", { timeout: 60000 }, () => {
 
     it("should allow independent operations on each worker", async () => {
       const handles = await Promise.all(
-        Array.from({ length: 5 }, (_, i) =>
-          spawnWorker(manager, `indep-${i}`, "slow-worker.ts"),
-        ),
+        Array.from({ length: 5 }, (_, i) => spawnWorker(manager, `indep-${i}`, "slow-worker.ts")),
       );
 
       // Each worker processes different delays
