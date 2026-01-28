@@ -230,7 +230,7 @@ export class Module extends EventEmitter {
   _attachDataChannel(socket: Socket): void {
     this._socket = socket;
     this._frameBuffer = new FrameBuffer(
-      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {}
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
     );
 
     // Setup frame handling

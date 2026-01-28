@@ -30,6 +30,7 @@
  */
 
 export { Module } from "./module.js";
+export { ModuleManager, SpawnError } from "./manager.js";
 
 export type {
   ModuleState,
