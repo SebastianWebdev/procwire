@@ -1,8 +1,6 @@
 {
   "permissions": {
-    "deny": [
-      "Bash(git push:*)"
-    ],
+    "deny": ["Bash(git push:*)"],
     "allow": [
       "Bash(pnpm build:*)",
       "Bash(pnpm install:*)",

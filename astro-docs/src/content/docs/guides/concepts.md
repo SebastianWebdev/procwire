@@ -9,14 +9,15 @@ description: Core concepts for Procwire IPC library
 
 Procwire uses a dual-channel architecture to optimize for different use cases:
 
-| Channel | Transport | Protocol | Characteristics |
-|---------|-----------|----------|-----------------|
-| **Control Plane** | stdio | JSON-RPC 2.0 | Small messages (<1KB), rare, infrastructure |
-| **Data Plane** | Named Pipe / Unix Socket | Binary | Large messages (MB/GB), frequent, user data |
+| Channel           | Transport                | Protocol     | Characteristics                             |
+| ----------------- | ------------------------ | ------------ | ------------------------------------------- |
+| **Control Plane** | stdio                    | JSON-RPC 2.0 | Small messages (<1KB), rare, infrastructure |
+| **Data Plane**    | Named Pipe / Unix Socket | Binary       | Large messages (MB/GB), frequent, user data |
 
 ## Why Two Channels?
 
 ### Control Plane (stdio)
+
 - Handshake at startup
 - Heartbeat (health checks)
 - Shutdown commands
@@ -24,6 +25,7 @@ Procwire uses a dual-channel architecture to optimize for different use cases:
 - JSON-RPC is fine here - messages are small and rare
 
 ### Data Plane (named pipe)
+
 - User data: embeddings, vectors, images
 - Computation results
 - Streaming data

@@ -28,21 +28,24 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
     New in v2.0: Binary wire protocol with 11-byte header for data plane. **Target: >1 GB/s throughput** for large payloads.
   </Card>
 
-  <Card title="Dual-Channel Architecture" icon="setting">
-    Control plane (stdio, JSON-RPC) for lifecycle management. Data plane (pipe, binary) for high-throughput user data.
-  </Card>
+<Card title="Dual-Channel Architecture" icon="setting">
+  Control plane (stdio, JSON-RPC) for lifecycle management. Data plane (pipe, binary) for
+  high-throughput user data.
+</Card>
 
-  <Card title="Type-Safe" icon="approve-check">
-    Full TypeScript support with builder pattern and generics. Schema-first design where parent defines the contract.
-  </Card>
+<Card title="Type-Safe" icon="approve-check">
+  Full TypeScript support with builder pattern and generics. Schema-first design where parent
+  defines the contract.
+</Card>
 
-  <Card title="Zero Dependencies" icon="puzzle">
-    Core packages have zero runtime dependencies. Optional codec packages for MessagePack, Arrow, and more.
-  </Card>
+<Card title="Zero Dependencies" icon="puzzle">
+  Core packages have zero runtime dependencies. Optional codec packages for MessagePack, Arrow, and
+  more.
+</Card>
 
-  <Card title="Cross-Platform" icon="laptop">
-    Named Pipes on Windows, Unix Domain Sockets on Linux/macOS. One API, all platforms.
-  </Card>
+<Card title="Cross-Platform" icon="laptop">
+  Named Pipes on Windows, Unix Domain Sockets on Linux/macOS. One API, all platforms.
+</Card>
 
   <Card title="In Development" icon="star">
     v2.0 is under active development. New binary protocol replaces JSON-RPC on data plane for 80x performance improvement.
@@ -57,14 +60,15 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
 Procwire v2.0 introduces a fundamental architecture change:
 
-| Channel | v1.x | v2.0 | Impact |
-|---------|------|------|--------|
-| Control Plane | JSON-RPC | JSON-RPC | No change |
-| Data Plane | JSON-RPC | **Binary** | ~30 MB/s -> ~2.5 GB/s |
+| Channel       | v1.x     | v2.0       | Impact                |
+| ------------- | -------- | ---------- | --------------------- |
+| Control Plane | JSON-RPC | JSON-RPC   | No change             |
+| Data Plane    | JSON-RPC | **Binary** | ~30 MB/s -> ~2.5 GB/s |
 
 ### Why the Change?
 
 JSON-RPC on the data channel caused severe performance issues:
+
 - **5x larger payload** (JSON text vs binary)
 - **~500ms serialization overhead** per 1MB of data
 

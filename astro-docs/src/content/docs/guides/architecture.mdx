@@ -11,14 +11,15 @@ Architecture documentation is being updated for Procwire v2.0.
 
 Procwire v2.0 introduces a new binary protocol for the data plane, replacing JSON-RPC with a high-performance wire format.
 
-| Channel | Transport | Protocol | Use Case |
-|---------|-----------|----------|----------|
-| Control Plane | stdio | JSON-RPC 2.0 | Handshake, heartbeat, lifecycle |
-| Data Plane | Named Pipe / Unix Socket | **Binary (11-byte header)** | User data, high throughput |
+| Channel       | Transport                | Protocol                    | Use Case                        |
+| ------------- | ------------------------ | --------------------------- | ------------------------------- |
+| Control Plane | stdio                    | JSON-RPC 2.0                | Handshake, heartbeat, lifecycle |
+| Data Plane    | Named Pipe / Unix Socket | **Binary (11-byte header)** | User data, high throughput      |
 
 ### Why the Change?
 
 JSON-RPC on the data channel caused severe performance issues:
+
 - **5x larger payload** (JSON text vs binary)
 - **~500ms serialization overhead** per 1MB of data
 - **~30 MB/s throughput** vs **~2.5 GB/s** with binary protocol
