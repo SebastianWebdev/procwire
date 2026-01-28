@@ -1,9 +1,9 @@
 ---
-title: Procwire Transport
-description: High-performance IPC transport library for Node.js with zero runtime dependencies
+title: Procwire
+description: High-performance IPC library for Node.js with binary data plane protocol
 template: splash
 hero:
-  tagline: Modular, type-safe IPC building blocks for Node.js. <br/>Zero runtime dependencies in the core package.
+  tagline: High-performance IPC for Node.js. Binary protocol for data plane, JSON-RPC for control. <br/><strong>v2.0 in development</strong>
   image:
     file: ../../assets/houston.webp
   actions:
@@ -11,8 +11,8 @@ hero:
       link: /guides/getting-started/
       icon: rocket
       variant: primary
-    - text: View API Reference
-      link: /api/
+    - text: View Architecture
+      link: /guides/architecture/
       icon: document
       variant: minimal
 ---
@@ -21,57 +21,59 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 
 <div className="landing-section">
 
-## Why Procwire Transport?
+## Why Procwire?
 
 <CardGrid>
-  <Card title="Zero Dependencies" icon="puzzle">
-    The core `@procwire/transport` package has **zero runtime dependencies**. No bloat, no conflicts, just pure TypeScript.
+  <Card title="Binary Data Plane" icon="rocket">
+    New in v2.0: Binary wire protocol with 11-byte header for data plane. **Target: >1 GB/s throughput** for large payloads.
   </Card>
 
-<Card title="Modular Architecture" icon="setting">
-  Mix and match transport layers, framing strategies, serialization codecs, and protocols. Use what
-  you need, nothing more.
-</Card>
+  <Card title="Dual-Channel Architecture" icon="setting">
+    Control plane (stdio, JSON-RPC) for lifecycle management. Data plane (pipe, binary) for high-throughput user data.
+  </Card>
 
-<Card title="Type-Safe" icon="approve-check">
-  Full TypeScript support with generics throughout. Catch errors at compile-time, not runtime.
-</Card>
+  <Card title="Type-Safe" icon="approve-check">
+    Full TypeScript support with builder pattern and generics. Schema-first design where parent defines the contract.
+  </Card>
 
-<Card title="High Performance" icon="rocket">
-  Choose your performance trade-offs: JSON for simplicity, MessagePack for speed, Protobuf for
-  schemas, Arrow for analytics.
-</Card>
+  <Card title="Zero Dependencies" icon="puzzle">
+    Core packages have zero runtime dependencies. Optional codec packages for MessagePack, Arrow, and more.
+  </Card>
 
-<Card title="Cross-Platform" icon="laptop">
-  Automatic platform detection. Named Pipes on Windows, Unix Domain Sockets on Linux/macOS. One API,
-  all platforms.
-</Card>
+  <Card title="Cross-Platform" icon="laptop">
+    Named Pipes on Windows, Unix Domain Sockets on Linux/macOS. One API, all platforms.
+  </Card>
 
-<Card title="Production Ready" icon="star">
-    Used in real-world applications. Comprehensive test suite, detailed documentation, and active maintenance.
-</Card>
+  <Card title="In Development" icon="star">
+    v2.0 is under active development. New binary protocol replaces JSON-RPC on data plane for 80x performance improvement.
+  </Card>
 </CardGrid>
 
 </div>
 
 <div className="landing-section" />
 
-## Flexible & Modular
+## What's New in v2.0
 
-Build your perfect IPC stack in seconds. The API is designed to be fluent and readable.
+Procwire v2.0 introduces a fundamental architecture change:
 
-```typescript
-import { ChannelBuilder } from "@procwire/transport/channel";
-import { MessagePackCodec } from "@procwire/codec-msgpack";
-import { LengthPrefixedFraming } from "@procwire/transport/framing";
-import { JsonRpcProtocol } from "@procwire/transport/protocol";
+| Channel | v1.x | v2.0 | Impact |
+|---------|------|------|--------|
+| Control Plane | JSON-RPC | JSON-RPC | No change |
+| Data Plane | JSON-RPC | **Binary** | ~30 MB/s -> ~2.5 GB/s |
 
-// Create a highly optimized binary channel
-const channel = new ChannelBuilder()
-  .withTransport(myTransport)
-  .withFraming(new LengthPrefixedFraming())
-  .withSerialization(new MessagePackCodec())
-  .withProtocol(new JsonRpcProtocol())
-  .withTimeout(5000)
-  .build();
+### Why the Change?
+
+JSON-RPC on the data channel caused severe performance issues:
+- **5x larger payload** (JSON text vs binary)
+- **~500ms serialization overhead** per 1MB of data
+
+The new binary wire format eliminates this overhead completely.
+
+```
+Binary Frame (Data Plane):
++----------+-------+----------+----------+----------------------+
+| Method ID| Flags | Req ID   | Length   | Payload              |
+| 2 bytes  | 1 byte| 4 bytes  | 4 bytes  | N bytes              |
++----------+-------+----------+----------+----------------------+
 ```

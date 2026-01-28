@@ -1,4 +1,4 @@
 packages:
-  - "packages/*"
-  - "examples/*"
+  - "packages/transport"
+  - "packages/codec-*"
   - "astro-docs"
