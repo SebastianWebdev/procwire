@@ -1,0 +1,64 @@
+{
+  "name": "@procwire/codecs",
+  "version": "0.0.1",
+  "description": "Serialization codecs for Procwire binary protocol.",
+  "keywords": [
+    "ipc",
+    "codec",
+    "serialization",
+    "zero-copy",
+    "binary",
+    "procwire",
+    "node",
+    "typescript"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SebastianWebdev/procwire.git",
+    "directory": "packages/codecs"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
+  },
+  "homepage": "https://www.procwire.dev",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@procwire/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@procwire/protocol": "workspace:*",
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  }
+}

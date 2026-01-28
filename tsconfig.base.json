@@ -6,7 +6,9 @@
       "@procwire/transport": ["packages/transport/src/index.ts"],
       "@procwire/transport/*": ["packages/transport/src/*"],
       "@procwire/protocol": ["packages/protocol/src/index.ts"],
-      "@procwire/protocol/*": ["packages/protocol/src/*"]
+      "@procwire/protocol/*": ["packages/protocol/src/*"],
+      "@procwire/codecs": ["packages/codecs/src/index.ts"],
+      "@procwire/codecs/*": ["packages/codecs/src/*"]
     },
 
     "target": "ES2022",
