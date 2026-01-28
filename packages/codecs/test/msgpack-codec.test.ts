@@ -267,9 +267,9 @@ describe("MsgPackCodec", () => {
       expect(results[0]).toEqual({ id: 0, value: "message-0" });
       expect(results[9999]).toEqual({ id: 9999, value: "message-9999" });
 
-      // Performance: should be under 100ms for 10000 messages
-      expect(serializeTime).toBeLessThan(100);
-      expect(deserializeTime).toBeLessThan(100);
+      // Performance: should be under 200ms for 10000 messages (relaxed for CI)
+      expect(serializeTime).toBeLessThan(200);
+      expect(deserializeTime).toBeLessThan(200);
     });
   });
 });

@@ -2,5 +2,6 @@ packages:
   - "packages/transport"
   - "packages/protocol"
   - "packages/codecs"
+  - "packages/core"
   - "packages/codec-*"
   - "astro-docs"

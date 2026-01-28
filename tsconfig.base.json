@@ -8,7 +8,9 @@
       "@procwire/protocol": ["packages/protocol/src/index.ts"],
       "@procwire/protocol/*": ["packages/protocol/src/*"],
       "@procwire/codecs": ["packages/codecs/src/index.ts"],
-      "@procwire/codecs/*": ["packages/codecs/src/*"]
+      "@procwire/codecs/*": ["packages/codecs/src/*"],
+      "@procwire/core": ["packages/core/src/index.ts"],
+      "@procwire/core/*": ["packages/core/src/*"]
     },
 
     "target": "ES2022",
