@@ -54,6 +54,10 @@
   "peerDependencies": {
     "@procwire/protocol": "workspace:*"
   },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0",
+    "apache-arrow": "^18.0.0"
+  },
   "devDependencies": {
     "@procwire/protocol": "workspace:*",
     "@types/node": "^22.0.0",
