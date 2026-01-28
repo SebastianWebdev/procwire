@@ -4,7 +4,9 @@
     "baseUrl": ".",
     "paths": {
       "@procwire/transport": ["packages/transport/src/index.ts"],
-      "@procwire/transport/*": ["packages/transport/src/*"]
+      "@procwire/transport/*": ["packages/transport/src/*"],
+      "@procwire/protocol": ["packages/protocol/src/index.ts"],
+      "@procwire/protocol/*": ["packages/protocol/src/*"]
     },
 
     "target": "ES2022",
