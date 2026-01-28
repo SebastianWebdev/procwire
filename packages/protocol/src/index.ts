@@ -46,3 +46,12 @@ export {
   createFlags,
   validateHeader,
 } from "./wire-format.js";
+
+export {
+  FrameBuffer,
+  Frame,
+  buildFrame,
+  buildFrameBuffers,
+  type FrameBufferOptions,
+  type FrameStreamHandler,
+} from "./frame-buffer.js";
