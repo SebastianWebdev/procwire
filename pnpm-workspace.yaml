@@ -3,5 +3,6 @@ packages:
   - "packages/protocol"
   - "packages/codecs"
   - "packages/core"
+  - "packages/client"
   - "packages/codec-*"
   - "astro-docs"
