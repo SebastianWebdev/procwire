@@ -412,7 +412,10 @@ export class ModuleManager extends EventEmitter {
         // Note: These methods exist on net.Socket but TypeScript types may not include them
         if (socketBufferSize !== undefined) {
           try {
-            const anySocket = socket as { setRecvBufferSize?: (size: number) => void; setSendBufferSize?: (size: number) => void };
+            const anySocket = socket as {
+              setRecvBufferSize?: (size: number) => void;
+              setSendBufferSize?: (size: number) => void;
+            };
             anySocket.setRecvBufferSize?.(socketBufferSize);
             anySocket.setSendBufferSize?.(socketBufferSize);
           } catch {

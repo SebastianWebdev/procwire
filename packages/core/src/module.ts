@@ -45,6 +45,8 @@ interface PendingRequest {
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout> | null;
   codec: Codec;
+  /** Expected response type: "ack" or "result" */
+  expectedResponse: "ack" | "result";
 }
 
 interface PendingStream {
@@ -418,6 +420,7 @@ export class Module extends EventEmitter {
         reject,
         timeout: timer,
         codec: methodConfig.codec,
+        expectedResponse: schemaMethod.response as "ack" | "result",
       });
     });
   }
@@ -581,6 +584,16 @@ export class Module extends EventEmitter {
   private _handleResponse(frame: Frame): void {
     const pending = this._pendingRequests.get(frame.header.requestId);
     if (!pending) return;
+
+    const isAckFrame = hasFlag(frame.header.flags, Flags.IS_ACK);
+
+    // TASK-08: Strict response type handling
+    // "result" methods expect full response, ignore ACK frames
+    if (pending.expectedResponse === "result" && isAckFrame) {
+      // Got ACK but expected full result - ignore, keep waiting
+      return;
+    }
+    // "ack" methods accept both ACK and full response (graceful fallback)
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
       const errorData = codecDeserialize(pending.codec, frame);

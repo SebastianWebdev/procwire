@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import type { Socket } from "node:net";
 import { Module } from "../src/module.js";
 import { msgpackCodec, arrowCodec } from "@procwire/codecs";
+import { buildFrame, Flags } from "@procwire/protocol";
 
 describe("Module", () => {
   describe("builder API", () => {
@@ -316,6 +319,206 @@ describe("Module", () => {
     it("should return null before attach", () => {
       const mod = new Module("worker");
       expect(mod.process).toBeNull();
+    });
+  });
+
+  describe("ACK response handling (TASK-08)", () => {
+    /**
+     * Creates a mock socket that can emit data events.
+     */
+    function createMockSocket(): Socket & EventEmitter {
+      const emitter = new EventEmitter();
+      const mockSocket = Object.assign(emitter, {
+        write: vi.fn().mockReturnValue(true),
+        destroy: vi.fn(),
+        destroyed: false,
+        setNoDelay: vi.fn(),
+        cork: vi.fn(),
+        uncork: vi.fn(),
+      }) as unknown as Socket & EventEmitter;
+      return mockSocket;
+    }
+
+    /**
+     * Sets up a module ready to send requests.
+     */
+    function setupReadyModule(
+      methodName: string,
+      responseType: "ack" | "result",
+    ): { mod: Module; socket: Socket & EventEmitter } {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method(methodName, { response: responseType, codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { [methodName]: { id: 1, response: responseType } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      mod._attachDataChannel(socket);
+
+      return { mod, socket };
+    }
+
+    it('should resolve "ack" method on IS_ACK frame', async () => {
+      const { mod, socket } = setupReadyModule("ackMethod", "ack");
+
+      // Start send - will create pending request with expectedResponse: "ack"
+      const sendPromise = mod.send("ackMethod", { data: "test" });
+
+      // Wait for the send frame to be written
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Build ACK response frame (IS_RESPONSE | IS_ACK)
+      const responsePayload = msgpackCodec.serialize({ acknowledged: true });
+      const ackFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_ACK,
+          requestId: 1,
+        },
+        responsePayload,
+      );
+
+      // Simulate receiving ACK frame
+      socket.emit("data", ackFrame);
+
+      // Should resolve with ACK payload
+      const result = await sendPromise;
+      expect(result).toEqual({ acknowledged: true });
+    });
+
+    it('should resolve "ack" method on full response (graceful fallback)', async () => {
+      const { mod, socket } = setupReadyModule("ackMethod", "ack");
+
+      const sendPromise = mod.send("ackMethod", { data: "test" });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Build full response frame (IS_RESPONSE only, no IS_ACK)
+      const responsePayload = msgpackCodec.serialize({ result: "full" });
+      const fullFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE,
+          requestId: 1,
+        },
+        responsePayload,
+      );
+
+      socket.emit("data", fullFrame);
+
+      // Should resolve with full response payload
+      const result = await sendPromise;
+      expect(result).toEqual({ result: "full" });
+    });
+
+    it('should ignore IS_ACK frame for "result" method and wait for full response', async () => {
+      const { mod, socket } = setupReadyModule("resultMethod", "result");
+
+      const sendPromise = mod.send("resultMethod", { data: "test" });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Build ACK frame (should be ignored for "result" methods)
+      const ackPayload = msgpackCodec.serialize({ ack: true });
+      const ackFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_ACK,
+          requestId: 1,
+        },
+        ackPayload,
+      );
+
+      // Simulate receiving ACK frame
+      socket.emit("data", ackFrame);
+
+      // Promise should NOT be resolved yet - create a race
+      let resolved = false;
+      sendPromise.then(() => {
+        resolved = true;
+      });
+
+      // Wait a tick to ensure no premature resolution
+      await new Promise((r) => setTimeout(r, 10));
+      expect(resolved).toBe(false);
+
+      // Now send full response
+      const resultPayload = msgpackCodec.serialize({ result: "final" });
+      const resultFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE,
+          requestId: 1,
+        },
+        resultPayload,
+      );
+
+      socket.emit("data", resultFrame);
+
+      // Now should resolve with full response
+      const result = await sendPromise;
+      expect(result).toEqual({ result: "final" });
+    });
+
+    it('should resolve "result" method on full response', async () => {
+      const { mod, socket } = setupReadyModule("resultMethod", "result");
+
+      const sendPromise = mod.send("resultMethod", { data: "test" });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Build full response frame
+      const responsePayload = msgpackCodec.serialize({ result: "success" });
+      const responseFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE,
+          requestId: 1,
+        },
+        responsePayload,
+      );
+
+      socket.emit("data", responseFrame);
+
+      const result = await sendPromise;
+      expect(result).toEqual({ result: "success" });
+    });
+
+    it("should handle error responses correctly", async () => {
+      const { mod, socket } = setupReadyModule("resultMethod", "result");
+
+      const sendPromise = mod.send("resultMethod", { data: "test" });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Build error response frame
+      const errorPayload = msgpackCodec.serialize("Something went wrong");
+      const errorFrame = buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_ERROR,
+          requestId: 1,
+        },
+        errorPayload,
+      );
+
+      socket.emit("data", errorFrame);
+
+      await expect(sendPromise).rejects.toThrow("Something went wrong");
     });
   });
 });
