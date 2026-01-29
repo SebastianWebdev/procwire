@@ -41,6 +41,7 @@ export {
   Flags,
   type FrameHeader,
   encodeHeader,
+  encodeHeaderInto,
   decodeHeader,
   hasFlag,
   createFlags,

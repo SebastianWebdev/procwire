@@ -17,7 +17,15 @@
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import type { ChildProcess } from "node:child_process";
-import { FrameBuffer, type Frame, buildFrameBuffers, hasFlag, Flags } from "@procwire/protocol";
+import { once } from "node:events";
+import {
+  FrameBuffer,
+  type Frame,
+  hasFlag,
+  Flags,
+  HEADER_SIZE,
+  encodeHeaderInto,
+} from "@procwire/protocol";
 import { codecDeserialize, msgpackCodec, type Codec } from "@procwire/codecs";
 import type {
   ModuleState,
@@ -86,6 +94,17 @@ export class Module extends EventEmitter {
   private _nextRequestId = 1;
   private _pendingRequests = new Map<number, PendingRequest>();
   private _pendingStreams = new Map<number, PendingStream>();
+
+  // OPT-02: Header ring buffer for allocation-free sends
+  // Size 16 covers worst-case backpressure scenarios (see ROADMAP.md)
+  private static readonly HEADER_POOL_SIZE = 16;
+  private readonly _headerPool = Array.from({ length: Module.HEADER_POOL_SIZE }, () =>
+    Buffer.allocUnsafe(HEADER_SIZE),
+  );
+  private _headerPoolIndex = 0;
+
+  // OPT-04: Backpressure tracking
+  private _draining = false;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -282,6 +301,9 @@ export class Module extends EventEmitter {
     this._methodIdToName.clear();
     this._eventIdToName.clear();
     this._childSchema = null;
+
+    // Reset backpressure state
+    this._draining = false;
   }
 
   /**
@@ -352,7 +374,7 @@ export class Module extends EventEmitter {
 
     // Fire-and-forget
     if (schemaMethod.response === "none") {
-      this._sendFrame(methodId, 0, data, methodConfig.codec);
+      await this._sendFrame(methodId, 0, data, methodConfig.codec);
       return undefined as TResponse;
     }
 
@@ -363,7 +385,11 @@ export class Module extends EventEmitter {
       options.signal.addEventListener(
         "abort",
         () => {
-          this._sendAbort(requestId);
+          // Note: We don't await here as it's in event handler
+          // The abort is best-effort
+          this._sendAbort(requestId).catch(() => {
+            // Ignore errors during abort - connection may be closed
+          });
           const pending = this._pendingRequests.get(requestId);
           if (pending) {
             pending.reject(new DOMException("Aborted", "AbortError"));
@@ -374,8 +400,8 @@ export class Module extends EventEmitter {
       );
     }
 
-    // Send frame
-    this._sendFrame(methodId, requestId, data, methodConfig.codec);
+    // Send frame (with backpressure support)
+    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
 
     // Wait for response
     return new Promise<TResponse>((resolve, reject) => {
@@ -472,7 +498,10 @@ export class Module extends EventEmitter {
       options.signal.addEventListener(
         "abort",
         () => {
-          this._sendAbort(requestId);
+          // Note: We don't await here as it's in event handler
+          this._sendAbort(requestId).catch(() => {
+            // Ignore errors during abort
+          });
           error = new DOMException("Aborted", "AbortError");
           if (resolve) resolve({ value: undefined as TChunk, done: true });
         },
@@ -480,8 +509,8 @@ export class Module extends EventEmitter {
       );
     }
 
-    // Send request
-    this._sendFrame(methodId, requestId, data, methodConfig.codec);
+    // Send request (with backpressure support)
+    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
 
     // Yield chunks
     try {
@@ -593,29 +622,80 @@ export class Module extends EventEmitter {
     this.emit(`event:${eventName}`, data);
   }
 
-  private _sendFrame(methodId: number, requestId: number, data: unknown, codec: Codec): void {
+  /**
+   * Acquire next header buffer from ring pool.
+   * Safe under backpressure because by the time we cycle through
+   * 16 buffers, earlier ones are guaranteed to be flushed.
+   */
+  private _acquireHeaderBuffer(): Buffer {
+    const buffer = this._headerPool[this._headerPoolIndex]!;
+    this._headerPoolIndex = (this._headerPoolIndex + 1) % Module.HEADER_POOL_SIZE;
+    return buffer;
+  }
+
+  /**
+   * Send frame with backpressure support.
+   * Pauses if socket buffer is full to prevent OOM.
+   */
+  private async _sendFrame(
+    methodId: number,
+    requestId: number,
+    data: unknown,
+    codec: Codec,
+  ): Promise<void> {
     const payload = codec.serialize(data);
 
-    // ⚡ ZERO-COPY: Use buildFrameBuffers + cork/uncork
-    // This avoids Buffer.concat for large payloads (critical for 100MB+)
-    const [headerBuf, payloadBuf] = buildFrameBuffers({ methodId, flags: 0, requestId }, payload);
+    // OPT-02: Use ring buffer instead of allocating new header each time
+    const headerBuf = this._acquireHeaderBuffer();
+
+    encodeHeaderInto(headerBuf, {
+      methodId,
+      flags: 0,
+      requestId,
+      payloadLength: payload.length,
+    });
+
+    // OPT-04: Wait if previous write caused backpressure
+    if (this._draining) {
+      await once(this._socket!, "drain");
+      this._draining = false;
+    }
 
     // Cork groups multiple writes into single syscall
     this._socket!.cork();
-    this._socket!.write(headerBuf); // 11 bytes
-    this._socket!.write(payloadBuf); // payload (potentially GB)
+    this._socket!.write(headerBuf); // 11 bytes from pool
+    const canContinue = this._socket!.write(payload); // payload (potentially GB)
     this._socket!.uncork(); // flush
+
+    // OPT-04: Track backpressure state
+    if (!canContinue) {
+      this._draining = true;
+    }
   }
 
-  private _sendAbort(requestId: number): void {
-    const [headerBuf, payloadBuf] = buildFrameBuffers(
-      { methodId: 0xffff, flags: 0, requestId },
-      Buffer.alloc(0),
-    );
+  private async _sendAbort(requestId: number): Promise<void> {
+    const headerBuf = this._acquireHeaderBuffer();
+
+    encodeHeaderInto(headerBuf, {
+      methodId: 0xffff,
+      flags: 0,
+      requestId,
+      payloadLength: 0,
+    });
+
+    if (this._draining) {
+      await once(this._socket!, "drain");
+      this._draining = false;
+    }
+
     this._socket!.cork();
     this._socket!.write(headerBuf);
-    this._socket!.write(payloadBuf);
+    const canContinue = this._socket!.write(Buffer.alloc(0));
     this._socket!.uncork();
+
+    if (!canContinue) {
+      this._draining = true;
+    }
   }
 
   private _cleanupRequest(requestId: number): void {

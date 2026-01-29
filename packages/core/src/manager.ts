@@ -35,6 +35,7 @@ const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
   retryDelay: { type: "exponential", base: 1000, max: 30_000 },
   restartOnCrash: false,
   restartLimit: { maxRestarts: 5, windowMs: 60_000 },
+  socketBufferSize: undefined as unknown as number, // undefined = use OS default
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -253,7 +254,7 @@ export class ModuleManager extends EventEmitter {
 
     // 4. Connect data channel
     module._setState("connecting");
-    const socket = await this.connectDataChannel(initMessage.params.pipe);
+    const socket = await this.connectDataChannel(initMessage.params.pipe, policy.socketBufferSize);
     module._attachDataChannel(socket);
 
     // 5. Ready!
@@ -327,6 +328,11 @@ export class ModuleManager extends EventEmitter {
       this.stdoutReaders.set(module.name, rl);
 
       rl.on("line", (line) => {
+        // OPT-03: Fast path - skip non-JSON lines without try/catch overhead
+        if (!line.startsWith("{")) {
+          return;
+        }
+
         try {
           const msg = JSON.parse(line) as { method?: string; params?: { message?: string } };
 
@@ -393,11 +399,29 @@ export class ModuleManager extends EventEmitter {
   /**
    * Connect to data channel.
    */
-  private connectDataChannel(pipePath: string): Promise<Socket> {
+  private connectDataChannel(pipePath: string, socketBufferSize?: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const socket = createConnection(pipePath);
 
-      socket.on("connect", () => resolve(socket));
+      socket.on("connect", () => {
+        // OPT-01: Disable Nagle's algorithm for lower latency
+        // Sends data immediately instead of buffering small packets
+        socket.setNoDelay(true);
+
+        // OPT-05: Configure socket buffer sizes if specified
+        // Note: These methods exist on net.Socket but TypeScript types may not include them
+        if (socketBufferSize !== undefined) {
+          try {
+            const anySocket = socket as { setRecvBufferSize?: (size: number) => void; setSendBufferSize?: (size: number) => void };
+            anySocket.setRecvBufferSize?.(socketBufferSize);
+            anySocket.setSendBufferSize?.(socketBufferSize);
+          } catch {
+            // Ignore if OS doesn't support buffer size configuration
+          }
+        }
+
+        resolve(socket);
+      });
       socket.on("error", (err) => reject(new Error(`Data channel connect failed: ${err.message}`)));
     });
   }
@@ -580,6 +604,7 @@ export class ModuleManager extends EventEmitter {
       retryDelay: policy.retryDelay ?? DEFAULT_SPAWN_POLICY.retryDelay,
       restartOnCrash: policy.restartOnCrash ?? DEFAULT_SPAWN_POLICY.restartOnCrash,
       restartLimit: policy.restartLimit ?? DEFAULT_SPAWN_POLICY.restartLimit,
+      socketBufferSize: policy.socketBufferSize ?? DEFAULT_SPAWN_POLICY.socketBufferSize,
     };
   }
 

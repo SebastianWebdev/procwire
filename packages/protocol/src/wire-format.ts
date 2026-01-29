@@ -129,6 +129,41 @@ export function encodeHeader(header: FrameHeader): Buffer {
 }
 
 /**
+ * Encode a frame header INTO an existing buffer (zero allocation).
+ *
+ * Use this with a pre-allocated buffer to avoid allocation overhead
+ * in high-throughput scenarios (e.g., ring buffer pattern).
+ *
+ * @param buffer - Target buffer (must be at least HEADER_SIZE bytes)
+ * @param header - Header to encode
+ *
+ * @example
+ * ```typescript
+ * const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
+ * encodeHeaderInto(headerBuf, {
+ *   methodId: 1,
+ *   flags: 0,
+ *   requestId: 42,
+ *   payloadLength: 1024,
+ * });
+ * socket.write(headerBuf);
+ * ```
+ */
+export function encodeHeaderInto(buffer: Buffer, header: FrameHeader): void {
+  // Method ID: 2 bytes, big-endian
+  buffer.writeUInt16BE(header.methodId, 0);
+
+  // Flags: 1 byte
+  buffer.writeUInt8(header.flags, 2);
+
+  // Request ID: 4 bytes, big-endian
+  buffer.writeUInt32BE(header.requestId, 3);
+
+  // Payload length: 4 bytes, big-endian
+  buffer.writeUInt32BE(header.payloadLength, 7);
+}
+
+/**
  * Decode an 11-byte buffer into a frame header.
  *
  * @throws {Error} if buffer is smaller than HEADER_SIZE

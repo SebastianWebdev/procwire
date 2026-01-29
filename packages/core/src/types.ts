@@ -86,6 +86,14 @@ export interface SpawnPolicy {
 
   /** Restart limit */
   restartLimit?: RestartLimitConfig;
+
+  /**
+   * Socket buffer size in bytes for data channel.
+   * Higher values improve throughput for large payloads.
+   * @default undefined (uses OS default, typically 64KB)
+   * @example 4 * 1024 * 1024 // 4MB for large Arrow transfers
+   */
+  socketBufferSize?: number;
 }
 
 /**
