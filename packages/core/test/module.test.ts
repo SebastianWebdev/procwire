@@ -521,4 +521,252 @@ describe("Module", () => {
       await expect(sendPromise).rejects.toThrow("Something went wrong");
     });
   });
+
+  describe("Cancellation with AbortSignal (TASK-09)", () => {
+    /**
+     * Creates a mock socket that can emit data events.
+     */
+    function createMockSocket(): Socket & EventEmitter {
+      const emitter = new EventEmitter();
+      const mockSocket = Object.assign(emitter, {
+        write: vi.fn().mockReturnValue(true),
+        destroy: vi.fn(),
+        destroyed: false,
+        setNoDelay: vi.fn(),
+        cork: vi.fn(),
+        uncork: vi.fn(),
+      }) as unknown as Socket & EventEmitter;
+      return mockSocket;
+    }
+
+    /**
+     * Sets up a module ready to send requests with cancellation support.
+     */
+    function setupCancellableModule(methodName: string): {
+      mod: Module;
+      socket: Socket & EventEmitter;
+    } {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method(methodName, { response: "result", cancellable: true, codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { [methodName]: { id: 1, response: "result" } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      mod._attachDataChannel(socket);
+
+      return { mod, socket };
+    }
+
+    it("should abort request when signal is aborted", async () => {
+      const { mod, socket } = setupCancellableModule("longTask");
+      const controller = new AbortController();
+
+      // Start send with abort signal
+      const sendPromise = mod.send("longTask", { data: "test" }, { signal: controller.signal });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Abort the request
+      controller.abort();
+
+      // Should reject with AbortError
+      await expect(sendPromise).rejects.toThrow("Aborted");
+      await expect(sendPromise).rejects.toMatchObject({
+        name: "AbortError",
+      });
+    });
+
+    it("should send abort frame when request is cancelled", async () => {
+      const { mod, socket } = setupCancellableModule("longTask");
+      const controller = new AbortController();
+
+      // Start send - catch the expected rejection
+      const sendPromise = mod
+        .send("longTask", { data: "test" }, { signal: controller.signal })
+        .catch(() => {
+          // Expected AbortError rejection
+        });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Clear mock to track abort frame
+      socket.write = vi.fn().mockReturnValue(true);
+
+      // Abort the request
+      controller.abort();
+
+      // Wait for abort frame to be sent
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Check that abort frame was sent (methodId 0xFFFF)
+      const writeCall = (socket.write as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(writeCall).toBeDefined();
+      const headerBuffer = writeCall![0] as Buffer;
+
+      // methodId should be 0xFFFF (abort signal)
+      const methodId = headerBuffer.readUInt16BE(0);
+      expect(methodId).toBe(0xffff);
+
+      // requestId should match the original request
+      const requestId = headerBuffer.readUInt32BE(3);
+      expect(requestId).toBe(1);
+
+      // Wait for promise to settle
+      await sendPromise;
+    });
+
+    it("should not send abort frame for non-cancellable methods", async () => {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method("nonCancellable", { response: "result", cancellable: false, codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { nonCancellable: { id: 1, response: "result" } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      mod._attachDataChannel(socket);
+
+      const controller = new AbortController();
+
+      // Start send with abort signal (but method is not cancellable)
+      // Promise will never resolve in test context, so we don't await it
+      const sendPromise = mod.send(
+        "nonCancellable",
+        { data: "test" },
+        { signal: controller.signal },
+      );
+
+      // Prevent unhandled rejection warning
+      sendPromise.catch(() => {
+        // Will be rejected by detach/cleanup, not by abort
+      });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Clear mock
+      socket.write = vi.fn().mockReturnValue(true);
+
+      // Abort - should NOT send abort frame (method is not cancellable)
+      controller.abort();
+
+      // Give it a moment to potentially send
+      await new Promise((r) => setTimeout(r, 10));
+
+      // No abort frame should be sent
+      expect(socket.write).not.toHaveBeenCalled();
+    });
+
+    it("should abort streaming request and throw AbortError", async () => {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method("streamTask", { response: "stream", cancellable: true, codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { streamTask: { id: 1, response: "stream" } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      mod._attachDataChannel(socket);
+
+      const controller = new AbortController();
+
+      // Start stream with abort signal
+      const stream = mod.stream("streamTask", { data: "test" }, { signal: controller.signal });
+
+      // Consume stream in try-catch
+      const consumeStream = async () => {
+        const chunks: unknown[] = [];
+        try {
+          for await (const chunk of stream) {
+            chunks.push(chunk);
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") {
+            return { aborted: true, chunks };
+          }
+          throw err;
+        }
+        return { aborted: false, chunks };
+      };
+
+      const consumePromise = consumeStream();
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Abort the stream
+      controller.abort();
+
+      // Should throw AbortError
+      const result = await consumePromise;
+      expect(result.aborted).toBe(true);
+      expect(result.chunks).toHaveLength(0);
+    });
+
+    it("should send abort frame for streaming request when cancelled", async () => {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method("streamTask", { response: "stream", cancellable: true, codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { streamTask: { id: 1, response: "stream" } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      mod._attachDataChannel(socket);
+
+      const controller = new AbortController();
+
+      // Start stream
+      const stream = mod.stream("streamTask", { data: "test" }, { signal: controller.signal });
+
+      // Consume the iterator in background
+      stream.next().catch(() => {
+        // Expected abort error
+      });
+
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Clear mock to track abort frame
+      socket.write = vi.fn().mockReturnValue(true);
+
+      // Abort the stream
+      controller.abort();
+
+      // Wait for abort frame
+      await vi.waitFor(() => {
+        expect(socket.write).toHaveBeenCalled();
+      });
+
+      // Check abort frame (methodId 0xFFFF)
+      const writeCall = (socket.write as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(writeCall).toBeDefined();
+      const headerBuffer = writeCall![0] as Buffer;
+      const methodId = headerBuffer.readUInt16BE(0);
+      expect(methodId).toBe(0xffff);
+    });
+  });
 });
