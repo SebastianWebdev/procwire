@@ -517,16 +517,22 @@ export class Module extends EventEmitter {
 
     // Yield chunks
     try {
-      while (!finished && !error) {
+      while (true) {
+        // First drain the queue (important: check queue BEFORE finished flag)
         if (queue.length > 0) {
           yield queue.shift()!;
-        } else {
-          const result = await new Promise<IteratorResult<TChunk>>((r) => {
-            resolve = r;
-          });
-          if (result.done) break;
-          yield result.value;
+          continue;
         }
+
+        // Queue is empty - check if we're done
+        if (finished || error) break;
+
+        // Wait for next chunk
+        const result = await new Promise<IteratorResult<TChunk>>((r) => {
+          resolve = r;
+        });
+        if (result.done) break;
+        yield result.value;
       }
       if (error) throw error;
     } finally {
@@ -562,15 +568,15 @@ export class Module extends EventEmitter {
   private _handleFrame(frame: Frame): void {
     const { header } = frame;
 
-    // Response to pending request
-    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_RESPONSE)) {
-      this._handleResponse(frame);
+    // Stream chunk (check BEFORE IS_RESPONSE because stream frames have both flags)
+    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_STREAM)) {
+      this._handleStreamChunk(frame);
       return;
     }
 
-    // Stream chunk
-    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_STREAM)) {
-      this._handleStreamChunk(frame);
+    // Response to pending request
+    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_RESPONSE)) {
+      this._handleResponse(frame);
       return;
     }
 
@@ -616,12 +622,15 @@ export class Module extends EventEmitter {
       return;
     }
 
-    const data = codecDeserialize(stream.codec, frame);
-    stream.push(data);
-
+    // STREAM_END frame has null payload - just end without pushing
     if (hasFlag(frame.header.flags, Flags.STREAM_END)) {
       stream.end();
+      return;
     }
+
+    // Regular chunk - deserialize and push
+    const data = codecDeserialize(stream.codec, frame);
+    stream.push(data);
   }
 
   private _handleEvent(frame: Frame): void {
