@@ -173,20 +173,16 @@ describe("End-to-End Integration", () => {
       manager.register(module);
       await manager.spawn("echo");
 
-      // NOTE: Using 15 items to stay within Client's ring buffer size (16).
-      // There's a known issue with ring buffer reuse in @procwire/client
-      // that can cause data corruption with larger streams sent rapidly.
-      // This will be addressed in a future task.
-      const input = Array.from({ length: 15 }, (_, i) => ({ index: i }));
+      const input = Array.from({ length: 100 }, (_, i) => ({ index: i }));
       const chunks: unknown[] = [];
 
       for await (const chunk of module.stream("echoStream", input)) {
         chunks.push(chunk);
       }
 
-      expect(chunks).toHaveLength(15);
+      expect(chunks).toHaveLength(100);
       expect(chunks[0]).toEqual({ index: 0 });
-      expect(chunks[14]).toEqual({ index: 14 });
+      expect(chunks[99]).toEqual({ index: 99 });
     });
   });
 

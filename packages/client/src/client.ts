@@ -397,7 +397,7 @@ export class Client extends EventEmitter {
     });
 
     this._socket?.cork();
-    this._socket?.write(headerBuf);
+    this._socket?.write(Buffer.from(headerBuf));
     this._socket?.write(payload);
     this._socket?.uncork();
   }
@@ -432,7 +432,7 @@ export class Client extends EventEmitter {
     });
 
     this._socket.cork();
-    this._socket.write(headerBuf);
+    this._socket.write(Buffer.from(headerBuf));
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 
