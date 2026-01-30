@@ -4,6 +4,7 @@
  * @module
  */
 
+import { once } from "node:events";
 import type { Socket } from "node:net";
 import { Flags, encodeHeaderInto } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
@@ -13,6 +14,7 @@ import type { RequestContext } from "./types.js";
  * Internal implementation of RequestContext.
  *
  * Passed to method handlers to allow sending responses.
+ * All response methods are async to properly handle socket backpressure.
  */
 export class RequestContextImpl implements RequestContext {
   private _aborted = false;
@@ -26,7 +28,6 @@ export class RequestContextImpl implements RequestContext {
     private readonly _socket: Socket,
     private readonly _abortCallbacks: Map<number, Set<() => void>>,
     private readonly _acquireHeader: () => Buffer,
-    private readonly _setDraining: (v: boolean) => void,
   ) {}
 
   get aborted(): boolean {
@@ -50,39 +51,45 @@ export class RequestContextImpl implements RequestContext {
     callbacks.add(callback);
   }
 
-  respond(data: unknown): void {
+  async respond(data: unknown): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    this._sendResponse(data, Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT);
+    await this._sendResponse(data, Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT);
     this._cleanup();
   }
 
-  ack(data?: unknown): void {
+  async ack(data?: unknown): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    this._sendResponse(data ?? null, Flags.IS_RESPONSE | Flags.IS_ACK | Flags.DIRECTION_TO_PARENT);
+    await this._sendResponse(
+      data ?? null,
+      Flags.IS_RESPONSE | Flags.IS_ACK | Flags.DIRECTION_TO_PARENT,
+    );
     this._cleanup();
   }
 
-  chunk(data: unknown): void {
-    this._sendResponse(data, Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.DIRECTION_TO_PARENT);
+  async chunk(data: unknown): Promise<void> {
+    await this._sendResponse(data, Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.DIRECTION_TO_PARENT);
   }
 
-  end(): void {
+  async end(): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    this._sendResponse(
+    await this._sendResponse(
       null,
       Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.STREAM_END | Flags.DIRECTION_TO_PARENT,
     );
     this._cleanup();
   }
 
-  error(err: Error | string): void {
+  async error(err: Error | string): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
     const message = err instanceof Error ? err.message : err;
-    this._sendResponse(message, Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT);
+    await this._sendResponse(
+      message,
+      Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+    );
     this._cleanup();
   }
 
@@ -100,8 +107,22 @@ export class RequestContextImpl implements RequestContext {
     }
   }
 
-  private _sendResponse(data: unknown, flags: number): void {
-    const payload = this._codec.serialize(data);
+  /**
+   * Send response data with proper backpressure handling.
+   *
+   * Uses socket.writableNeedDrain to check if we need to wait for drain,
+   * rather than a cached flag that could miss drain events.
+   */
+  private async _sendResponse(data: unknown, flags: number): Promise<void> {
+    // Use actual socket state instead of cached flag to avoid missing drain events
+    if (this._socket.writableNeedDrain) {
+      await this._waitForDrain();
+    }
+
+    // STREAM_END frames have empty payload (null data)
+    // Don't serialize null - just use empty buffer (required for rawCodec compatibility)
+    const isStreamEnd = (flags & Flags.STREAM_END) !== 0;
+    const payload = isStreamEnd ? Buffer.alloc(0) : this._codec.serialize(data);
     const headerBuf = this._acquireHeader();
 
     encodeHeaderInto(headerBuf, {
@@ -117,8 +138,20 @@ export class RequestContextImpl implements RequestContext {
     this._socket.uncork();
 
     if (!canContinue) {
-      this._setDraining(true);
+      // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
+      await this._waitForDrain();
     }
+  }
+
+  /**
+   * Wait for socket drain event.
+   * Throws if socket is destroyed (e.g., connection closed).
+   */
+  private async _waitForDrain(): Promise<void> {
+    if (this._socket.destroyed) {
+      throw new Error("Socket closed during backpressure wait");
+    }
+    await once(this._socket, "drain");
   }
 
   private _cleanup(): void {

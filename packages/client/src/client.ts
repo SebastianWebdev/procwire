@@ -12,7 +12,7 @@
  * @module
  */
 
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
 import { FrameBuffer, type Frame, Flags, encodeHeaderInto, HEADER_SIZE } from "@procwire/protocol";
 import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
@@ -186,13 +186,15 @@ export class Client extends EventEmitter {
    *
    * @param eventName - Event name (must be registered with .event())
    * @param data - Event data
+   * @returns Promise that resolves when the event has been written
+   *          and socket buffer has drained (if backpressure occurred).
    *
    * @example
    * ```typescript
-   * client.emitEvent('progress', { percent: 50 });
+   * await client.emitEvent('progress', { percent: 50 });
    * ```
    */
-  emitEvent(eventName: string, data: unknown): void {
+  async emitEvent(eventName: string, data: unknown): Promise<void> {
     if (!this._socket) {
       throw new Error("Client not connected");
     }
@@ -205,7 +207,7 @@ export class Client extends EventEmitter {
     const eventDef = this._events.get(eventName)!;
     const codec = eventDef.codec ?? this._defaultCodec;
 
-    this._sendFrame(eventId, 0, data, codec, Flags.DIRECTION_TO_PARENT);
+    await this._sendFrame(eventId, 0, data, codec, Flags.DIRECTION_TO_PARENT);
   }
 
   /**
@@ -247,6 +249,11 @@ export class Client extends EventEmitter {
           for (const frame of frames) {
             this._handleFrame(frame);
           }
+        });
+
+        // Reset draining flag when socket drains
+        socket.on("drain", () => {
+          this._draining = false;
         });
 
         socket.on("error", (err) => this.emit("error", err));
@@ -324,6 +331,7 @@ export class Client extends EventEmitter {
     const data = codecDeserialize(codec, frame);
 
     // Create request context
+    // Note: RequestContextImpl manages its own backpressure state internally
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
@@ -332,9 +340,6 @@ export class Client extends EventEmitter {
       this._socket!,
       this._abortCallbacks,
       () => this._acquireHeaderBuffer(),
-      (draining) => {
-        this._draining = draining;
-      },
     );
 
     // Track active context for abort handling
@@ -347,7 +352,10 @@ export class Client extends EventEmitter {
         result
           .catch((err) => {
             if (!ctx.responded) {
-              ctx.error(err);
+              // ctx.error() is async - fire and forget with error handling
+              ctx.error(err).catch(() => {
+                /* ignore - socket may be closed */
+              });
             }
           })
           .finally(() => {
@@ -358,7 +366,10 @@ export class Client extends EventEmitter {
       }
     } catch (err) {
       if (!ctx.responded) {
-        ctx.error(err as Error);
+        // ctx.error() is async - fire and forget with error handling
+        ctx.error(err as Error).catch(() => {
+          /* ignore - socket may be closed */
+        });
       }
       this._activeContexts.delete(header.requestId);
     }
@@ -412,14 +423,23 @@ export class Client extends EventEmitter {
     return buffer;
   }
 
-  private _sendFrame(
+  /**
+   * Send a frame with proper backpressure handling.
+   * Used for emitting events to parent.
+   */
+  private async _sendFrame(
     methodId: number,
     requestId: number,
     data: unknown,
     codec: Codec,
     flags: number,
-  ): void {
+  ): Promise<void> {
     if (!this._socket) return;
+
+    // Use actual socket state instead of cached flag to avoid missing drain events
+    if (this._socket.writableNeedDrain) {
+      await this._waitForDrain();
+    }
 
     const payload = codec.serialize(data);
     const headerBuf = this._acquireHeaderBuffer();
@@ -438,6 +458,20 @@ export class Client extends EventEmitter {
 
     if (!canContinue) {
       this._draining = true;
+      // Wait AFTER write if buffer is full
+      await this._waitForDrain();
     }
+  }
+
+  /**
+   * Wait for socket drain event.
+   * Throws if socket is destroyed.
+   */
+  private async _waitForDrain(): Promise<void> {
+    if (!this._socket || this._socket.destroyed) {
+      throw new Error("Socket closed during backpressure wait");
+    }
+    await once(this._socket, "drain");
+    this._draining = false;
   }
 }

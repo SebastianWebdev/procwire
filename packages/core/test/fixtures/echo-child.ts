@@ -9,19 +9,19 @@ import { Client } from "@procwire/client";
 
 const client = new Client()
   // Simple echo - returns same data
-  .handle("echo", (data, ctx) => {
-    ctx.respond(data);
+  .handle("echo", async (data, ctx) => {
+    await ctx.respond(data);
   })
 
   // Stream echo - returns each item as a chunk
   .handle(
     "echoStream",
-    (data, ctx) => {
+    async (data, ctx) => {
       const items = data as unknown[];
       for (const item of items) {
-        ctx.chunk(item);
+        await ctx.chunk(item);
       }
-      ctx.end();
+      await ctx.end();
     },
     { response: "stream" },
   )
@@ -29,16 +29,16 @@ const client = new Client()
   // ACK response - acknowledges receipt
   .handle(
     "echoAck",
-    (data, ctx) => {
-      ctx.ack({ received: true, originalData: data });
+    async (data, ctx) => {
+      await ctx.ack({ received: true, originalData: data });
     },
     { response: "ack" },
   )
 
   // Error response - throws intentional error
-  .handle("throwError", (data, ctx) => {
+  .handle("throwError", async (data, ctx) => {
     const { message } = data as { message?: string };
-    ctx.error(new Error(message ?? "Intentional error"));
+    await ctx.error(new Error(message ?? "Intentional error"));
   })
 
   // Slow operation - for testing cancellation
@@ -58,24 +58,24 @@ const client = new Client()
       return;
     }
 
-    ctx.respond({ completed: true, delay });
+    await ctx.respond({ completed: true, delay });
   })
 
   // Emit event on request
-  .handle("emitProgress", (data, ctx) => {
+  .handle("emitProgress", async (data, ctx) => {
     const { count } = data as { count: number };
 
     for (let i = 1; i <= count; i++) {
-      client.emitEvent("progress", { current: i, total: count });
+      await client.emitEvent("progress", { current: i, total: count });
     }
 
-    ctx.respond({ emitted: count });
+    await ctx.respond({ emitted: count });
   })
 
   // No response (fire-and-forget style, but handler still needs to ack)
-  .handle("noResponse", (_data, ctx) => {
+  .handle("noResponse", async (_data, ctx) => {
     // For "none" response type, we still need to signal completion
-    ctx.ack();
+    await ctx.ack();
   })
 
   // Register events

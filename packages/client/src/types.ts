@@ -51,6 +51,9 @@ export type MethodHandler<TData = unknown> = (
  * Request context passed to method handlers.
  *
  * Provides methods to send responses back to parent.
+ *
+ * All response methods are async to properly handle backpressure.
+ * Always await these methods to prevent deadlocks with large payloads.
  */
 export interface RequestContext {
   /** Request ID for correlation */
@@ -70,30 +73,45 @@ export interface RequestContext {
   /**
    * Send full response to parent.
    * Sets IS_RESPONSE flag.
+   *
+   * @returns Promise that resolves when the response has been written
+   *          and socket buffer has drained (if backpressure occurred).
    */
-  respond(data: unknown): void;
+  respond(data: unknown): Promise<void>;
 
   /**
    * Send acknowledgment to parent.
    * Sets IS_RESPONSE | IS_ACK flags.
+   *
+   * @returns Promise that resolves when the response has been written
+   *          and socket buffer has drained (if backpressure occurred).
    */
-  ack(data?: unknown): void;
+  ack(data?: unknown): Promise<void>;
 
   /**
    * Send stream chunk to parent.
    * Sets IS_RESPONSE | IS_STREAM flags.
+   *
+   * @returns Promise that resolves when the chunk has been written
+   *          and socket buffer has drained (if backpressure occurred).
    */
-  chunk(data: unknown): void;
+  chunk(data: unknown): Promise<void>;
 
   /**
    * End stream.
    * Sets IS_RESPONSE | IS_STREAM | STREAM_END flags.
+   *
+   * @returns Promise that resolves when the end marker has been written
+   *          and socket buffer has drained (if backpressure occurred).
    */
-  end(): void;
+  end(): Promise<void>;
 
   /**
    * Send error response to parent.
    * Sets IS_RESPONSE | IS_ERROR flags.
+   *
+   * @returns Promise that resolves when the error has been written
+   *          and socket buffer has drained (if backpressure occurred).
    */
-  error(err: Error | string): void;
+  error(err: Error | string): Promise<void>;
 }

@@ -622,7 +622,7 @@ export class Module extends EventEmitter {
       return;
     }
 
-    // STREAM_END frame has null payload - just end without pushing
+    // STREAM_END frame has empty payload - just end without pushing
     if (hasFlag(frame.header.flags, Flags.STREAM_END)) {
       stream.end();
       return;
@@ -677,10 +677,11 @@ export class Module extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // OPT-04: Wait if previous write caused backpressure
-    if (this._draining) {
+    // OPT-04: Wait if socket needs drain (use actual socket state, not cached flag)
+    // The drain event may have been emitted while we were processing the response,
+    // so we check writableNeedDrain instead of our own _draining flag
+    if (this._socket!.writableNeedDrain) {
       await once(this._socket!, "drain");
-      this._draining = false;
     }
 
     // Cork groups multiple writes into single syscall
@@ -689,9 +690,9 @@ export class Module extends EventEmitter {
     const canContinue = this._socket!.write(payload); // payload (potentially GB)
     this._socket!.uncork(); // flush
 
-    // OPT-04: Track backpressure state
+    // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
     if (!canContinue) {
-      this._draining = true;
+      await once(this._socket!, "drain");
     }
   }
 
@@ -705,9 +706,9 @@ export class Module extends EventEmitter {
       payloadLength: 0,
     });
 
-    if (this._draining) {
+    // Use actual socket state instead of cached flag
+    if (this._socket!.writableNeedDrain) {
       await once(this._socket!, "drain");
-      this._draining = false;
     }
 
     this._socket!.cork();
@@ -715,8 +716,9 @@ export class Module extends EventEmitter {
     const canContinue = this._socket!.write(Buffer.alloc(0));
     this._socket!.uncork();
 
+    // Wait AFTER write if buffer is full
     if (!canContinue) {
-      this._draining = true;
+      await once(this._socket!, "drain");
     }
   }
 
