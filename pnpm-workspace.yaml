@@ -4,4 +4,5 @@ packages:
   - "packages/codecs"
   - "packages/core"
   - "packages/client"
+  - "packages/bench"
   - "astro-docs"

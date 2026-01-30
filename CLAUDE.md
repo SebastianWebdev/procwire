@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ FIRST: Read Agent Memory
+
+**PRZED ROZPOCZĘCIEM PRACY** przeczytaj [`AGENT_MEMORY.md`](AGENT_MEMORY.md) - zawiera krótkie podsumowanie projektu, ostatnich decyzji, bugów i ważnych informacji między sesjami.
+
 ## Project Overview
 
 This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.

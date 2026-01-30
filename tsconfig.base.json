@@ -12,7 +12,9 @@
       "@procwire/core": ["packages/core/src/index.ts"],
       "@procwire/core/*": ["packages/core/src/*"],
       "@procwire/client": ["packages/client/src/index.ts"],
-      "@procwire/client/*": ["packages/client/src/*"]
+      "@procwire/client/*": ["packages/client/src/*"],
+      "@procwire/bench": ["packages/bench/src/index.ts"],
+      "@procwire/bench/*": ["packages/bench/src/*"]
     },
 
     "target": "ES2022",

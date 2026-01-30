@@ -308,4 +308,124 @@ describe("End-to-End Integration", () => {
       await expect(promise).rejects.toThrow("Module disconnected");
     });
   });
+
+  describe("Large Payloads (Backpressure)", () => {
+    it("should handle 50KB payload without deadlock", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      // Create 50KB payload (well above the 20KB threshold that caused deadlock)
+      const largeData = { buffer: "x".repeat(50 * 1024) };
+      const result = await module.send("echo", largeData);
+
+      expect(result).toEqual(largeData);
+    }, 10000);
+
+    it("should handle 100KB payload without deadlock", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const largeData = { buffer: "x".repeat(100 * 1024) };
+      const result = await module.send("echo", largeData);
+
+      expect(result).toEqual(largeData);
+    }, 15000);
+
+    it("should handle 500KB payload without deadlock", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const largeData = { buffer: "x".repeat(500 * 1024) };
+      const result = await module.send("echo", largeData);
+
+      expect(result).toEqual(largeData);
+    }, 30000);
+
+    it("should handle 1MB payload without deadlock", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const largeData = { buffer: "x".repeat(1024 * 1024) };
+      const result = await module.send("echo", largeData);
+
+      expect(result).toEqual(largeData);
+    }, 60000);
+
+    it("should handle rapid streaming with large chunks", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echoStream", { response: "stream" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      // Create 50 chunks of 10KB each (500KB total)
+      const input = Array.from({ length: 50 }, (_, i) => ({
+        index: i,
+        data: "x".repeat(10 * 1024),
+      }));
+
+      const chunks: unknown[] = [];
+      for await (const chunk of module.stream("echoStream", input)) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toHaveLength(50);
+      expect((chunks[0] as { index: number }).index).toBe(0);
+      expect((chunks[49] as { index: number }).index).toBe(49);
+    }, 60000);
+
+    it("should handle multiple sequential large payloads", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      // 10 sequential requests with 30KB payloads
+      // Each request should complete quickly after spawn
+      for (let i = 0; i < 10; i++) {
+        const payload = { iteration: i, data: "x".repeat(30 * 1024) };
+        const result = await module.send("echo", payload);
+        expect((result as { iteration: number }).iteration).toBe(i);
+      }
+    }, 60000);
+
+    it("should handle parallel large payload requests", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const promises = Array.from({ length: 5 }, (_, i) =>
+        module.send("echo", { index: i, data: "x".repeat(30 * 1024) }),
+      );
+
+      const results = await Promise.all(promises);
+
+      expect(results).toHaveLength(5);
+      for (let i = 0; i < 5; i++) {
+        expect((results[i] as { index: number }).index).toBe(i);
+      }
+    }, 30000);
+  });
 });

@@ -14,3 +14,7 @@ coverage
 # OS / tooling
 Thumbs.db
 docs/next
+nul
+
+# Agent session memory (local only)
+AGENT_MEMORY.md

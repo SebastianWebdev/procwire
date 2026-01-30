@@ -82,7 +82,7 @@ describe("Client", () => {
       }) as unknown as Socket & EventEmitter;
     }
 
-    it("should send response with IS_RESPONSE flag", () => {
+    it("should send response with IS_RESPONSE flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -95,10 +95,9 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.respond({ result: "success" });
+      await ctx.respond({ result: "success" });
 
       expect(socket.cork).toHaveBeenCalled();
       expect(socket.write).toHaveBeenCalledTimes(2); // header + payload
@@ -106,7 +105,7 @@ describe("Client", () => {
       expect(ctx.responded).toBe(true);
     });
 
-    it("should send ack with IS_ACK flag", () => {
+    it("should send ack with IS_ACK flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -119,16 +118,15 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.ack({ jobId: 123 });
+      await ctx.ack({ jobId: 123 });
 
       expect(socket.write).toHaveBeenCalledTimes(2);
       expect(ctx.responded).toBe(true);
     });
 
-    it("should send stream chunks without setting responded", () => {
+    it("should send stream chunks without setting responded", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -141,17 +139,16 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.chunk({ data: 1 });
-      ctx.chunk({ data: 2 });
+      await ctx.chunk({ data: 1 });
+      await ctx.chunk({ data: 2 });
 
       expect(socket.write).toHaveBeenCalledTimes(4); // 2 headers + 2 payloads
       expect(ctx.responded).toBe(false); // Can still send more
     });
 
-    it("should end stream with STREAM_END flag", () => {
+    it("should end stream with STREAM_END flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -164,16 +161,15 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.chunk({ data: 1 });
-      ctx.end();
+      await ctx.chunk({ data: 1 });
+      await ctx.end();
 
       expect(ctx.responded).toBe(true);
     });
 
-    it("should send error with IS_ERROR flag", () => {
+    it("should send error with IS_ERROR flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -186,16 +182,15 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.error(new Error("Something went wrong"));
+      await ctx.error(new Error("Something went wrong"));
 
       expect(socket.write).toHaveBeenCalledTimes(2);
       expect(ctx.responded).toBe(true);
     });
 
-    it("should throw if responding twice", () => {
+    it("should throw if responding twice", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -208,15 +203,14 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
-      ctx.respond({ result: "first" });
+      await ctx.respond({ result: "first" });
 
-      expect(() => ctx.respond({ result: "second" })).toThrow("Response already sent");
-      expect(() => ctx.ack()).toThrow("Response already sent");
-      expect(() => ctx.error("fail")).toThrow("Response already sent");
-      expect(() => ctx.end()).toThrow("Response already sent");
+      await expect(ctx.respond({ result: "second" })).rejects.toThrow("Response already sent");
+      await expect(ctx.ack()).rejects.toThrow("Response already sent");
+      await expect(ctx.error("fail")).rejects.toThrow("Response already sent");
+      await expect(ctx.end()).rejects.toThrow("Response already sent");
     });
 
     it("should register abort callback", () => {
@@ -232,7 +226,6 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
       const callback = vi.fn();
@@ -255,7 +248,6 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
       expect(ctx.aborted).toBe(false);
@@ -265,7 +257,7 @@ describe("Client", () => {
       expect(ctx.aborted).toBe(true);
     });
 
-    it("should cleanup abort callbacks on respond", () => {
+    it("should cleanup abort callbacks on respond", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
@@ -278,15 +270,124 @@ describe("Client", () => {
         socket,
         abortCallbacks,
         acquireHeader,
-        vi.fn(),
       );
 
       ctx.onAbort(vi.fn());
       expect(abortCallbacks.has(42)).toBe(true);
 
-      ctx.respond({ result: "done" });
+      await ctx.respond({ result: "done" });
 
       expect(abortCallbacks.has(42)).toBe(false);
+    });
+
+    it("should wait for drain when socket buffer is full", async () => {
+      const socket = createMockSocket();
+      const abortCallbacks = new Map<number, Set<() => void>>();
+      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+
+      // Make write return false (buffer full)
+      (socket.write as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      const ctx = new RequestContextImpl(
+        42,
+        "testMethod",
+        1,
+        msgpackCodec,
+        socket,
+        abortCallbacks,
+        acquireHeader,
+      );
+
+      // Start respond - should wait for drain
+      const respondPromise = ctx.respond({ large: "data" });
+
+      // Promise should be pending (waiting for drain)
+      let resolved = false;
+      respondPromise.then(() => {
+        resolved = true;
+      });
+
+      // Give microtasks a chance to run
+      await new Promise((r) => setImmediate(r));
+      expect(resolved).toBe(false);
+
+      // Emit drain
+      socket.emit("drain");
+
+      // Now should resolve
+      await respondPromise;
+      expect(ctx.responded).toBe(true);
+    });
+
+    it("should throw when socket closes during drain wait", async () => {
+      const socket = createMockSocket();
+      const abortCallbacks = new Map<number, Set<() => void>>();
+      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+
+      // Make write return false (buffer full)
+      (socket.write as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+      // Mark socket as destroyed
+      (socket as unknown as { destroyed: boolean }).destroyed = true;
+
+      const ctx = new RequestContextImpl(
+        42,
+        "testMethod",
+        1,
+        msgpackCodec,
+        socket,
+        abortCallbacks,
+        acquireHeader,
+      );
+
+      await expect(ctx.respond({ data: "test" })).rejects.toThrow(
+        "Socket closed during backpressure wait",
+      );
+    });
+
+    it("should handle rapid chunk() calls with backpressure", async () => {
+      const socket = createMockSocket();
+      const abortCallbacks = new Map<number, Set<() => void>>();
+      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+
+      // First two writes succeed, then backpressure kicks in
+      let writeCount = 0;
+      (socket.write as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        writeCount++;
+        // Header + payload for first chunk succeeds
+        // Header + payload for second chunk triggers backpressure
+        return writeCount <= 2;
+      });
+
+      const ctx = new RequestContextImpl(
+        42,
+        "testMethod",
+        1,
+        msgpackCodec,
+        socket,
+        abortCallbacks,
+        acquireHeader,
+      );
+
+      // First chunk should complete
+      await ctx.chunk({ data: 1 });
+
+      // Second chunk should wait for drain
+      const chunk2Promise = ctx.chunk({ data: 2 });
+
+      let chunk2Resolved = false;
+      chunk2Promise.then(() => {
+        chunk2Resolved = true;
+      });
+
+      await new Promise((r) => setImmediate(r));
+      expect(chunk2Resolved).toBe(false);
+
+      // Emit drain
+      socket.emit("drain");
+
+      await chunk2Promise;
+      expect(chunk2Resolved).toBe(true);
     });
   });
 
@@ -334,7 +435,7 @@ describe("Client", () => {
   });
 
   describe("event emitting", () => {
-    it("should throw if emitting unknown event", () => {
+    it("should throw if emitting unknown event", async () => {
       const client = new Client().event("progress");
 
       // Mock as connected
@@ -345,13 +446,13 @@ describe("Client", () => {
       clientAny._socket = createMockSocket();
       clientAny._eventNameToId.set("progress", 1);
 
-      expect(() => client.emitEvent("unknown", {})).toThrow("Unknown event: unknown");
+      await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event: unknown");
     });
 
-    it("should throw if not connected", () => {
+    it("should throw if not connected", async () => {
       const client = new Client().event("progress");
 
-      expect(() => client.emitEvent("progress", {})).toThrow("Client not connected");
+      await expect(client.emitEvent("progress", {})).rejects.toThrow("Client not connected");
     });
   });
 
