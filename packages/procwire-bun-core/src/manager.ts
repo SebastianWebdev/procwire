@@ -424,7 +424,9 @@ export class ModuleManager extends EventEmitter {
                     resolved = true;
                     clearTimeout(timer);
                     reader.releaseLock();
-                    reject(ManagerErrors.moduleError(module.name, msg.params?.message || "Unknown"));
+                    reject(
+                      ManagerErrors.moduleError(module.name, msg.params?.message || "Unknown"),
+                    );
                     return;
                   }
                 }
