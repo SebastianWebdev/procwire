@@ -17,7 +17,17 @@
  */
 
 import { EventEmitter } from "node:events";
-import { msgpackCodec } from "@procwire/codecs";
+import {
+  FrameBuffer,
+  type Frame,
+  hasFlag,
+  Flags,
+  HEADER_SIZE,
+  HEADER_POOL_SIZE,
+  ABORT_METHOD_ID,
+  encodeHeaderInto,
+} from "@procwire/protocol";
+import { codecDeserialize, msgpackCodec, type Codec } from "@procwire/codecs";
 import type {
   ModuleState,
   ExecutableConfig,
@@ -28,6 +38,7 @@ import type {
 } from "./types.js";
 import { ModuleErrors } from "./errors.js";
 import { ModuleEvents } from "./events.js";
+import { BunDrainWaiter } from "./drain-waiter.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BUN TYPES (will be available at runtime)
@@ -38,6 +49,26 @@ type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
 // Bun socket type from Bun.connect()
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTERNAL TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout> | null;
+  codec: Codec;
+  /** Expected response type: "ack" or "result" */
+  expectedResponse: "ack" | "result";
+}
+
+interface PendingStream {
+  push: (chunk: unknown) => void;
+  end: () => void;
+  error: (err: Error) => void;
+  codec: Codec;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CLASS
@@ -74,10 +105,22 @@ export class Module extends EventEmitter {
   private _state: ModuleState = "created";
   private _process: BunSubprocess | null = null;
   private _socket: BunSocket | null = null;
+  private _frameBuffer: FrameBuffer | null = null;
   private _childSchema: ModuleSchema | null = null;
 
   // Request tracking
   private _nextRequestId = 1;
+  private _pendingRequests = new Map<number, PendingRequest>();
+  private _pendingStreams = new Map<number, PendingStream>();
+
+  // OPT-02: Header ring buffer for allocation-free sends
+  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
+    Buffer.allocUnsafe(HEADER_SIZE),
+  );
+  private _headerPoolIndex = 0;
+
+  // OPT-04: Backpressure tracking for Bun sockets
+  private _drainWaiter: BunDrainWaiter | null = null;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -218,23 +261,75 @@ export class Module extends EventEmitter {
 
   /**
    * @internal Called by ModuleManager to attach data channel.
+   * In Bun, socket handlers are set up during connection, so this just stores the socket.
    */
   _attachDataChannel(socket: BunSocket): void {
     this._socket = socket;
+    this._drainWaiter = new BunDrainWaiter();
+    this._frameBuffer = new FrameBuffer(
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
+    );
+  }
 
-    // TODO: Setup frame handling via socket handlers
-    // Bun sockets use handler-based API instead of EventEmitter
+  /**
+   * @internal Called by socket data handler from ModuleManager.
+   * Processes incoming data and handles frames.
+   */
+  _onSocketData(data: Buffer): void {
+    if (!this._frameBuffer) return;
+
+    const frames = this._frameBuffer.push(data);
+    for (const frame of frames) {
+      this._handleFrame(frame);
+    }
+  }
+
+  /**
+   * @internal Called by socket error handler from ModuleManager.
+   */
+  _onSocketError(err: Error): void {
+    this.emit(ModuleEvents.ERROR, err);
+  }
+
+  /**
+   * @internal Called by socket close handler from ModuleManager.
+   */
+  _onSocketClose(): void {
+    if (this._state === "ready") {
+      this._setState("disconnected");
+      this.emit(ModuleEvents.DISCONNECTED);
+    }
+  }
+
+  /**
+   * @internal Called by socket drain handler from ModuleManager.
+   */
+  _onSocketDrain(): void {
+    this._drainWaiter?.onDrain();
   }
 
   /**
    * @internal Called by ModuleManager on shutdown/crash.
    */
   _detach(): void {
-    // TODO: Reject pending requests, cleanup
+    // Reject all pending requests
+    for (const [_id, pending] of this._pendingRequests) {
+      pending.reject(ModuleErrors.disconnected());
+      if (pending.timeout) clearTimeout(pending.timeout);
+    }
+    this._pendingRequests.clear();
+
+    // Error all pending streams
+    for (const [_id, stream] of this._pendingStreams) {
+      stream.error(ModuleErrors.disconnected());
+    }
+    this._pendingStreams.clear();
 
     // Clear connection state
     this._socket?.end();
     this._socket = null;
+    this._frameBuffer?.clear();
+    this._frameBuffer = null;
     this._process = null;
 
     // Clear lookups
@@ -242,6 +337,10 @@ export class Module extends EventEmitter {
     this._methodIdToName.clear();
     this._eventIdToName.clear();
     this._childSchema = null;
+
+    // Clear backpressure state
+    this._drainWaiter?.clear();
+    this._drainWaiter = null;
   }
 
   /**
@@ -285,8 +384,8 @@ export class Module extends EventEmitter {
    */
   async send<TResponse = unknown, TRequest = unknown>(
     method: string,
-    _data: TRequest,
-    _options?: { signal?: AbortSignal },
+    data: TRequest,
+    options?: { signal?: AbortSignal },
   ): Promise<TResponse> {
     this._ensureReady();
 
@@ -295,8 +394,73 @@ export class Module extends EventEmitter {
       throw ModuleErrors.unknownMethod(method);
     }
 
-    // TODO: Implement send logic using Bun socket
-    throw new Error("Not implemented: Module.send() - will be implemented in TASK-35");
+    const methodId = this._methodNameToId.get(method);
+    if (methodId === undefined) {
+      throw ModuleErrors.methodNotRegistered(method);
+    }
+
+    const schemaMethod = this._childSchema!.methods[method];
+    if (!schemaMethod) {
+      throw ModuleErrors.methodNotInSchema(method);
+    }
+
+    // Validate response type
+    if (schemaMethod.response === "stream") {
+      throw ModuleErrors.methodReturnsStream(method);
+    }
+
+    // Fire-and-forget
+    if (schemaMethod.response === "none") {
+      await this._sendFrame(methodId, 0, data, methodConfig.codec);
+      return undefined as TResponse;
+    }
+
+    const requestId = this._nextRequestId++;
+
+    // Abort handling
+    if (options?.signal && methodConfig.cancellable) {
+      options.signal.addEventListener(
+        "abort",
+        () => {
+          // Note: We don't await here as it's in event handler
+          // The abort is best-effort
+          this._sendAbort(requestId).catch(() => {
+            // Ignore errors during abort - connection may be closed
+          });
+          const pending = this._pendingRequests.get(requestId);
+          if (pending) {
+            pending.reject(new DOMException("Aborted", "AbortError"));
+            this._cleanupRequest(requestId);
+          }
+        },
+        { once: true },
+      );
+    }
+
+    // Wait for response - MUST register BEFORE sending to avoid race condition
+    // where response arrives before we're listening for it
+    const responsePromise = new Promise<TResponse>((resolve, reject) => {
+      const timeout = schemaMethod.timeout ?? methodConfig.timeout;
+      const timer = timeout
+        ? setTimeout(() => {
+            this._cleanupRequest(requestId);
+            reject(ModuleErrors.timeout(method));
+          }, timeout)
+        : null;
+
+      this._pendingRequests.set(requestId, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timeout: timer,
+        codec: methodConfig.codec,
+        expectedResponse: schemaMethod.response as "ack" | "result",
+      });
+    });
+
+    // Send frame AFTER registering pending request (with backpressure support)
+    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
+
+    return responsePromise;
   }
 
   /**
@@ -307,11 +471,10 @@ export class Module extends EventEmitter {
    * @param options - Optional abort signal
    * @returns AsyncGenerator yielding response chunks
    */
-  // eslint-disable-next-line require-yield
   async *stream<TChunk = unknown, TRequest = unknown>(
     method: string,
-    _data: TRequest,
-    _options?: { signal?: AbortSignal },
+    data: TRequest,
+    options?: { signal?: AbortSignal },
   ): AsyncGenerator<TChunk> {
     this._ensureReady();
 
@@ -320,8 +483,96 @@ export class Module extends EventEmitter {
       throw ModuleErrors.unknownMethod(method);
     }
 
-    // TODO: Implement stream logic using Bun socket
-    throw new Error("Not implemented: Module.stream() - will be implemented in TASK-35");
+    const methodId = this._methodNameToId.get(method);
+    if (methodId === undefined) {
+      throw ModuleErrors.methodNotRegistered(method);
+    }
+
+    const schemaMethod = this._childSchema!.methods[method];
+    if (!schemaMethod) {
+      throw ModuleErrors.methodNotInSchema(method);
+    }
+
+    // Validate response type
+    if (schemaMethod.response !== "stream") {
+      throw ModuleErrors.methodNotStream(method, schemaMethod.response);
+    }
+
+    const requestId = this._nextRequestId++;
+
+    // ⚠️ TODO: Implement Backpressure
+    // Current implementation uses unbounded in-memory queue.
+    // If child sends data faster than consumer processes it,
+    // this queue will grow indefinitely and cause OOM.
+    // For production use with large streams, implement credit-based backpressure.
+    const queue: TChunk[] = [];
+    let resolve: ((result: IteratorResult<TChunk>) => void) | null = null;
+    let finished = false;
+    let error: Error | null = null;
+
+    // Register stream
+    this._pendingStreams.set(requestId, {
+      push: (chunk) => {
+        if (resolve) {
+          resolve({ value: chunk as TChunk, done: false });
+          resolve = null;
+        } else {
+          queue.push(chunk as TChunk);
+        }
+      },
+      end: () => {
+        finished = true;
+        if (resolve) resolve({ value: undefined as TChunk, done: true });
+      },
+      error: (err) => {
+        error = err;
+        if (resolve) resolve({ value: undefined as TChunk, done: true });
+      },
+      codec: methodConfig.codec,
+    });
+
+    // Abort handling
+    if (options?.signal && methodConfig.cancellable) {
+      options.signal.addEventListener(
+        "abort",
+        () => {
+          // Note: We don't await here as it's in event handler
+          this._sendAbort(requestId).catch(() => {
+            // Ignore errors during abort
+          });
+          error = new DOMException("Aborted", "AbortError");
+          if (resolve) resolve({ value: undefined as TChunk, done: true });
+        },
+        { once: true },
+      );
+    }
+
+    // Send request (with backpressure support)
+    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
+
+    // Yield chunks
+    try {
+      while (true) {
+        // First drain the queue (important: check queue BEFORE finished flag)
+        if (queue.length > 0) {
+          yield queue.shift()!;
+          continue;
+        }
+
+        // Queue is empty - check if we're done
+        if (finished || error) break;
+
+        // Wait for next chunk
+        const result = await new Promise<IteratorResult<TChunk>>((r) => {
+          resolve = r;
+        });
+        if (result.done) break;
+        yield result.value;
+      }
+      if (error) throw error;
+    } finally {
+      this._pendingStreams.delete(requestId);
+    }
   }
 
   /**
@@ -346,8 +597,159 @@ export class Module extends EventEmitter {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE
+  // PRIVATE: Frame Handling
   // ═══════════════════════════════════════════════════════════════════════════
+
+  private _handleFrame(frame: Frame): void {
+    const { header } = frame;
+
+    // Stream chunk (check BEFORE IS_RESPONSE because stream frames have both flags)
+    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_STREAM)) {
+      this._handleStreamChunk(frame);
+      return;
+    }
+
+    // Response to pending request
+    if (header.requestId > 0 && hasFlag(header.flags, Flags.IS_RESPONSE)) {
+      this._handleResponse(frame);
+      return;
+    }
+
+    // Event (requestId = 0, from child)
+    if (header.requestId === 0 && hasFlag(header.flags, Flags.DIRECTION_TO_PARENT)) {
+      this._handleEvent(frame);
+      return;
+    }
+  }
+
+  private _handleResponse(frame: Frame): void {
+    const pending = this._pendingRequests.get(frame.header.requestId);
+    if (!pending) {
+      // Response arrived for unknown request - likely a race condition or duplicate
+      return;
+    }
+
+    const isAckFrame = hasFlag(frame.header.flags, Flags.IS_ACK);
+
+    // TASK-08: Strict response type handling
+    // "result" methods expect full response, ignore ACK frames
+    if (pending.expectedResponse === "result" && isAckFrame) {
+      // Got ACK but expected full result - ignore, keep waiting
+      return;
+    }
+    // "ack" methods accept both ACK and full response (graceful fallback)
+
+    if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
+      const errorData = codecDeserialize(pending.codec, frame);
+      pending.reject(ModuleErrors.remoteError(errorData));
+    } else {
+      const data = codecDeserialize(pending.codec, frame);
+      pending.resolve(data);
+    }
+
+    this._cleanupRequest(frame.header.requestId);
+  }
+
+  private _handleStreamChunk(frame: Frame): void {
+    const stream = this._pendingStreams.get(frame.header.requestId);
+    if (!stream) return;
+
+    if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
+      const errorData = codecDeserialize(stream.codec, frame);
+      stream.error(ModuleErrors.remoteError(errorData));
+      return;
+    }
+
+    // STREAM_END frame has empty payload - just end without pushing
+    if (hasFlag(frame.header.flags, Flags.STREAM_END)) {
+      stream.end();
+      return;
+    }
+
+    // Regular chunk - deserialize and push
+    const data = codecDeserialize(stream.codec, frame);
+    stream.push(data);
+  }
+
+  private _handleEvent(frame: Frame): void {
+    const eventName = this._eventIdToName.get(frame.header.methodId);
+    if (!eventName) return;
+
+    const eventConfig = this._events.get(eventName);
+    if (!eventConfig) return;
+
+    const data = codecDeserialize(eventConfig.codec, frame);
+    this.emit(`event:${eventName}`, data);
+  }
+
+  /**
+   * Acquire a header buffer from the ring buffer pool.
+   * OPT-02: Allocation-free sends - reuse pre-allocated buffers.
+   */
+  private _acquireHeaderBuffer(): Buffer {
+    const buffer = this._headerPool[this._headerPoolIndex]!;
+    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
+    return buffer;
+  }
+
+  /**
+   * Send frame with backpressure support.
+   * Bun sockets don't have cork/uncork, so we concatenate buffers instead.
+   */
+  private async _sendFrame(
+    methodId: number,
+    requestId: number,
+    data: unknown,
+    codec: Codec,
+  ): Promise<void> {
+    const payload = codec.serialize(data);
+
+    // OPT-02: Ring buffer for allocation-free headers
+    const headerBuf = this._acquireHeaderBuffer();
+
+    encodeHeaderInto(headerBuf, {
+      methodId,
+      flags: 0,
+      requestId,
+      payloadLength: payload.length,
+    });
+
+    // Bun doesn't have cork/uncork, so concatenate buffers for atomic write
+    const combined = Buffer.concat([headerBuf, payload]);
+    const canContinue = this._socket!.write(combined);
+
+    // OPT-04: Wait AFTER write if backpressure
+    if (!canContinue) {
+      this._drainWaiter!.markNeedsDrain();
+      await this._drainWaiter!.waitForDrain();
+    }
+  }
+
+  private async _sendAbort(requestId: number): Promise<void> {
+    // OPT-02: Ring buffer for allocation-free headers
+    const headerBuf = this._acquireHeaderBuffer();
+
+    encodeHeaderInto(headerBuf, {
+      methodId: ABORT_METHOD_ID,
+      flags: 0,
+      requestId,
+      payloadLength: 0,
+    });
+
+    const canContinue = this._socket!.write(headerBuf);
+
+    // Wait AFTER write if backpressure
+    if (!canContinue) {
+      this._drainWaiter!.markNeedsDrain();
+      await this._drainWaiter!.waitForDrain();
+    }
+  }
+
+  private _cleanupRequest(requestId: number): void {
+    const pending = this._pendingRequests.get(requestId);
+    if (pending?.timeout) clearTimeout(pending.timeout);
+    this._pendingRequests.delete(requestId);
+  }
 
   private _ensureReady(): void {
     if (this._state !== "ready") {

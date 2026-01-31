@@ -296,7 +296,7 @@ export class ModuleManager extends EventEmitter {
 
     // 4. Connect data channel
     module._setState("connecting");
-    const socket = await this.connectDataChannel(initMessage.params.pipe, policy.socketBufferSize);
+    const socket = await this.connectDataChannel(module, initMessage.params.pipe);
     module._attachDataChannel(socket);
 
     // 5. Ready!
@@ -468,48 +468,37 @@ export class ModuleManager extends EventEmitter {
 
   /**
    * Connect to data channel using Bun.connect().
+   * Creates socket handlers that delegate to Module methods.
    */
-  private connectDataChannel(pipePath: string, _socketBufferSize?: number): Promise<BunSocket> {
+  private connectDataChannel(module: Module, pipePath: string): Promise<BunSocket> {
     return new Promise((resolve, reject) => {
-      // Determine if it's a Unix socket or Windows named pipe
-      const isWindows = process.platform === "win32";
-
-      // Create connection options
-      const connectOptions = {
-        unix: isWindows ? undefined : pipePath,
-        hostname: isWindows ? pipePath : undefined,
-        socket: {
-          open(socket: BunSocket) {
-            resolve(socket);
-          },
-          data(_socket: BunSocket, _data: Buffer) {
-            // Data handling will be set up by Module._attachDataChannel()
-          },
-          error(_socket: BunSocket, error: Error) {
-            reject(ManagerErrors.dataChannelFailed(error.message));
-          },
-          close(_socket: BunSocket) {
-            // Socket closed
-          },
-          drain(_socket: BunSocket) {
-            // Socket drained (backpressure relieved)
-          },
-        },
-      };
-
       try {
-        // For Windows named pipes, Bun uses the path directly
-        if (isWindows) {
-          Bun.connect({
-            unix: pipePath,
-            socket: connectOptions.socket,
-          });
-        } else {
-          Bun.connect({
-            unix: pipePath,
-            socket: connectOptions.socket,
-          });
-        }
+        // Bun.connect with socket handlers that delegate to Module
+        Bun.connect({
+          unix: pipePath,
+          socket: {
+            open(socket: BunSocket) {
+              resolve(socket);
+            },
+            data(_socket: BunSocket, data: Buffer) {
+              // Delegate to Module for frame parsing
+              module._onSocketData(data);
+            },
+            error(_socket: BunSocket, error: Error) {
+              // During connection, reject the promise
+              // After connection, delegate to Module
+              module._onSocketError(error);
+              reject(ManagerErrors.dataChannelFailed(error.message));
+            },
+            close(_socket: BunSocket) {
+              module._onSocketClose();
+            },
+            drain(_socket: BunSocket) {
+              // Notify Module that backpressure is relieved
+              module._onSocketDrain();
+            },
+          },
+        });
       } catch (error) {
         reject(
           ManagerErrors.dataChannelFailed(error instanceof Error ? error.message : String(error)),

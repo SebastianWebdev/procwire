@@ -15,6 +15,7 @@ import {
   ManagerErrors,
   ManagerEvents,
   ModuleEvents,
+  BunDrainWaiter,
 } from "../src/index.js";
 
 describe("@procwire-bun/core exports", () => {
@@ -62,6 +63,11 @@ describe("@procwire-bun/core exports", () => {
     expect(ModuleEvents.STATE).toBe("state");
     expect(ModuleEvents.ERROR).toBe("error");
     expect(ModuleEvents.DISCONNECTED).toBe("disconnected");
+  });
+
+  it("should export BunDrainWaiter class", () => {
+    expect(BunDrainWaiter).toBeDefined();
+    expect(typeof BunDrainWaiter).toBe("function");
   });
 });
 
@@ -161,6 +167,55 @@ describe("ModuleManager", () => {
     const manager = new ModuleManager();
 
     await expect(manager.spawn("unknown")).rejects.toThrow("not registered");
+  });
+});
+
+describe("BunDrainWaiter", () => {
+  it("should create a new instance", () => {
+    const waiter = new BunDrainWaiter();
+    expect(waiter.needsDrain).toBe(false);
+  });
+
+  it("should track drain state", () => {
+    const waiter = new BunDrainWaiter();
+
+    waiter.markNeedsDrain();
+    expect(waiter.needsDrain).toBe(true);
+
+    waiter.onDrain();
+    expect(waiter.needsDrain).toBe(false);
+  });
+
+  it("should resolve waiters on drain", async () => {
+    const waiter = new BunDrainWaiter();
+    waiter.markNeedsDrain();
+
+    let resolved = false;
+    const waitPromise = waiter.waitForDrain().then(() => {
+      resolved = true;
+    });
+
+    // Simulate drain event
+    waiter.onDrain();
+
+    await waitPromise;
+    expect(resolved).toBe(true);
+  });
+
+  it("should return immediately if no drain needed", async () => {
+    const waiter = new BunDrainWaiter();
+
+    // Should resolve immediately since needsDrain is false
+    await waiter.waitForDrain();
+    expect(waiter.needsDrain).toBe(false);
+  });
+
+  it("should clear state on clear()", () => {
+    const waiter = new BunDrainWaiter();
+    waiter.markNeedsDrain();
+
+    waiter.clear();
+    expect(waiter.needsDrain).toBe(false);
   });
 });
 
