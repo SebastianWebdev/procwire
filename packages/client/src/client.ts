@@ -20,11 +20,14 @@ import {
   Flags,
   encodeHeaderInto,
   HEADER_SIZE,
+  HEADER_POOL_SIZE,
+  ABORT_METHOD_ID,
   DrainWaiter,
 } from "@procwire/protocol";
 import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
 import type { MethodDefinition, EventDefinition, MethodHandler, ClientOptions } from "./types.js";
 import { RequestContextImpl } from "./request-context.js";
+import { ClientErrors } from "./errors.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENT CLASS
@@ -70,8 +73,7 @@ export class Client extends EventEmitter {
   private _started = false;
 
   // Ring buffer for headers (OPT-02: allocation-free sends)
-  private static readonly HEADER_POOL_SIZE = 16;
-  private readonly _headerPool = Array.from({ length: Client.HEADER_POOL_SIZE }, () =>
+  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
     Buffer.allocUnsafe(HEADER_SIZE),
   );
   private _headerPoolIndex = 0;
@@ -109,7 +111,7 @@ export class Client extends EventEmitter {
     options?: Partial<MethodDefinition>,
   ): this {
     if (this._started) {
-      throw new Error("Cannot add handlers after start()");
+      throw ClientErrors.cannotAddHandlerAfterStart();
     }
 
     this._methods.set(method, {
@@ -139,7 +141,7 @@ export class Client extends EventEmitter {
    */
   event(name: string, options?: Partial<EventDefinition>): this {
     if (this._started) {
-      throw new Error("Cannot add events after start()");
+      throw ClientErrors.cannotAddEventAfterStart();
     }
 
     this._events.set(name, {
@@ -162,7 +164,7 @@ export class Client extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this._started) {
-      throw new Error("Client already started");
+      throw ClientErrors.alreadyStarted();
     }
     this._started = true;
 
@@ -205,12 +207,12 @@ export class Client extends EventEmitter {
    */
   async emitEvent(eventName: string, data: unknown): Promise<void> {
     if (!this._socket) {
-      throw new Error("Client not connected");
+      throw ClientErrors.notConnected();
     }
 
     const eventId = this._eventNameToId.get(eventName);
     if (eventId === undefined) {
-      throw new Error(`Unknown event: ${eventName}`);
+      throw ClientErrors.unknownEvent(eventName);
     }
 
     const eventDef = this._events.get(eventName)!;
@@ -313,8 +315,8 @@ export class Client extends EventEmitter {
   private _handleFrame(frame: Frame): void {
     const { header } = frame;
 
-    // Abort signal (methodId 0xFFFF)
-    if (header.methodId === 0xffff) {
+    // Abort signal (reserved methodId)
+    if (header.methodId === ABORT_METHOD_ID) {
       this._handleAbort(header.requestId);
       return;
     }
@@ -415,8 +417,9 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
+    // RING+SYNC: No await in sync function, buffer used immediately
     this._socket?.cork();
-    this._socket?.write(Buffer.from(headerBuf));
+    this._socket?.write(headerBuf);
     this._socket?.write(payload);
     this._socket?.uncork();
   }
@@ -427,7 +430,7 @@ export class Client extends EventEmitter {
 
   private _acquireHeaderBuffer(): Buffer {
     const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % Client.HEADER_POOL_SIZE;
+    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
     return buffer;
   }
 
@@ -435,8 +438,8 @@ export class Client extends EventEmitter {
    * Send a frame with proper backpressure handling.
    * Used for emitting events to parent.
    *
-   * Uses DrainWaiter singleton to prevent MaxListenersExceededWarning
-   * when many concurrent requests are waiting for drain.
+   * Uses RING+SYNC pattern: write BEFORE await for allocation-free headers.
+   * DrainWaiter singleton prevents MaxListenersExceededWarning.
    */
   private async _sendFrame(
     methodId: number,
@@ -446,9 +449,6 @@ export class Client extends EventEmitter {
     flags: number,
   ): Promise<void> {
     if (!this._socket || !this._drainWaiter) return;
-
-    // Wait if socket needs drain (uses singleton DrainWaiter)
-    await this._drainWaiter.waitForDrain();
 
     const payload = codec.serialize(data);
     const headerBuf = this._acquireHeaderBuffer();
@@ -460,13 +460,16 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
+    // Write BEFORE await to prevent deadlock.
+    // Buffer.from() creates a copy because Named Pipes on Windows
+    // may not synchronously copy buffer data.
     this._socket.cork();
     this._socket.write(Buffer.from(headerBuf));
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 
+    // OPT-04: Wait AFTER write if backpressure - ring buffer no longer needed
     if (!canContinue) {
-      // Wait AFTER write if buffer is full
       await this._drainWaiter.waitForDrain();
     }
   }

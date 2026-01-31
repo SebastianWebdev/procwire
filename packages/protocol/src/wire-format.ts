@@ -40,6 +40,19 @@ export const DEFAULT_MAX_PAYLOAD_SIZE = 1024 * 1024 * 1024; // 1GB
 export const ABSOLUTE_MAX_PAYLOAD_SIZE = 2 * 1024 * 1024 * 1024 - 1; // ~2GB
 
 /**
+ * Reserved method ID for abort signal.
+ * Used to cancel in-progress requests.
+ * Cannot be used for regular methods.
+ */
+export const ABORT_METHOD_ID = 0xffff;
+
+/**
+ * Default size of header ring buffer pool.
+ * Used for allocation-free header encoding in high-throughput scenarios.
+ */
+export const HEADER_POOL_SIZE = 16;
+
+/**
  * Flag bits for the flags byte.
  *
  * IMPORTANT: These flags are used in BINARY protocol for DATA PLANE.

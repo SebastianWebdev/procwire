@@ -21,6 +21,8 @@ import { createInterface, type Interface as ReadlineInterface } from "node:readl
 import { EventEmitter } from "node:events";
 import type { Module } from "./module.js";
 import type { SpawnPolicy, ModuleSchema, InitMessage, RetryDelayConfig } from "./types.js";
+import { ManagerErrors } from "./errors.js";
+import { ManagerEvents } from "./events.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -37,6 +39,15 @@ const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
   restartLimit: { maxRestarts: 5, windowMs: 60_000 },
   socketBufferSize: undefined as unknown as number, // undefined = use OS default
 };
+
+/** Delay for detecting immediate spawn errors (ms) */
+const SPAWN_ERROR_DETECTION_DELAY_MS = 100;
+
+/** Delay before attempting to restart a crashed module (ms) */
+const RESTART_WAIT_DELAY_MS = 1000;
+
+/** Timeout for graceful shutdown before force kill (ms) */
+const FORCE_KILL_TIMEOUT_MS = 5000;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SPAWN ERROR
@@ -101,7 +112,7 @@ export class ModuleManager extends EventEmitter {
    */
   register(module: Module): this {
     if (this.modules.has(module.name)) {
-      throw new Error(`Module "${module.name}" already registered`);
+      throw ManagerErrors.alreadyRegistered(module.name);
     }
 
     module._validate();
@@ -176,7 +187,7 @@ export class ModuleManager extends EventEmitter {
   private async spawnModule(name: string): Promise<void> {
     const module = this.modules.get(name);
     if (!module) {
-      throw new Error(`Module "${name}" not registered`);
+      throw ManagerErrors.notRegistered(name);
     }
 
     const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
@@ -187,7 +198,7 @@ export class ModuleManager extends EventEmitter {
         // Wait before retry (not on first attempt)
         if (attempt > 0) {
           const delay = this.calculateRetryDelay(attempt, policy.retryDelay);
-          this.emit("module:retrying", name, attempt, delay, lastError);
+          this.emit(ManagerEvents.RETRYING, name, attempt, delay, lastError);
           await this.sleep(delay);
         }
 
@@ -199,7 +210,13 @@ export class ModuleManager extends EventEmitter {
         // Cleanup failed attempt
         this.cleanupModule(module);
 
-        this.emit("module:spawnFailed", name, attempt, lastError, attempt < policy.maxRetries);
+        this.emit(
+          ManagerEvents.SPAWN_FAILED,
+          name,
+          attempt,
+          lastError,
+          attempt < policy.maxRetries,
+        );
       }
     }
 
@@ -259,7 +276,7 @@ export class ModuleManager extends EventEmitter {
 
     // 5. Ready!
     module._setState("ready");
-    this.emit("module:ready", module.name);
+    this.emit(ManagerEvents.READY, module.name);
   }
 
   /**
@@ -285,7 +302,7 @@ export class ModuleManager extends EventEmitter {
           proc.off("error", errorHandler);
           resolve(null);
         }
-      }, 100);
+      }, SPAWN_ERROR_DETECTION_DELAY_MS);
     });
   }
 
@@ -301,7 +318,7 @@ export class ModuleManager extends EventEmitter {
           resolved = true;
           rl.close();
           proc.kill("SIGKILL");
-          reject(new Error(`Module "${module.name}" did not send $init within ${timeout}ms`));
+          reject(ManagerErrors.initTimeout(module.name, timeout));
         }
       }, timeout);
 
@@ -311,11 +328,7 @@ export class ModuleManager extends EventEmitter {
           resolved = true;
           clearTimeout(timer);
           rl.close();
-          reject(
-            new Error(
-              `Module "${module.name}" crashed during init (code: ${code}, signal: ${signal})`,
-            ),
-          );
+          reject(ManagerErrors.processCrashed(module.name, code, signal));
         }
       };
       proc.on("exit", exitHandler);
@@ -352,9 +365,7 @@ export class ModuleManager extends EventEmitter {
               clearTimeout(timer);
               proc.off("exit", exitHandler);
               rl.close();
-              reject(
-                new Error(`Module "${module.name}" error: ${msg.params?.message || "Unknown"}`),
-              );
+              reject(ManagerErrors.moduleError(module.name, msg.params?.message || "Unknown"));
             }
           }
         } catch {
@@ -381,17 +392,13 @@ export class ModuleManager extends EventEmitter {
 
     for (const methodName of expected.methods) {
       if (!childSchema.methods[methodName]) {
-        throw new Error(
-          `Module "${module.name}": child did not register expected method "${methodName}"`,
-        );
+        throw ManagerErrors.schemaMissingMethod(module.name, methodName);
       }
     }
 
     for (const eventName of expected.events) {
       if (!childSchema.events[eventName]) {
-        throw new Error(
-          `Module "${module.name}": child did not register expected event "${eventName}"`,
-        );
+        throw ManagerErrors.schemaMissingEvent(module.name, eventName);
       }
     }
   }
@@ -425,7 +432,7 @@ export class ModuleManager extends EventEmitter {
 
         resolve(socket);
       });
-      socket.on("error", (err) => reject(new Error(`Data channel connect failed: ${err.message}`)));
+      socket.on("error", (err) => reject(ManagerErrors.dataChannelFailed(err.message)));
     });
   }
 
@@ -450,37 +457,35 @@ export class ModuleManager extends EventEmitter {
     }
 
     const wasReady = module.state === "ready";
-    const error = new Error(
-      `Module "${module.name}" exited unexpectedly (code: ${code}, signal: ${signal})`,
-    );
+    const error = ManagerErrors.processCrashed(module.name, code, signal);
 
     // Detach module
     module._detach();
     module._setState("disconnected");
 
-    this.emit("module:error", module.name, error);
+    this.emit(ManagerEvents.ERROR, module.name, error);
 
     // Check if we should restart
     const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
 
     if (wasReady && policy.restartOnCrash && this.canRestart(module.name, policy)) {
       this.recordRestart(module.name);
-      this.emit("module:restarting", module.name, error);
+      this.emit(ManagerEvents.RESTARTING, module.name, error);
 
       // Restart async
       this.restartModule(module).catch((restartError: Error) => {
         module._setState("closed");
         this.emit(
-          "module:error",
+          ManagerEvents.ERROR,
           module.name,
-          new Error(`Restart failed: ${restartError.message}`),
+          ManagerErrors.restartFailed(restartError.message),
         );
       });
     } else {
       module._setState("closed");
 
       if (wasReady && policy.restartOnCrash) {
-        this.emit("module:error", module.name, new Error("Too many restarts, giving up"));
+        this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.tooManyRestarts());
       }
     }
   }
@@ -514,7 +519,7 @@ export class ModuleManager extends EventEmitter {
    */
   private async restartModule(module: Module): Promise<void> {
     // Wait a bit before restart
-    await this.sleep(1000);
+    await this.sleep(RESTART_WAIT_DELAY_MS);
 
     // Re-spawn with retry logic
     await this.spawnModule(module.name);
@@ -563,7 +568,7 @@ export class ModuleManager extends EventEmitter {
       const timer = setTimeout(() => {
         proc.kill("SIGKILL");
         resolve();
-      }, 5000);
+      }, FORCE_KILL_TIMEOUT_MS);
 
       proc.on("exit", () => {
         clearTimeout(timer);
@@ -572,7 +577,7 @@ export class ModuleManager extends EventEmitter {
     });
 
     module._setState("closed");
-    this.emit("module:closed", name);
+    this.emit(ManagerEvents.CLOSED, name);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

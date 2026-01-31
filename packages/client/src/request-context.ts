@@ -9,6 +9,7 @@ import { Flags, encodeHeaderInto } from "@procwire/protocol";
 import type { DrainWaiter } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
 import type { RequestContext } from "./types.js";
+import { ClientErrors } from "./errors.js";
 
 /**
  * Internal implementation of RequestContext.
@@ -104,20 +105,17 @@ export class RequestContextImpl implements RequestContext {
 
   private _ensureNotResponded(): void {
     if (this._responded) {
-      throw new Error("Response already sent");
+      throw ClientErrors.responseAlreadySent();
     }
   }
 
   /**
    * Send response data with proper backpressure handling.
    *
-   * Uses DrainWaiter singleton to prevent MaxListenersExceededWarning
-   * when many concurrent requests are waiting for drain.
+   * Uses RING+SYNC pattern: write BEFORE await for allocation-free headers.
+   * DrainWaiter singleton prevents MaxListenersExceededWarning.
    */
   private async _sendResponse(data: unknown, flags: number): Promise<void> {
-    // Wait if socket needs drain (uses singleton DrainWaiter)
-    await this._drainWaiter.waitForDrain();
-
     // Empty payload cases:
     // 1. STREAM_END frames (null data)
     // 2. ACK without data (null/undefined data with IS_ACK flag)
@@ -134,13 +132,16 @@ export class RequestContextImpl implements RequestContext {
       payloadLength: payload.length,
     });
 
+    // Write BEFORE await to prevent deadlock.
+    // Buffer.from() creates a copy because Named Pipes on Windows
+    // may not synchronously copy buffer data.
     this._socket.cork();
     this._socket.write(Buffer.from(headerBuf));
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 
+    // OPT-04: Wait AFTER write if backpressure - ring buffer no longer needed
     if (!canContinue) {
-      // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
       await this._drainWaiter.waitForDrain();
     }
   }

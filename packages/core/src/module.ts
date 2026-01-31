@@ -23,6 +23,8 @@ import {
   hasFlag,
   Flags,
   HEADER_SIZE,
+  HEADER_POOL_SIZE,
+  ABORT_METHOD_ID,
   encodeHeaderInto,
   DrainWaiter,
 } from "@procwire/protocol";
@@ -35,6 +37,8 @@ import type {
   SpawnPolicy,
   ModuleSchema,
 } from "./types.js";
+import { ModuleErrors } from "./errors.js";
+import { ModuleEvents } from "./events.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INTERNAL TYPES
@@ -96,6 +100,12 @@ export class Module extends EventEmitter {
   private _nextRequestId = 1;
   private _pendingRequests = new Map<number, PendingRequest>();
   private _pendingStreams = new Map<number, PendingStream>();
+
+  // OPT-02: Header ring buffer for allocation-free sends
+  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
+    Buffer.allocUnsafe(HEADER_SIZE),
+  );
+  private _headerPoolIndex = 0;
 
   // OPT-04: Backpressure tracking
   private _draining = false;
@@ -211,7 +221,7 @@ export class Module extends EventEmitter {
    */
   _setState(state: ModuleState): void {
     this._state = state;
-    this.emit("state", state);
+    this.emit(ModuleEvents.STATE, state);
   }
 
   /**
@@ -257,13 +267,13 @@ export class Module extends EventEmitter {
     });
 
     socket.on("error", (err: Error) => {
-      this.emit("error", err);
+      this.emit(ModuleEvents.ERROR, err);
     });
 
     socket.on("close", () => {
       if (this._state === "ready") {
         this._setState("disconnected");
-        this.emit("disconnected");
+        this.emit(ModuleEvents.DISCONNECTED);
       }
     });
   }
@@ -274,14 +284,14 @@ export class Module extends EventEmitter {
   _detach(): void {
     // Reject all pending requests
     for (const [_id, pending] of this._pendingRequests) {
-      pending.reject(new Error("Module disconnected"));
+      pending.reject(ModuleErrors.disconnected());
       if (pending.timeout) clearTimeout(pending.timeout);
     }
     this._pendingRequests.clear();
 
     // Error all pending streams
     for (const [_id, stream] of this._pendingStreams) {
-      stream.error(new Error("Module disconnected"));
+      stream.error(ModuleErrors.disconnected());
     }
     this._pendingStreams.clear();
 
@@ -309,10 +319,10 @@ export class Module extends EventEmitter {
    */
   _validate(): void {
     if (!this._executable) {
-      throw new Error(`Module "${this.name}": executable not configured`);
+      throw ModuleErrors.executableNotConfigured(this.name);
     }
     if (this._methods.size === 0) {
-      throw new Error(`Module "${this.name}": no methods registered`);
+      throw ModuleErrors.noMethodsRegistered(this.name);
     }
   }
 
@@ -352,22 +362,22 @@ export class Module extends EventEmitter {
 
     const methodConfig = this._methods.get(method);
     if (!methodConfig) {
-      throw new Error(`Unknown method: ${method}`);
+      throw ModuleErrors.unknownMethod(method);
     }
 
     const methodId = this._methodNameToId.get(method);
     if (methodId === undefined) {
-      throw new Error(`Method "${method}" not registered by child`);
+      throw ModuleErrors.methodNotRegistered(method);
     }
 
     const schemaMethod = this._childSchema!.methods[method];
     if (!schemaMethod) {
-      throw new Error(`Method "${method}" not in child schema`);
+      throw ModuleErrors.methodNotInSchema(method);
     }
 
     // Validate response type
     if (schemaMethod.response === "stream") {
-      throw new Error(`Method "${method}" returns a stream. Use .stream() instead of .send().`);
+      throw ModuleErrors.methodReturnsStream(method);
     }
 
     // Fire-and-forget
@@ -405,7 +415,7 @@ export class Module extends EventEmitter {
       const timer = timeout
         ? setTimeout(() => {
             this._cleanupRequest(requestId);
-            reject(new Error(`Timeout waiting for response from "${method}"`));
+            reject(ModuleErrors.timeout(method));
           }, timeout)
         : null;
 
@@ -441,25 +451,22 @@ export class Module extends EventEmitter {
 
     const methodConfig = this._methods.get(method);
     if (!methodConfig) {
-      throw new Error(`Unknown method: ${method}`);
+      throw ModuleErrors.unknownMethod(method);
     }
 
     const methodId = this._methodNameToId.get(method);
     if (methodId === undefined) {
-      throw new Error(`Method "${method}" not registered by child`);
+      throw ModuleErrors.methodNotRegistered(method);
     }
 
     const schemaMethod = this._childSchema!.methods[method];
     if (!schemaMethod) {
-      throw new Error(`Method "${method}" not in child schema`);
+      throw ModuleErrors.methodNotInSchema(method);
     }
 
     // Validate response type
     if (schemaMethod.response !== "stream") {
-      throw new Error(
-        `Method "${method}" does not return a stream (response: "${schemaMethod.response}"). ` +
-          `Use .send() instead of .stream().`,
-      );
+      throw ModuleErrors.methodNotStream(method, schemaMethod.response);
     }
 
     const requestId = this._nextRequestId++;
@@ -549,7 +556,7 @@ export class Module extends EventEmitter {
   onEvent<T = unknown>(eventName: string, handler: (data: T) => void): () => void {
     const eventConfig = this._events.get(eventName);
     if (!eventConfig) {
-      throw new Error(`Unknown event: ${eventName}`);
+      throw ModuleErrors.unknownEvent(eventName);
     }
 
     const wrappedHandler = (data: T) => handler(data);
@@ -584,7 +591,6 @@ export class Module extends EventEmitter {
       this._handleEvent(frame);
       return;
     }
-
   }
 
   private _handleResponse(frame: Frame): void {
@@ -606,7 +612,7 @@ export class Module extends EventEmitter {
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
       const errorData = codecDeserialize(pending.codec, frame);
-      pending.reject(new Error(String(errorData)));
+      pending.reject(ModuleErrors.remoteError(errorData));
     } else {
       const data = codecDeserialize(pending.codec, frame);
       pending.resolve(data);
@@ -621,7 +627,7 @@ export class Module extends EventEmitter {
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
       const errorData = codecDeserialize(stream.codec, frame);
-      stream.error(new Error(String(errorData)));
+      stream.error(ModuleErrors.remoteError(errorData));
       return;
     }
 
@@ -648,8 +654,18 @@ export class Module extends EventEmitter {
   }
 
   /**
+   * Acquire a header buffer from the ring buffer pool.
+   * OPT-02: Allocation-free sends - reuse pre-allocated buffers.
+   */
+  private _acquireHeaderBuffer(): Buffer {
+    const buffer = this._headerPool[this._headerPoolIndex]!;
+    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
+    return buffer;
+  }
+
+  /**
    * Send frame with backpressure support.
-   * Pauses if socket buffer is full to prevent OOM.
+   * Uses RING+SYNC pattern: write BEFORE await for allocation-free headers.
    */
   private async _sendFrame(
     methodId: number,
@@ -659,11 +675,8 @@ export class Module extends EventEmitter {
   ): Promise<void> {
     const payload = codec.serialize(data);
 
-    // Allocate fresh header buffer for each request to avoid race conditions
-    // with concurrent pipelined requests. The ring buffer optimization doesn't
-    // work when we yield to wait for drain, as another request can overwrite
-    // the buffer before we write it.
-    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
+    // OPT-02: Ring buffer for allocation-free headers
+    const headerBuf = this._acquireHeaderBuffer();
 
     encodeHeaderInto(headerBuf, {
       methodId,
@@ -672,41 +685,39 @@ export class Module extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // OPT-04: Wait if socket needs drain (uses DrainWaiter singleton to avoid MaxListenersExceededWarning)
-    await this._drainWaiter!.waitForDrain();
-
-    // Cork groups multiple writes into single syscall
+    // Write BEFORE await to prevent deadlock.
+    // Buffer.from() creates a copy because Named Pipes on Windows
+    // may not synchronously copy buffer data.
     this._socket!.cork();
-    this._socket!.write(headerBuf);
+    this._socket!.write(Buffer.from(headerBuf));
     const canContinue = this._socket!.write(payload);
     this._socket!.uncork();
 
-    // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
+    // OPT-04: Wait AFTER write if backpressure - ring buffer no longer needed
     if (!canContinue) {
       await this._drainWaiter!.waitForDrain();
     }
   }
 
   private async _sendAbort(requestId: number): Promise<void> {
-    // Allocate fresh header for each abort to avoid race conditions
-    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
+    // OPT-02: Ring buffer for allocation-free headers
+    const headerBuf = this._acquireHeaderBuffer();
 
     encodeHeaderInto(headerBuf, {
-      methodId: 0xffff,
+      methodId: ABORT_METHOD_ID,
       flags: 0,
       requestId,
       payloadLength: 0,
     });
 
-    // Use DrainWaiter to avoid MaxListenersExceededWarning
-    await this._drainWaiter!.waitForDrain();
-
+    // Write BEFORE await to prevent deadlock.
+    // Buffer.from() creates a copy for Named Pipes compatibility.
     this._socket!.cork();
-    this._socket!.write(headerBuf);
+    this._socket!.write(Buffer.from(headerBuf));
     const canContinue = this._socket!.write(Buffer.alloc(0));
     this._socket!.uncork();
 
-    // Wait AFTER write if buffer is full
+    // Wait AFTER write if backpressure
     if (!canContinue) {
       await this._drainWaiter!.waitForDrain();
     }
@@ -720,7 +731,7 @@ export class Module extends EventEmitter {
 
   private _ensureReady(): void {
     if (this._state !== "ready") {
-      throw new Error(`Module "${this.name}" is not ready (state: ${this._state})`);
+      throw ModuleErrors.notReady(this.name, this._state);
     }
   }
 }

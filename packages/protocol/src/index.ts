@@ -38,6 +38,8 @@ export {
   HEADER_SIZE,
   DEFAULT_MAX_PAYLOAD_SIZE,
   ABSOLUTE_MAX_PAYLOAD_SIZE,
+  ABORT_METHOD_ID,
+  HEADER_POOL_SIZE,
   Flags,
   type FrameHeader,
   encodeHeader,

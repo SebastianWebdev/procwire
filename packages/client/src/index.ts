@@ -30,6 +30,7 @@
 
 export { Client } from "./client.js";
 export { RequestContextImpl } from "./request-context.js";
+export { ProcwireClientError, ClientErrors } from "./errors.js";
 export type {
   ResponseType,
   MethodDefinition,
