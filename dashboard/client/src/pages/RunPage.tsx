@@ -3,15 +3,7 @@
  */
 
 import { useState } from "react";
-import {
-  Container,
-  Stack,
-  Title,
-  Button,
-  Group,
-  Divider,
-  Alert,
-} from "@mantine/core";
+import { Container, Stack, Title, Button, Group, Divider, Alert } from "@mantine/core";
 import { IconRocket, IconAlertCircle } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import ScenarioSelector from "../components/ScenarioSelector";
@@ -45,8 +37,7 @@ function RunPage() {
   const { runState, startRun, resetRun } = useBenchmarkRun();
 
   const isRunning = runState.status === "running";
-  const isComplete =
-    runState.status === "completed" || runState.status === "failed";
+  const isComplete = runState.status === "completed" || runState.status === "failed";
 
   const handleRun = async () => {
     if (selectedScenarios.length === 0) {
@@ -63,9 +54,16 @@ function RunPage() {
       options: {
         quick: options.quick,
         concurrency: options.concurrency,
-        codecs: options.codecs.length > 0 ? (options.codecs as ("raw" | "msgpack" | "arrow")[]) : undefined,
-        sizes: options.sizes.length > 0 ? (options.sizes as ("1KB" | "10KB" | "100KB" | "1MB" | "10MB" | "100MB")[]) : undefined,
-        modes: options.modes.length > 0 ? (options.modes as ("result" | "stream" | "ack")[]) : undefined,
+        codecs:
+          options.codecs.length > 0
+            ? (options.codecs as ("raw" | "msgpack" | "arrow")[])
+            : undefined,
+        sizes:
+          options.sizes.length > 0
+            ? (options.sizes as ("1KB" | "10KB" | "100KB" | "1MB" | "10MB" | "100MB")[])
+            : undefined,
+        modes:
+          options.modes.length > 0 ? (options.modes as ("result" | "stream" | "ack")[]) : undefined,
       },
     };
 
@@ -144,11 +142,7 @@ function RunPage() {
 
         {/* Error Display */}
         {runState.error && (
-          <Alert
-            icon={<IconAlertCircle size={16} />}
-            title="Benchmark Failed"
-            color="red"
-          >
+          <Alert icon={<IconAlertCircle size={16} />} title="Benchmark Failed" color="red">
             {runState.error}
           </Alert>
         )}

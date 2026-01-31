@@ -23,9 +23,7 @@ function LatencyChart({ results }: LatencyChartProps) {
   const theme = useMantineTheme();
 
   // Filter to 1KB, result mode for latency comparison
-  const filteredResults = results.filter(
-    (r) => r.size === "1KB" && r.mode === "result"
-  );
+  const filteredResults = results.filter((r) => r.size === "1KB" && r.mode === "result");
 
   const codecs = [...new Set(filteredResults.map((r) => r.codec))];
 
@@ -55,8 +53,7 @@ function LatencyChart({ results }: LatencyChartProps) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lines = params.map(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (p: any) =>
-            `${p.marker} ${p.seriesName}: <strong>${p.value.toFixed(0)} us</strong>`
+          (p: any) => `${p.marker} ${p.seriesName}: <strong>${p.value.toFixed(0)} us</strong>`,
         );
         return `${params[0].name}<br/>${lines.join("<br/>")}`;
       },
@@ -88,13 +85,7 @@ function LatencyChart({ results }: LatencyChartProps) {
     series,
   };
 
-  return (
-    <ReactECharts
-      option={option}
-      style={{ height: "400px" }}
-      opts={{ renderer: "svg" }}
-    />
-  );
+  return <ReactECharts option={option} style={{ height: "400px" }} opts={{ renderer: "svg" }} />;
 }
 
 export default LatencyChart;

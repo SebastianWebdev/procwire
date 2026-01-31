@@ -1,10 +1,5 @@
 import { NavLink, Stack } from "@mantine/core";
-import {
-  IconRocket,
-  IconChartBar,
-  IconGitCompare,
-  IconTrendingUp,
-} from "@tabler/icons-react";
+import { IconRocket, IconChartBar, IconGitCompare, IconTrendingUp } from "@tabler/icons-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const navItems = [

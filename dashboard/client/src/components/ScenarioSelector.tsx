@@ -1,13 +1,4 @@
-import {
-  Checkbox,
-  Card,
-  Text,
-  Group,
-  Badge,
-  Stack,
-  Skeleton,
-  SimpleGrid,
-} from "@mantine/core";
+import { Checkbox, Card, Text, Group, Badge, Stack, Skeleton, SimpleGrid } from "@mantine/core";
 import type { ScenarioInfo } from "../api/types";
 
 interface ScenarioSelectorProps {
@@ -17,12 +8,7 @@ interface ScenarioSelectorProps {
   loading?: boolean;
 }
 
-function ScenarioSelector({
-  scenarios,
-  selected,
-  onChange,
-  loading,
-}: ScenarioSelectorProps) {
+function ScenarioSelector({ scenarios, selected, onChange, loading }: ScenarioSelectorProps) {
   const handleToggle = (id: string, checked: boolean) => {
     if (checked) {
       onChange([...selected, id]);
@@ -61,17 +47,13 @@ function ScenarioSelector({
                 ? "var(--mantine-color-blue-light)"
                 : undefined,
             }}
-            onClick={() =>
-              handleToggle(scenario.id, !selected.includes(scenario.id))
-            }
+            onClick={() => handleToggle(scenario.id, !selected.includes(scenario.id))}
           >
             <Group justify="space-between" wrap="nowrap" align="flex-start">
               <Group gap="sm" wrap="nowrap" align="flex-start">
                 <Checkbox
                   checked={selected.includes(scenario.id)}
-                  onChange={(e) =>
-                    handleToggle(scenario.id, e.currentTarget.checked)
-                  }
+                  onChange={(e) => handleToggle(scenario.id, e.currentTarget.checked)}
                   onClick={(e) => e.stopPropagation()}
                   mt={4}
                 />

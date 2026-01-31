@@ -3,14 +3,7 @@
  */
 
 import { SimpleGrid, Paper, Text, Group, ThemeIcon } from "@mantine/core";
-import {
-  IconBolt,
-  IconClock,
-  IconDatabase,
-  IconCpu,
-  IconCheck,
-  IconX,
-} from "@tabler/icons-react";
+import { IconBolt, IconClock, IconDatabase, IconCpu, IconCheck, IconX } from "@tabler/icons-react";
 import type { BenchmarkSummary, SystemMeta } from "../api/types";
 
 interface SummaryCardsProps {
@@ -70,13 +63,7 @@ interface MetricCardProps {
   subValue?: string;
 }
 
-function MetricCard({
-  icon: Icon,
-  color,
-  label,
-  value,
-  subValue,
-}: MetricCardProps) {
+function MetricCard({ icon: Icon, color, label, value, subValue }: MetricCardProps) {
   return (
     <Paper p="sm" withBorder>
       <Group gap="xs" mb={4}>

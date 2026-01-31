@@ -76,9 +76,7 @@ function HistoryTable({ runs, loading }: HistoryTableProps) {
                   </Group>
                 </Table.Td>
                 <Table.Td>
-                  <Text size="sm">
-                    {new Date(run.startedAt).toLocaleDateString()}
-                  </Text>
+                  <Text size="sm">{new Date(run.startedAt).toLocaleDateString()}</Text>
                   <Text size="xs" c="dimmed">
                     {new Date(run.startedAt).toLocaleTimeString()}
                   </Text>
@@ -98,33 +96,23 @@ function HistoryTable({ runs, loading }: HistoryTableProps) {
                   </Group>
                 </Table.Td>
                 <Table.Td ff="monospace">
-                  {run.peakThroughputMBps
-                    ? formatThroughput(run.peakThroughputMBps)
-                    : "-"}
+                  {run.peakThroughputMBps ? formatThroughput(run.peakThroughputMBps) : "-"}
                 </Table.Td>
                 <Table.Td>
                   <Badge color={getStatusColor(run.status, run.passed)}>
-                    {run.status === "running"
-                      ? "Running"
-                      : run.passed
-                        ? "PASS"
-                        : "FAIL"}
+                    {run.status === "running" ? "Running" : run.passed ? "PASS" : "FAIL"}
                   </Badge>
                 </Table.Td>
                 <Table.Td>
                   {run.completedAt && run.startedAt
                     ? formatDuration(
-                        new Date(run.completedAt).getTime() -
-                          new Date(run.startedAt).getTime()
+                        new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(),
                       )
                     : "-"}
                 </Table.Td>
                 <Table.Td>
                   <Tooltip label="View Details">
-                    <ActionIcon
-                      variant="light"
-                      onClick={() => navigate(`/results/${run.id}`)}
-                    >
+                    <ActionIcon variant="light" onClick={() => navigate(`/results/${run.id}`)}>
                       <IconEye size={16} />
                     </ActionIcon>
                   </Tooltip>

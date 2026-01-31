@@ -2,16 +2,7 @@
  * Live progress display during benchmark execution.
  */
 
-import {
-  Paper,
-  Stack,
-  Progress,
-  Text,
-  Group,
-  Badge,
-  Table,
-  ScrollArea,
-} from "@mantine/core";
+import { Paper, Stack, Progress, Text, Group, Badge, Table, ScrollArea } from "@mantine/core";
 import type { RunState, ScenarioProgress } from "../hooks/useBenchmarkRun";
 import type { ScenarioResult } from "../api/types";
 import LiveMetrics from "./LiveMetrics";
@@ -42,33 +33,20 @@ function ProgressPanel({ runState }: ProgressPanelProps) {
               {completedTests} / {totalTests} tests
             </Text>
           </Group>
-          <Progress
-            value={overallPercent}
-            size="lg"
-            radius="md"
-            color="blue"
-            striped
-            animated
-          />
+          <Progress value={overallPercent} size="lg" radius="md" color="blue" striped animated />
         </Stack>
       </Paper>
 
       {/* Per-Scenario Progress */}
       {Object.entries(scenarioProgress).map(([scenarioId, progress]) => (
-        <ScenarioProgressCard
-          key={scenarioId}
-          scenarioId={scenarioId}
-          progress={progress}
-        />
+        <ScenarioProgressCard key={scenarioId} scenarioId={scenarioId} progress={progress} />
       ))}
 
       {/* Live Metrics */}
       {latestResults.length > 0 && <LiveMetrics results={latestResults} />}
 
       {/* Latest Results Table */}
-      {latestResults.length > 0 && (
-        <LatestResultsTable results={latestResults} />
-      )}
+      {latestResults.length > 0 && <LatestResultsTable results={latestResults} />}
     </Stack>
   );
 }
@@ -78,10 +56,7 @@ interface ScenarioProgressCardProps {
   progress: ScenarioProgress;
 }
 
-function ScenarioProgressCard({
-  scenarioId,
-  progress,
-}: ScenarioProgressCardProps) {
+function ScenarioProgressCard({ scenarioId, progress }: ScenarioProgressCardProps) {
   const percent = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
 
   return (
@@ -152,12 +127,8 @@ function LatestResultsTable({ results }: LatestResultsTableProps) {
                       {result.mode}
                     </Badge>
                   </Table.Td>
-                  <Table.Td ff="monospace">
-                    {formatThroughput(result.throughputMBps)}
-                  </Table.Td>
-                  <Table.Td ff="monospace">
-                    {result.latency.p99.toFixed(0)} us
-                  </Table.Td>
+                  <Table.Td ff="monospace">{formatThroughput(result.throughputMBps)}</Table.Td>
+                  <Table.Td ff="monospace">{result.latency.p99.toFixed(0)} us</Table.Td>
                 </Table.Tr>
               ))}
           </Table.Tbody>

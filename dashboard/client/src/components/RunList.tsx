@@ -2,15 +2,7 @@
  * List of benchmark runs with selection support.
  */
 
-import {
-  Stack,
-  Card,
-  Text,
-  Badge,
-  Group,
-  Skeleton,
-  ScrollArea,
-} from "@mantine/core";
+import { Stack, Card, Text, Badge, Group, Skeleton, ScrollArea } from "@mantine/core";
 import { IconStar } from "@tabler/icons-react";
 import type { RunSummary } from "../api/types";
 
@@ -50,14 +42,9 @@ function RunList({ runs, loading, selectedId, onSelect }: RunListProps) {
             withBorder
             style={{
               cursor: "pointer",
-              borderColor:
-                selectedId === run.id
-                  ? "var(--mantine-color-blue-6)"
-                  : undefined,
+              borderColor: selectedId === run.id ? "var(--mantine-color-blue-6)" : undefined,
               backgroundColor:
-                selectedId === run.id
-                  ? "var(--mantine-color-blue-light)"
-                  : undefined,
+                selectedId === run.id ? "var(--mantine-color-blue-light)" : undefined,
             }}
             onClick={() => onSelect(run.id)}
           >
@@ -81,15 +68,8 @@ function RunList({ runs, loading, selectedId, onSelect }: RunListProps) {
               </div>
 
               <Stack gap={4} align="flex-end">
-                <Badge
-                  size="xs"
-                  color={getStatusColor(run.status, run.passed)}
-                >
-                  {run.status === "running"
-                    ? "Running"
-                    : run.passed
-                      ? "PASS"
-                      : "FAIL"}
+                <Badge size="xs" color={getStatusColor(run.status, run.passed)}>
+                  {run.status === "running" ? "Running" : run.passed ? "PASS" : "FAIL"}
                 </Badge>
                 {run.peakThroughputMBps && (
                   <Text size="xs" ff="monospace" c="dimmed">

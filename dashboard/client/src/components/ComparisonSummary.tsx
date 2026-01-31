@@ -2,19 +2,8 @@
  * Summary of comparison results showing improvements/regressions.
  */
 
-import {
-  Paper,
-  SimpleGrid,
-  Text,
-  Group,
-  ThemeIcon,
-  RingProgress,
-} from "@mantine/core";
-import {
-  IconTrendingUp,
-  IconTrendingDown,
-  IconMinus,
-} from "@tabler/icons-react";
+import { Paper, SimpleGrid, Text, Group, ThemeIcon, RingProgress } from "@mantine/core";
+import { IconTrendingUp, IconTrendingDown, IconMinus } from "@tabler/icons-react";
 
 interface ComparisonSummaryProps {
   summary: {
@@ -106,13 +95,7 @@ function ComparisonSummary({ summary }: ComparisonSummaryProps) {
             <Text
               size="xl"
               fw={700}
-              c={
-                isOverallBetter
-                  ? "green"
-                  : summary.overallDeltaPercent < 0
-                    ? "red"
-                    : "dimmed"
-              }
+              c={isOverallBetter ? "green" : summary.overallDeltaPercent < 0 ? "red" : "dimmed"}
             >
               {isOverallBetter ? "+" : ""}
               {summary.overallDeltaPercent.toFixed(1)}%

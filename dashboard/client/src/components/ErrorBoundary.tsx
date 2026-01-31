@@ -3,16 +3,7 @@
  */
 
 import { Component, type ReactNode } from "react";
-import {
-  Container,
-  Paper,
-  Title,
-  Text,
-  Button,
-  Stack,
-  Code,
-  Group,
-} from "@mantine/core";
+import { Container, Paper, Title, Text, Button, Stack, Code, Group } from "@mantine/core";
 import { IconAlertCircle, IconRefresh } from "@tabler/icons-react";
 
 interface Props {
@@ -65,10 +56,7 @@ class ErrorBoundary extends Component<Props, State> {
               )}
 
               <Group>
-                <Button
-                  leftSection={<IconRefresh size={16} />}
-                  onClick={this.handleReload}
-                >
+                <Button leftSection={<IconRefresh size={16} />} onClick={this.handleReload}>
                   Refresh Page
                 </Button>
                 <Button variant="light" onClick={this.handleReset}>

@@ -119,13 +119,9 @@ export async function startServer(options?: ServerOptions) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
 
-  const port = parseInt(
-    args.find((a) => a.startsWith("--port="))?.split("=")[1] ?? "3001",
-    10
-  );
+  const port = parseInt(args.find((a) => a.startsWith("--port="))?.split("=")[1] ?? "3001", 10);
 
-  const dbPath =
-    args.find((a) => a.startsWith("--db="))?.split("=")[1] ?? "./dashboard.db";
+  const dbPath = args.find((a) => a.startsWith("--db="))?.split("=")[1] ?? "./dashboard.db";
 
   startServer({ port, dbPath });
 }

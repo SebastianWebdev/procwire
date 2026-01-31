@@ -75,11 +75,7 @@ export class BenchmarkDbService {
   /**
    * Create a new benchmark run.
    */
-  createRun(
-    meta: SystemMeta,
-    scenarios: string[],
-    options: CreateRunOptions = {}
-  ): DbRun {
+  createRun(meta: SystemMeta, scenarios: string[], options: CreateRunOptions = {}): DbRun {
     const runId = generateRunId();
     const now = new Date().toISOString();
     const executionMode: ExecutionMode =
@@ -113,11 +109,7 @@ export class BenchmarkDbService {
   /**
    * Update the status of a run.
    */
-  updateRunStatus(
-    runId: number,
-    status: RunStatus,
-    summary?: BenchmarkSummary
-  ): void {
+  updateRunStatus(runId: number, status: RunStatus, summary?: BenchmarkSummary): void {
     const now = new Date().toISOString();
 
     if (status === "completed" || status === "failed") {
@@ -183,13 +175,10 @@ export class BenchmarkDbService {
       params.scenarioId = `%"${scenarioId}"%`;
     }
 
-    const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     // Count total
-    const countStmt = this.db.prepare(
-      `SELECT COUNT(*) as count FROM runs ${whereClause}`
-    );
+    const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM runs ${whereClause}`);
     const { count: total } = countStmt.get(params) as { count: number };
 
     // Get paginated results
@@ -227,12 +216,10 @@ export class BenchmarkDbService {
         this.db.prepare("UPDATE runs SET is_baseline = 0").run();
       }
       // Set new baseline
-      this.db
-        .prepare("UPDATE runs SET is_baseline = @isBaseline WHERE id = @id")
-        .run({
-          id: runId,
-          isBaseline: isBaseline ? 1 : 0,
-        });
+      this.db.prepare("UPDATE runs SET is_baseline = @isBaseline WHERE id = @id").run({
+        id: runId,
+        isBaseline: isBaseline ? 1 : 0,
+      });
     });
 
     transaction();
@@ -394,8 +381,7 @@ export class BenchmarkDbService {
     const results2 = this.getResults(runId2);
 
     // Create a map for quick lookup
-    const makeKey = (r: ScenarioResult) =>
-      `${r.scenarioId}:${r.codec}:${r.size}:${r.mode}`;
+    const makeKey = (r: ScenarioResult) => `${r.scenarioId}:${r.codec}:${r.size}:${r.mode}`;
 
     const map1 = new Map(results1.map((r) => [makeKey(r), r]));
     const map2 = new Map(results2.map((r) => [makeKey(r), r]));

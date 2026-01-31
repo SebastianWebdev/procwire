@@ -26,12 +26,7 @@ function ConnectionStatus() {
     return () => clearInterval(interval);
   }, []);
 
-  const color =
-    status === "connected"
-      ? "green"
-      : status === "connecting"
-        ? "yellow"
-        : "red";
+  const color = status === "connected" ? "green" : status === "connecting" ? "yellow" : "red";
   const label =
     status === "connected"
       ? "Connected"

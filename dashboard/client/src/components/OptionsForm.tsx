@@ -85,9 +85,7 @@ function OptionsForm({ options, onChange }: OptionsFormProps) {
               </Tooltip>
             </Group>
             <Text size="sm" fw={500}>
-              {options.concurrency === 1
-                ? "Sequential"
-                : `${options.concurrency}x`}
+              {options.concurrency === 1 ? "Sequential" : `${options.concurrency}x`}
             </Text>
           </Group>
           <Slider

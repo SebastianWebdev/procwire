@@ -23,10 +23,7 @@ export interface ApiError {
   statusCode: number;
 }
 
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
   const response = await fetch(url, {
@@ -70,8 +67,7 @@ export const api = {
 
   getRun: (id: number) => request<RunDetailResponse>(`/runs/${id}`),
 
-  getRunResults: (id: number) =>
-    request<RunResultsResponse>(`/runs/${id}/results`),
+  getRunResults: (id: number) => request<RunResultsResponse>(`/runs/${id}/results`),
 
   createRun: (data: CreateRunRequest) =>
     request<CreateRunResponse>("/runs", {
@@ -79,8 +75,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  deleteRun: (id: number) =>
-    request<void>(`/runs/${id}`, { method: "DELETE" }),
+  deleteRun: (id: number) => request<void>(`/runs/${id}`, { method: "DELETE" }),
 
   setBaseline: (id: number, isBaseline: boolean) =>
     request<SetBaselineResponse>(`/runs/${id}/baseline`, {
@@ -90,9 +85,7 @@ export const api = {
 
   // Compare
   compare: (baselineId: number, compareId: number) =>
-    request<CompareResponse>(
-      `/compare?baseline=${baselineId}&compare=${compareId}`
-    ),
+    request<CompareResponse>(`/compare?baseline=${baselineId}&compare=${compareId}`),
 
   // Trends
   getTrends: (params: TrendsParams) => {

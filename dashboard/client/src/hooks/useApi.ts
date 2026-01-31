@@ -2,17 +2,9 @@
  * React Query hooks for API data fetching.
  */
 
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type {
-  ListRunsParams,
-  CreateRunRequest,
-  TrendsParams,
-} from "../api/types";
+import type { ListRunsParams, CreateRunRequest, TrendsParams } from "../api/types";
 
 // Query keys
 export const queryKeys = {
@@ -20,8 +12,7 @@ export const queryKeys = {
   runs: (params?: ListRunsParams) => ["runs", params] as const,
   run: (id: number) => ["run", id] as const,
   runResults: (id: number) => ["runResults", id] as const,
-  compare: (baselineId: number, compareId: number) =>
-    ["compare", baselineId, compareId] as const,
+  compare: (baselineId: number, compareId: number) => ["compare", baselineId, compareId] as const,
   trends: (params: TrendsParams) => ["trends", params] as const,
 };
 
@@ -90,10 +81,7 @@ export function useSetBaseline() {
   });
 }
 
-export function useCompare(
-  baselineId: number | undefined,
-  compareId: number | undefined
-) {
+export function useCompare(baselineId: number | undefined, compareId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.compare(baselineId!, compareId!),
     queryFn: () => api.compare(baselineId!, compareId!),

@@ -39,79 +39,71 @@ const initialState: RunState = {
 export function useBenchmarkRun() {
   const [runState, setRunState] = useState<RunState>(initialState);
 
-  const handleMessage = useCallback(
-    (message: WsMessage) => {
-      // Only process messages for current run
-      setRunState((prev) => {
-        if (prev.runId !== null && message.runId !== prev.runId) {
+  const handleMessage = useCallback((message: WsMessage) => {
+    // Only process messages for current run
+    setRunState((prev) => {
+      if (prev.runId !== null && message.runId !== prev.runId) {
+        return prev;
+      }
+
+      switch (message.type) {
+        case "run:start":
+          return {
+            ...prev,
+            status: "running",
+          };
+
+        case "scenario:start":
+          return {
+            ...prev,
+            scenarioProgress: {
+              ...prev.scenarioProgress,
+              [message.scenarioId as string]: {
+                current: 0,
+                total: message.total as number,
+              },
+            },
+          };
+
+        case "scenario:progress":
+          return {
+            ...prev,
+            scenarioProgress: {
+              ...prev.scenarioProgress,
+              [message.scenarioId as string]: {
+                current: message.current as number,
+                total: message.total as number,
+                currentTest: message.currentTest as ScenarioProgress["currentTest"] | undefined,
+              },
+            },
+          };
+
+        case "result:complete":
+          return {
+            ...prev,
+            latestResults: [...prev.latestResults, message.result as ScenarioResult],
+          };
+
+        case "run:complete":
+          return {
+            ...prev,
+            status: "completed",
+            summary: message.summary as BenchmarkSummary,
+            duration: message.duration as number,
+          };
+
+        case "run:error":
+          return {
+            ...prev,
+            status: "failed",
+            error: message.error as string,
+          };
+
+        default:
           return prev;
-        }
-
-        switch (message.type) {
-          case "run:start":
-            return {
-              ...prev,
-              status: "running",
-            };
-
-          case "scenario:start":
-            return {
-              ...prev,
-              scenarioProgress: {
-                ...prev.scenarioProgress,
-                [message.scenarioId as string]: {
-                  current: 0,
-                  total: message.total as number,
-                },
-              },
-            };
-
-          case "scenario:progress":
-            return {
-              ...prev,
-              scenarioProgress: {
-                ...prev.scenarioProgress,
-                [message.scenarioId as string]: {
-                  current: message.current as number,
-                  total: message.total as number,
-                  currentTest: message.currentTest as
-                    | ScenarioProgress["currentTest"]
-                    | undefined,
-                },
-              },
-            };
-
-          case "result:complete":
-            return {
-              ...prev,
-              latestResults: [
-                ...prev.latestResults,
-                message.result as ScenarioResult,
-              ],
-            };
-
-          case "run:complete":
-            return {
-              ...prev,
-              status: "completed",
-              summary: message.summary as BenchmarkSummary,
-              duration: message.duration as number,
-            };
-
-          case "run:error":
-            return {
-              ...prev,
-              status: "failed",
-              error: message.error as string,
-            };
-
-          default:
-            return prev;
-        }
-      });
-    },
-    []
-  );
+      }
+    });
+  }, []);
 
   useWebSocket({
     onMessage: handleMessage,

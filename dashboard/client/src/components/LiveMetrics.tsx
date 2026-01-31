@@ -16,11 +16,9 @@ function LiveMetrics({ results }: LiveMetricsProps) {
   // Calculate aggregates from latest results
   const latestResults = results.slice(-10);
   const avgThroughput =
-    latestResults.reduce((sum, r) => sum + r.throughputMBps, 0) /
-    latestResults.length;
+    latestResults.reduce((sum, r) => sum + r.throughputMBps, 0) / latestResults.length;
   const avgLatencyP99 =
-    latestResults.reduce((sum, r) => sum + r.latency.p99, 0) /
-    latestResults.length;
+    latestResults.reduce((sum, r) => sum + r.latency.p99, 0) / latestResults.length;
   const totalBytes = results.reduce((sum, r) => sum + r.totalBytes, 0);
 
   // Peak throughput from all results

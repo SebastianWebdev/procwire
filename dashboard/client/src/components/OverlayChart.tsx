@@ -16,35 +16,24 @@ interface OverlayChartProps {
 
 const SIZES = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"];
 
-function OverlayChart({
-  type,
-  comparisons,
-  baselineName,
-  compareName,
-}: OverlayChartProps) {
+function OverlayChart({ type, comparisons, baselineName, compareName }: OverlayChartProps) {
   const theme = useMantineTheme();
 
   // Filter to raw codec, result mode for clean comparison
-  const filtered = comparisons.filter(
-    (c) => c.codec === "raw" && c.mode === "result"
-  );
+  const filtered = comparisons.filter((c) => c.codec === "raw" && c.mode === "result");
 
   const getBaselineData = () =>
     SIZES.map((size) => {
       const row = filtered.find((c) => c.size === size);
       if (!row?.baseline) return 0;
-      return type === "throughput"
-        ? row.baseline.throughputMBps
-        : row.baseline.latencyP99;
+      return type === "throughput" ? row.baseline.throughputMBps : row.baseline.latencyP99;
     });
 
   const getCompareData = () =>
     SIZES.map((size) => {
       const row = filtered.find((c) => c.size === size);
       if (!row?.compare) return 0;
-      return type === "throughput"
-        ? row.compare.throughputMBps
-        : row.compare.latencyP99;
+      return type === "throughput" ? row.compare.throughputMBps : row.compare.latencyP99;
     });
 
   const option: EChartsOption = {
@@ -60,9 +49,7 @@ function OverlayChart({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lines = params.map((p: any) => {
           const value =
-            type === "throughput"
-              ? formatThroughput(p.value)
-              : `${p.value.toFixed(0)} us`;
+            type === "throughput" ? formatThroughput(p.value) : `${p.value.toFixed(0)} us`;
           return `${p.marker} ${p.seriesName}: <strong>${value}</strong>`;
         });
         return `${params[0].name}<br/>${lines.join("<br/>")}`;
@@ -120,13 +107,7 @@ function OverlayChart({
     ],
   };
 
-  return (
-    <ReactECharts
-      option={option}
-      style={{ height: "400px" }}
-      opts={{ renderer: "svg" }}
-    />
-  );
+  return <ReactECharts option={option} style={{ height: "400px" }} opts={{ renderer: "svg" }} />;
 }
 
 function formatThroughput(mbps: number): string {

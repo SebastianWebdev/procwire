@@ -20,8 +20,7 @@ function PassFailBadge({ target, result }: PassFailBadgeProps) {
   }
 
   const passed = result.throughputMBps >= target.targetMBps;
-  const margin =
-    ((result.throughputMBps - target.targetMBps) / target.targetMBps) * 100;
+  const margin = ((result.throughputMBps - target.targetMBps) / target.targetMBps) * 100;
 
   return (
     <Tooltip

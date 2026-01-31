@@ -34,7 +34,7 @@ function ExportButton({ data, runs, filters }: ExportButtonProps) {
     downloadFile(
       JSON.stringify(exportData, null, 2),
       `benchmark-trends-${Date.now()}.json`,
-      "application/json"
+      "application/json",
     );
   };
 
@@ -42,17 +42,11 @@ function ExportButton({ data, runs, filters }: ExportButtonProps) {
     if (!data?.length) return;
 
     const headers = ["Timestamp", "Value", "Run ID", "Run Name"];
-    const rows = data.map((d) => [
-      d.timestamp,
-      d.value,
-      d.runId,
-      d.runName || "",
-    ]);
+    const rows = data.map((d) => [d.timestamp, d.value, d.runId, d.runName || ""]);
 
-    const csv = [
-      headers.join(","),
-      ...rows.map((r) => r.map((v) => `"${v}"`).join(",")),
-    ].join("\n");
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join(
+      "\n",
+    );
 
     downloadFile(csv, `benchmark-trends-${Date.now()}.csv`, "text/csv");
   };
@@ -60,14 +54,7 @@ function ExportButton({ data, runs, filters }: ExportButtonProps) {
   const handleExportRunsCSV = () => {
     if (!runs?.length) return;
 
-    const headers = [
-      "ID",
-      "Date",
-      "Status",
-      "Peak Throughput (MB/s)",
-      "Passed",
-      "Scenarios",
-    ];
+    const headers = ["ID", "Date", "Status", "Peak Throughput (MB/s)", "Passed", "Scenarios"];
     const rows = runs.map((r) => [
       r.id,
       r.startedAt,
@@ -77,10 +64,9 @@ function ExportButton({ data, runs, filters }: ExportButtonProps) {
       r.scenariosRun.join(";"),
     ]);
 
-    const csv = [
-      headers.join(","),
-      ...rows.map((r) => r.map((v) => `"${v}"`).join(",")),
-    ].join("\n");
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v}"`).join(","))].join(
+      "\n",
+    );
 
     downloadFile(csv, `benchmark-runs-${Date.now()}.csv`, "text/csv");
   };

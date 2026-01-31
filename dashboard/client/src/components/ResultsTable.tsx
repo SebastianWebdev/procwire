@@ -3,15 +3,7 @@
  */
 
 import { useState, useMemo } from "react";
-import {
-  Table,
-  Badge,
-  Group,
-  TextInput,
-  Select,
-  Stack,
-  ScrollArea,
-} from "@mantine/core";
+import { Table, Badge, Group, TextInput, Select, Stack, ScrollArea } from "@mantine/core";
 import { IconSearch } from "@tabler/icons-react";
 import type { ScenarioResult, PerformanceTarget } from "../api/types";
 import PassFailBadge from "./PassFailBadge";
@@ -50,7 +42,7 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
         (r) =>
           r.scenarioId.toLowerCase().includes(lower) ||
           r.codec.toLowerCase().includes(lower) ||
-          r.size.toLowerCase().includes(lower)
+          r.size.toLowerCase().includes(lower),
       );
     }
 
@@ -134,38 +126,20 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
         <Table striped highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th
-                style={{ cursor: "pointer" }}
-                onClick={() => handleSort("size")}
-              >
+              <Table.Th style={{ cursor: "pointer" }} onClick={() => handleSort("size")}>
                 Size {sortField === "size" && (sortOrder === "asc" ? "↑" : "↓")}
               </Table.Th>
-              <Table.Th
-                style={{ cursor: "pointer" }}
-                onClick={() => handleSort("codec")}
-              >
-                Codec{" "}
-                {sortField === "codec" && (sortOrder === "asc" ? "↑" : "↓")}
+              <Table.Th style={{ cursor: "pointer" }} onClick={() => handleSort("codec")}>
+                Codec {sortField === "codec" && (sortOrder === "asc" ? "↑" : "↓")}
               </Table.Th>
-              <Table.Th
-                style={{ cursor: "pointer" }}
-                onClick={() => handleSort("mode")}
-              >
+              <Table.Th style={{ cursor: "pointer" }} onClick={() => handleSort("mode")}>
                 Mode {sortField === "mode" && (sortOrder === "asc" ? "↑" : "↓")}
               </Table.Th>
-              <Table.Th
-                style={{ cursor: "pointer" }}
-                onClick={() => handleSort("throughput")}
-              >
-                Throughput{" "}
-                {sortField === "throughput" && (sortOrder === "asc" ? "↑" : "↓")}
+              <Table.Th style={{ cursor: "pointer" }} onClick={() => handleSort("throughput")}>
+                Throughput {sortField === "throughput" && (sortOrder === "asc" ? "↑" : "↓")}
               </Table.Th>
-              <Table.Th
-                style={{ cursor: "pointer" }}
-                onClick={() => handleSort("latency")}
-              >
-                Latency P99{" "}
-                {sortField === "latency" && (sortOrder === "asc" ? "↑" : "↓")}
+              <Table.Th style={{ cursor: "pointer" }} onClick={() => handleSort("latency")}>
+                Latency P99 {sortField === "latency" && (sortOrder === "asc" ? "↑" : "↓")}
               </Table.Th>
               <Table.Th>Requests</Table.Th>
               <Table.Th>Status</Table.Th>
@@ -189,15 +163,9 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
                       {result.mode}
                     </Badge>
                   </Table.Td>
-                  <Table.Td ff="monospace">
-                    {formatThroughput(result.throughputMBps)}
-                  </Table.Td>
-                  <Table.Td ff="monospace">
-                    {result.latency.p99.toFixed(0)} us
-                  </Table.Td>
-                  <Table.Td ff="monospace">
-                    {result.requestCount.toLocaleString()}
-                  </Table.Td>
+                  <Table.Td ff="monospace">{formatThroughput(result.throughputMBps)}</Table.Td>
+                  <Table.Td ff="monospace">{result.latency.p99.toFixed(0)} us</Table.Td>
+                  <Table.Td ff="monospace">{result.requestCount.toLocaleString()}</Table.Td>
                   <Table.Td>
                     <PassFailBadge target={target} result={result} />
                   </Table.Td>

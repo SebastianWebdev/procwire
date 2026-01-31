@@ -130,7 +130,7 @@ export async function registerWebSocket(fastify: FastifyInstance): Promise<void>
         type: "connected",
         timestamp: new Date().toISOString(),
         message: "Connected to Procwire Benchmark Dashboard",
-      })
+      }),
     );
   });
 }

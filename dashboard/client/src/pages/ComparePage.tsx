@@ -3,17 +3,7 @@
  */
 
 import { useState, useEffect } from "react";
-import {
-  Container,
-  Stack,
-  Title,
-  Paper,
-  Group,
-  Text,
-  Skeleton,
-  Alert,
-  Tabs,
-} from "@mantine/core";
+import { Container, Stack, Title, Paper, Group, Text, Skeleton, Alert, Tabs } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useSearchParams } from "react-router-dom";
 import RunSelector from "../components/RunSelector";
@@ -25,14 +15,10 @@ import { useRuns, useCompare } from "../hooks/useApi";
 function ComparePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [baselineId, setBaselineId] = useState<number | null>(
-    searchParams.get("baseline")
-      ? parseInt(searchParams.get("baseline")!, 10)
-      : null
+    searchParams.get("baseline") ? parseInt(searchParams.get("baseline")!, 10) : null,
   );
   const [compareId, setCompareId] = useState<number | null>(
-    searchParams.get("compare")
-      ? parseInt(searchParams.get("compare")!, 10)
-      : null
+    searchParams.get("compare") ? parseInt(searchParams.get("compare")!, 10) : null,
   );
 
   const { data: runsData, isLoading: runsLoading } = useRuns();
@@ -60,8 +46,7 @@ function ComparePage() {
     }
   }, [baselineId, runsData]);
 
-  const completedRuns =
-    runsData?.runs.filter((r) => r.status === "completed") || [];
+  const completedRuns = runsData?.runs.filter((r) => r.status === "completed") || [];
 
   return (
     <Container size="xl">
@@ -101,11 +86,7 @@ function ComparePage() {
 
         {/* Error State */}
         {compareError && (
-          <Alert
-            icon={<IconAlertCircle size={16} />}
-            color="red"
-            title="Error"
-          >
+          <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
             {compareError instanceof Error
               ? compareError.message
               : "Failed to load comparison data"}

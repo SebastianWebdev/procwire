@@ -12,10 +12,7 @@ interface DeltaCellProps {
   unit?: string;
 }
 
-function DeltaCell({
-  percent,
-  higherIsBetter,
-}: DeltaCellProps) {
+function DeltaCell({ percent, higherIsBetter }: DeltaCellProps) {
   // Determine if this is an improvement
   const isImprovement = higherIsBetter ? percent > 0 : percent < 0;
   const isRegression = higherIsBetter ? percent < -10 : percent > 10;

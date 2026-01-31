@@ -3,15 +3,7 @@
  */
 
 import { useState, useMemo } from "react";
-import {
-  Container,
-  Stack,
-  Title,
-  Paper,
-  Grid,
-  Group,
-  Tabs,
-} from "@mantine/core";
+import { Container, Stack, Title, Paper, Grid, Group, Tabs } from "@mantine/core";
 import FilterPanel from "../components/FilterPanel";
 import MetricSelector from "../components/MetricSelector";
 import TrendChart from "../components/TrendChart";
@@ -48,7 +40,7 @@ function TrendsPage() {
       mode: filters.mode as ResponseMode,
       days: filters.days,
     }),
-    [metric, filters]
+    [metric, filters],
   );
 
   const { data: trendsData, isLoading: trendsLoading } = useTrends(trendsParams);
@@ -62,11 +54,7 @@ function TrendsPage() {
       <Stack gap="lg">
         <Group justify="space-between">
           <Title order={2}>Performance Trends</Title>
-          <ExportButton
-            data={trendsData?.dataPoints}
-            runs={runsData?.runs}
-            filters={filters}
-          />
+          <ExportButton data={trendsData?.dataPoints} runs={runsData?.runs} filters={filters} />
         </Group>
 
         {/* Filters */}

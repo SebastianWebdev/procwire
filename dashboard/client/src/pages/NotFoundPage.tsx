@@ -14,10 +14,7 @@ function NotFoundPage() {
           </Title>
           <Title order={2}>Page Not Found</Title>
           <Text c="dimmed">The page you're looking for doesn't exist.</Text>
-          <Button
-            leftSection={<IconArrowLeft size={16} />}
-            onClick={() => navigate("/run")}
-          >
+          <Button leftSection={<IconArrowLeft size={16} />} onClick={() => navigate("/run")}>
             Go to Run Page
           </Button>
         </Stack>

@@ -37,15 +37,11 @@ function TrendChart({ data, loading, metric }: TrendChartProps) {
   const formatValue = (value: number) => {
     switch (metric) {
       case "throughput":
-        return value >= 1000
-          ? `${(value / 1000).toFixed(1)} GB/s`
-          : `${value.toFixed(0)} MB/s`;
+        return value >= 1000 ? `${(value / 1000).toFixed(1)} GB/s` : `${value.toFixed(0)} MB/s`;
       case "latency_p99":
         return `${value.toFixed(0)} us`;
       case "rps":
-        return value >= 1000
-          ? `${(value / 1000).toFixed(1)}k`
-          : `${value.toFixed(0)}`;
+        return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${value.toFixed(0)}`;
       default:
         return String(value);
     }
@@ -168,13 +164,7 @@ function TrendChart({ data, loading, metric }: TrendChartProps) {
     ],
   };
 
-  return (
-    <ReactECharts
-      option={option}
-      style={{ height: "400px" }}
-      opts={{ renderer: "svg" }}
-    />
-  );
+  return <ReactECharts option={option} style={{ height: "400px" }} opts={{ renderer: "svg" }} />;
 }
 
 export default TrendChart;

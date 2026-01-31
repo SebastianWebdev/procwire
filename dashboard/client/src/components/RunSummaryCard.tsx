@@ -31,12 +31,7 @@ interface RunSummaryCardProps {
   duration: number | null;
 }
 
-function RunSummaryCard({
-  runId,
-  summary,
-  status,
-  duration,
-}: RunSummaryCardProps) {
+function RunSummaryCard({ runId, summary, status, duration }: RunSummaryCardProps) {
   const navigate = useNavigate();
   const isSuccess = status === "completed" && summary.passed;
 
@@ -46,18 +41,11 @@ function RunSummaryCard({
         {/* Header */}
         <Group justify="space-between">
           <Group gap="sm">
-            <ThemeIcon
-              size="xl"
-              radius="xl"
-              color={isSuccess ? "green" : "red"}
-              variant="light"
-            >
+            <ThemeIcon size="xl" radius="xl" color={isSuccess ? "green" : "red"} variant="light">
               {isSuccess ? <IconCheck size={24} /> : <IconX size={24} />}
             </ThemeIcon>
             <div>
-              <Title order={3}>
-                Benchmark {isSuccess ? "Completed" : "Failed"}
-              </Title>
+              <Title order={3}>Benchmark {isSuccess ? "Completed" : "Failed"}</Title>
               {duration && (
                 <Text size="sm" c="dimmed">
                   Duration: {formatDuration(duration)}

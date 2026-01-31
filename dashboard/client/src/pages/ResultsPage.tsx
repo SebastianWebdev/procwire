@@ -22,12 +22,7 @@ import SummaryCards from "../components/SummaryCards";
 import ThroughputChart from "../components/ThroughputChart";
 import LatencyChart from "../components/LatencyChart";
 import ResultsTable from "../components/ResultsTable";
-import {
-  useRuns,
-  useRun,
-  useRunResults,
-  useSetBaseline,
-} from "../hooks/useApi";
+import { useRuns, useRun, useRunResults, useSetBaseline } from "../hooks/useApi";
 
 function ResultsPage() {
   const { id } = useParams();
@@ -36,8 +31,7 @@ function ResultsPage() {
 
   const { data: runsData, isLoading: runsLoading } = useRuns();
   const { data: runDetail, isLoading: runLoading } = useRun(selectedId);
-  const { data: resultsData, isLoading: resultsLoading } =
-    useRunResults(selectedId);
+  const { data: resultsData, isLoading: resultsLoading } = useRunResults(selectedId);
   const setBaseline = useSetBaseline();
 
   const handleSelectRun = (runId: number) => {
@@ -117,11 +111,7 @@ function ResultsPage() {
                   variant={runDetail.isBaseline ? "filled" : "light"}
                   color="yellow"
                   leftSection={
-                    runDetail.isBaseline ? (
-                      <IconStarFilled size={16} />
-                    ) : (
-                      <IconStar size={16} />
-                    )
+                    runDetail.isBaseline ? <IconStarFilled size={16} /> : <IconStar size={16} />
                   }
                   onClick={handleToggleBaseline}
                   loading={setBaseline.isPending}

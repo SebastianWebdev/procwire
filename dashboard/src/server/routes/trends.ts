@@ -10,13 +10,7 @@ export async function trendsRoutes(fastify: FastifyInstance): Promise<void> {
     Querystring: TrendsQuery;
     Reply: TrendsResponse | ErrorResponse;
   }>("/api/trends", async (request, reply) => {
-    const {
-      metric,
-      size,
-      codec = "raw",
-      mode = "result",
-      days = 30,
-    } = request.query;
+    const { metric, size, codec = "raw", mode = "result", days = 30 } = request.query;
 
     if (!metric || !size) {
       return reply.code(400).send({

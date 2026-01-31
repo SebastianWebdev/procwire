@@ -73,14 +73,11 @@ export async function compareRoutes(fastify: FastifyInstance): Promise<void> {
 
       if (baselineData && compareData) {
         const throughputDiff = compareData.throughputMBps - baselineData.throughputMBps;
-        const throughputPercent =
-          (throughputDiff / baselineData.throughputMBps) * 100;
+        const throughputPercent = (throughputDiff / baselineData.throughputMBps) * 100;
 
         const latencyDiff = compareData.latencyP99 - baselineData.latencyP99;
         const latencyPercent =
-          baselineData.latencyP99 > 0
-            ? (latencyDiff / baselineData.latencyP99) * 100
-            : 0;
+          baselineData.latencyP99 > 0 ? (latencyDiff / baselineData.latencyP99) * 100 : 0;
 
         // Regression: throughput dropped by more than threshold
         const isRegression = throughputPercent < -REGRESSION_THRESHOLD;
@@ -108,7 +105,7 @@ export async function compareRoutes(fastify: FastifyInstance): Promise<void> {
     // Calculate summary
     const withBothResults = comparisons.filter((c) => c.baseline && c.compare);
     const improvements = withBothResults.filter(
-      (c) => c.delta.throughputPercent > REGRESSION_THRESHOLD
+      (c) => c.delta.throughputPercent > REGRESSION_THRESHOLD,
     ).length;
     const regressions = withBothResults.filter((c) => c.delta.isRegression).length;
     const unchanged = withBothResults.length - improvements - regressions;
@@ -123,10 +120,7 @@ export async function compareRoutes(fastify: FastifyInstance): Promise<void> {
     const baselineParsed = fastify.db.parseDbRun(baselineRun);
     const compareParsed = fastify.db.parseDbRun(compareRun);
 
-    const toSummary = (
-      run: typeof baselineRun,
-      parsed: typeof baselineParsed
-    ): RunSummary => ({
+    const toSummary = (run: typeof baselineRun, parsed: typeof baselineParsed): RunSummary => ({
       id: run.id,
       runId: run.run_id,
       startedAt: run.started_at,

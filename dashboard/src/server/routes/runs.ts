@@ -24,7 +24,7 @@ import os from "os";
  */
 function toRunSummary(
   run: import("../../db/types.js").DbRun,
-  parsed: ReturnType<import("../../db/service.js").BenchmarkDbService["parseDbRun"]>
+  parsed: ReturnType<import("../../db/service.js").BenchmarkDbService["parseDbRun"]>,
 ): RunSummary {
   return {
     id: run.id,
@@ -54,7 +54,7 @@ function collectSystemMeta(): SystemMeta {
     hostname: os.hostname(),
     cpuModel: cpus[0]?.model ?? "Unknown",
     cpuCores: cpus.length,
-    totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024) * 10) / 10,
+    totalMemoryGB: Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10,
   };
 }
 

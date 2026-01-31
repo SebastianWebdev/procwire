@@ -30,9 +30,7 @@ function ThroughputChart({ results }: ThroughputChartProps) {
     name: codec,
     type: "bar" as const,
     data: SIZES.map((size) => {
-      const result = filteredResults.find(
-        (r) => r.codec === codec && r.size === size
-      );
+      const result = filteredResults.find((r) => r.codec === codec && r.size === size);
       return result?.throughputMBps ?? 0;
     }),
     itemStyle: {
@@ -54,8 +52,7 @@ function ThroughputChart({ results }: ThroughputChartProps) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lines = params.map(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (p: any) =>
-            `${p.marker} ${p.seriesName}: <strong>${formatThroughput(p.value)}</strong>`
+          (p: any) => `${p.marker} ${p.seriesName}: <strong>${formatThroughput(p.value)}</strong>`,
         );
         return `${params[0].name}<br/>${lines.join("<br/>")}`;
       },
@@ -91,13 +88,7 @@ function ThroughputChart({ results }: ThroughputChartProps) {
     series,
   };
 
-  return (
-    <ReactECharts
-      option={option}
-      style={{ height: "400px" }}
-      opts={{ renderer: "svg" }}
-    />
-  );
+  return <ReactECharts option={option} style={{ height: "400px" }} opts={{ renderer: "svg" }} />;
 }
 
 function formatThroughput(mbps: number): string {

@@ -14,10 +14,7 @@ interface RegressionSummary {
   criticalCount: number;
 }
 
-export function useRegressionAlerts(
-  message: WsMessage | null,
-  enabled: boolean = true
-) {
+export function useRegressionAlerts(message: WsMessage | null, enabled: boolean = true) {
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,9 +23,7 @@ export function useRegressionAlerts(
     // Only handle run:complete with regression data
     if (message.type !== "run:complete") return;
 
-    const regressionSummary = message.regressionSummary as
-      | RegressionSummary
-      | undefined;
+    const regressionSummary = message.regressionSummary as RegressionSummary | undefined;
     if (!regressionSummary) {
       // No regression data - just show success
       notifications.show({
@@ -41,12 +36,8 @@ export function useRegressionAlerts(
       return;
     }
 
-    const {
-      hasRegressions,
-      hasCriticalRegressions,
-      regressionCount,
-      criticalCount,
-    } = regressionSummary;
+    const { hasRegressions, hasCriticalRegressions, regressionCount, criticalCount } =
+      regressionSummary;
 
     if (hasCriticalRegressions) {
       notifications.show({

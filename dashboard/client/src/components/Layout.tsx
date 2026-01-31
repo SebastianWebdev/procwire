@@ -8,11 +8,7 @@ function Layout() {
   const theme = useMantineTheme();
 
   return (
-    <AppShell
-      header={{ height: 60 }}
-      navbar={{ width: 220, breakpoint: "sm" }}
-      padding="md"
-    >
+    <AppShell header={{ height: 60 }} navbar={{ width: 220, breakpoint: "sm" }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Group>

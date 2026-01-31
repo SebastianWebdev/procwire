@@ -45,9 +45,7 @@ function CompareTable({ comparisons }: CompareTableProps) {
             <Table.Tr
               key={i}
               style={{
-                backgroundColor: row.delta.isRegression
-                  ? "rgba(250, 82, 82, 0.1)"
-                  : undefined,
+                backgroundColor: row.delta.isRegression ? "rgba(250, 82, 82, 0.1)" : undefined,
               }}
             >
               <Table.Td>
@@ -64,14 +62,10 @@ function CompareTable({ comparisons }: CompareTableProps) {
                 </Badge>
               </Table.Td>
               <Table.Td ff="monospace">
-                {row.baseline
-                  ? formatThroughput(row.baseline.throughputMBps)
-                  : "-"}
+                {row.baseline ? formatThroughput(row.baseline.throughputMBps) : "-"}
               </Table.Td>
               <Table.Td ff="monospace">
-                {row.compare
-                  ? formatThroughput(row.compare.throughputMBps)
-                  : "-"}
+                {row.compare ? formatThroughput(row.compare.throughputMBps) : "-"}
               </Table.Td>
               <Table.Td>
                 <DeltaCell
