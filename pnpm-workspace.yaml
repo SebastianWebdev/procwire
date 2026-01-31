@@ -1,8 +1,13 @@
 packages:
-  - "packages/transport"
-  - "packages/protocol"
-  - "packages/codecs"
-  - "packages/core"
-  - "packages/client"
-  - "packages/bench"
-  - "astro-docs"
+  - packages/transport
+  - packages/protocol
+  - packages/codecs
+  - packages/core
+  - packages/client
+  - packages/bench
+  - astro-docs
+  - dashboard
+  - dashboard/client
+
+onlyBuiltDependencies:
+  - better-sqlite3
