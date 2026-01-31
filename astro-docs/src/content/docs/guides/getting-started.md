@@ -19,10 +19,13 @@ Procwire v2.0 is under active development with significant API changes:
 
 ```bash
 # Core packages (when v2.0 is released)
-pnpm add @procwire/manager @procwire/client
+pnpm add @procwire/core @procwire/client
 
-# Optional codecs
+# Optional: codecs are included, but can install separately
 pnpm add @procwire/codecs
+
+# Low-level protocol (usually not needed directly)
+pnpm add @procwire/protocol
 ```
 
 ## Quick Start
