@@ -3,9 +3,17 @@
  *
  * TASK-16: Refactored to test all codec × response mode combinations
  * with scaled iterations per payload size.
+ *
+ * TASK-17: Added pipelined scenarios (max-rps, pipelined-throughput).
  */
 
-import type { BenchmarkScenario, PayloadSize, CodecType, ResponseMode } from "./types.js";
+import type {
+  BenchmarkScenario,
+  PayloadSize,
+  CodecType,
+  ResponseMode,
+  TestCategory,
+} from "./types.js";
 
 /**
  * Iteration counts scaled by payload size.
@@ -42,6 +50,8 @@ export const ALL_MODES: ResponseMode[] = ["result", "stream", "ack"];
  * - full-matrix: All 9 codec×mode combinations across all sizes
  * - throughput-max: Maximum throughput test with raw codec
  * - latency-baseline: High-iteration latency measurement
+ * - max-rps: Maximum requests per second with pipelining (TASK-17)
+ * - pipelined-throughput: Sustained throughput with pipelining (TASK-17)
  */
 export const DEFAULT_SCENARIOS: BenchmarkScenario[] = [
   // Full matrix: 3 codecs × 3 response modes = 9 combinations
@@ -55,6 +65,7 @@ export const DEFAULT_SCENARIOS: BenchmarkScenario[] = [
     modes: ALL_MODES,
     iterations: 100, // Base iterations, will be scaled by size
     warmup: 10,
+    category: "benchmark",
   },
 
   // Maximum throughput with raw codec (no serialization overhead)
@@ -67,6 +78,7 @@ export const DEFAULT_SCENARIOS: BenchmarkScenario[] = [
     modes: ["result"],
     iterations: 10,
     warmup: 3,
+    category: "benchmark",
   },
 
   // High-iteration latency baseline for accurate percentiles
@@ -79,6 +91,39 @@ export const DEFAULT_SCENARIOS: BenchmarkScenario[] = [
     modes: ["result"],
     iterations: 10000,
     warmup: 1000,
+    category: "benchmark",
+  },
+
+  // TASK-17: Maximum requests per second with pipelining
+  {
+    id: "max-rps",
+    name: "Maximum Requests Per Second",
+    description:
+      "Measures peak req/s with concurrent pipelining. Uses fire-and-forget (ack) mode for maximum speed.",
+    sizes: ["1KB", "10KB"],
+    codecs: ["raw", "msgpack"],
+    modes: ["ack"],
+    iterations: 50000,
+    warmup: 5000,
+    concurrency: 32, // Default concurrency for this scenario
+    measureMode: "requests",
+    category: "benchmark",
+  },
+
+  // TASK-17: Sustained pipelined throughput for large payloads
+  {
+    id: "pipelined-throughput",
+    name: "Pipelined Sustained Throughput",
+    description:
+      "Measures sustained throughput with pipelining on large payloads. Lower concurrency to avoid memory pressure.",
+    sizes: ["1MB", "10MB", "100MB"],
+    codecs: ["raw"],
+    modes: ["result"],
+    iterations: 100,
+    warmup: 10,
+    concurrency: 4, // Lower for large payloads
+    measureMode: "throughput",
+    category: "benchmark",
   },
 ];
 
@@ -122,6 +167,10 @@ export interface GetScenariosOptions {
   responseMode?: ResponseMode | undefined;
   /** Filter by sizes */
   sizes?: PayloadSize[] | undefined;
+  /** Filter by test category */
+  category?: TestCategory | undefined;
+  /** Override concurrency for all scenarios */
+  concurrency?: number | undefined;
 }
 
 /**
@@ -176,6 +225,20 @@ export function getScenarios(
         sizes: s.sizes.filter((size) => options.sizes!.includes(size)),
       }))
       .filter((s) => s.sizes.length > 0);
+  }
+
+  // Apply category filter
+  if (options.category) {
+    scenarios = scenarios.filter((s) => (s.category ?? "benchmark") === options.category);
+  }
+
+  // Override concurrency if specified
+  if (options.concurrency !== undefined) {
+    const concurrencyValue = options.concurrency;
+    scenarios = scenarios.map((s) => ({
+      ...s,
+      concurrency: concurrencyValue,
+    }));
   }
 
   return scenarios;

@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "deny": ["Bash(git push:*)"],
     "allow": [
       "Bash(pnpm build:*)",
       "Bash(pnpm install:*)",
@@ -29,7 +28,19 @@
       "Bash(pnpm vitest run:*)",
       "Bash(pnpm clean:*)",
       "Bash(npx eslint:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(pnpm exec vitest:*)",
+      "Bash(pnpm bench:quick:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout 30 pnpm tsx:*)",
+      "Bash(timeout 60 pnpm tsx:*)",
+      "Bash(git log:*)",
+      "Bash(pnpm start:*)",
+      "Bash(pnpm bench:*)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\Sebastian\\\\Projects\\\\Professional\\\\ipc-bridge-core\\\\docs\\\\next\\\\tasks\\\\todo\\\\TASK-16-benchmark-improvements.md\")"
+    ],
+    "deny": [
+      "Bash(git push:*)"
     ]
   }
 }

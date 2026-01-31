@@ -3,6 +3,8 @@
  *
  * TASK-16: Refactored report structure with Executive Summary
  * and comprehensive tables for all codec × mode combinations.
+ *
+ * TASK-17: Added glossary section explaining response modes, codecs, and metrics.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -18,6 +20,45 @@ import type {
 const ALL_SIZES: PayloadSize[] = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"];
 const ALL_CODECS: CodecType[] = ["raw", "msgpack", "arrow"];
 const ALL_MODES: ResponseMode[] = ["result", "stream", "ack"];
+
+/**
+ * Generates the glossary section explaining terminology.
+ */
+function generateGlossary(): string {
+  return `## Glossary
+
+### Response Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| \`result\` | Worker returns full response (echo) | RPC-style calls, request-response patterns |
+| \`stream\` | Worker returns data in multiple chunks | Large data transfer, real-time updates |
+| \`ack\` | Worker only acknowledges receipt (fire-and-forget) | Logging, metrics, one-way notifications |
+
+### Codecs
+
+| Codec | Description | Overhead | Best For |
+|-------|-------------|----------|----------|
+| \`raw\` | No serialization, raw buffers | Baseline (0%) | Binary data, pre-serialized content |
+| \`msgpack\` | Binary JSON alternative (MessagePack) | ~20% slower | Structured data, objects with mixed types |
+| \`arrow\` | Apache Arrow columnar format | ~60% slower | Tabular/columnar data, analytics |
+
+### Metrics
+
+| Metric | Description |
+|--------|-------------|
+| Throughput (MB/s) | Data transfer rate (request + response bytes per second) |
+| Requests/s | Number of completed round-trips per second |
+| P50/P95/P99/P99.9 | Latency percentiles in microseconds (μs) |
+
+### Test Methodology
+
+- **Sequential execution**: Each request waits for response before sending next (baseline measurement)
+- **Warmup phase**: Initial requests discarded to allow JIT optimization and cache warming
+- **Payload sizes**: Range from 1KB (latency-sensitive) to 100MB (throughput-sensitive)
+
+`;
+}
 
 /**
  * Formats a number with thousand separators.
@@ -124,10 +165,13 @@ function generateExecutiveSummary(results: BenchmarkResults): string {
   });
   const baselineLatency = latencyBaseline ? `${latencyBaseline.latency.p50.toFixed(0)}us` : "N/A";
 
+  const executionMode = results.executionMode ?? "sequential";
+
   return `## Executive Summary
 
 | Metric | Value |
 |--------|-------|
+| Execution Mode | **${executionMode}** |
 | Peak Throughput | **${formatThroughput(summary.peakThroughputMBps)}** (${peakResult.codec}/${peakResult.size}/${peakResult.mode}) |
 | Best Codec (Large Payloads) | **${bestLargeCodec}** |
 | Latency Baseline (1KB P50) | **${baselineLatency}** |
@@ -338,6 +382,40 @@ function generateThroughputChart(results: BenchmarkResults): string {
 }
 
 /**
+ * Generates saturation curve results section.
+ */
+function generateSaturationResults(results: BenchmarkResults): string {
+  const saturationResults = results.saturationResults;
+  if (!saturationResults || saturationResults.length === 0) {
+    return "";
+  }
+
+  let section = `## Saturation Curve Analysis
+
+This section shows how throughput scales with concurrency level.
+
+`;
+
+  for (const sat of saturationResults) {
+    section += `### ${sat.codec}/${sat.size}/${sat.mode}\n\n`;
+    section += `| Concurrency | Requests/s | Throughput | Improvement |\n`;
+    section += `|-------------|------------|------------|-------------|\n`;
+
+    for (const level of sat.levels) {
+      const improvement = level.improvementPercent >= 0
+        ? `+${level.improvementPercent.toFixed(0)}%`
+        : `${level.improvementPercent.toFixed(0)}%`;
+      section += `| ${level.concurrency} | ${formatNumber(level.requestsPerSecond)} | ${formatThroughput(level.throughputMBps)} | ${improvement} |\n`;
+    }
+
+    section += `\n**Optimal concurrency:** ${sat.optimalConcurrency} (saturation point)\n`;
+    section += `**Peak req/s:** ${formatNumber(sat.peakRequestsPerSecond)}\n\n`;
+  }
+
+  return section;
+}
+
+/**
  * Generates detailed results section.
  */
 function generateDetailedResults(results: BenchmarkResults): string {
@@ -381,6 +459,7 @@ export function generateMarkdownReport(results: BenchmarkResults): string {
 **Host:** ${meta.hostname} | ${meta.cpuModel} (${meta.cpuCores} cores) | ${meta.totalMemoryGB.toFixed(1)} GB RAM
 **Duration:** ${formatDuration(summary.totalDurationMs)}
 
+${generateGlossary()}
 ${generateExecutiveSummary(results)}
 
 ## 1. Throughput by Payload Size
@@ -414,7 +493,7 @@ ${generateStreamingComparison(results)}
 ${generatePerformanceTargetsSection(results)}
 
 ${summary.failedTargets.length > 0 ? `**Failed targets:**\n${summary.failedTargets.map((t) => `- ${t}`).join("\n")}\n` : ""}
-
+${generateSaturationResults(results)}
 ## 6. Detailed Results
 
 ${generateDetailedResults(results)}

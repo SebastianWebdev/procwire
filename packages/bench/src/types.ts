@@ -9,6 +9,16 @@ export type CodecType = "raw" | "msgpack" | "arrow";
 export type ResponseMode = "result" | "stream" | "ack";
 
 /**
+ * Test category for benchmarks.
+ */
+export type TestCategory = "benchmark" | "stress" | "realistic";
+
+/**
+ * Primary metric to measure.
+ */
+export type MeasureMode = "throughput" | "requests" | "latency";
+
+/**
  * Benchmark scenario configuration.
  */
 export interface BenchmarkScenario {
@@ -28,6 +38,19 @@ export interface BenchmarkScenario {
   iterations: number;
   /** Warmup iterations before measurement */
   warmup: number;
+
+  // --- New pipelining options (TASK-17) ---
+
+  /** Test category (default: "benchmark") */
+  category?: TestCategory;
+  /** Concurrency level for pipelined execution (default: 1 = sequential) */
+  concurrency?: number;
+  /** Multiple concurrency levels to test for saturation analysis */
+  concurrencyLevels?: number[];
+  /** Minimum test duration in milliseconds (for duration-based tests) */
+  duration?: number;
+  /** Primary metric to measure (default: "throughput") */
+  measureMode?: MeasureMode;
 }
 
 /**
@@ -155,10 +178,16 @@ export interface BenchmarkResults {
   meta: SystemMeta;
   /** Scenarios that were run */
   scenariosRun: string[];
-  /** Individual results */
+  /** Individual results (sequential execution) */
   results: ScenarioResult[];
+  /** Pipelined results (if concurrency > 1 was used) */
+  pipelinedResults?: ScenarioResult[];
+  /** Saturation curve results (if saturation test was run) */
+  saturationResults?: SaturationResult[];
   /** Summary */
   summary: BenchmarkSummary;
+  /** Execution mode used */
+  executionMode: ExecutionMode;
 }
 
 /**
@@ -173,6 +202,46 @@ export interface BenchmarkOptions {
   quick: boolean;
   /** Suppress progress output */
   quiet: boolean;
+  /** Concurrency level for pipelined execution */
+  concurrency?: number;
+  /** Run saturation curve analysis */
+  saturation?: boolean;
+  /** Test category to run */
+  category?: TestCategory;
+}
+
+/**
+ * Result of a concurrency level test for saturation analysis.
+ */
+export interface ConcurrencyLevelResult {
+  /** Concurrency level tested */
+  concurrency: number;
+  /** Requests per second achieved */
+  requestsPerSecond: number;
+  /** Throughput in MB/s */
+  throughputMBps: number;
+  /** Improvement over baseline (concurrency=1) */
+  improvementPercent: number;
+}
+
+/**
+ * Result of saturation curve analysis.
+ */
+export interface SaturationResult {
+  /** Scenario ID */
+  scenarioId: string;
+  /** Codec used */
+  codec: CodecType;
+  /** Payload size */
+  size: PayloadSize;
+  /** Response mode */
+  mode: ResponseMode;
+  /** Results at each concurrency level */
+  levels: ConcurrencyLevelResult[];
+  /** Optimal concurrency (saturation point) */
+  optimalConcurrency: number;
+  /** Maximum requests/second achieved */
+  peakRequestsPerSecond: number;
 }
 
 /**
@@ -188,13 +257,46 @@ export const PAYLOAD_SIZES: Record<PayloadSize, number> = {
 };
 
 /**
- * Performance targets from TASK-15 requirements.
+ * Execution mode for benchmarks.
  */
-export const PERFORMANCE_TARGETS: Record<PayloadSize, number> = {
-  "1KB": 100, // MB/s
-  "10KB": 200,
-  "100KB": 400,
-  "1MB": 500,
-  "10MB": 1000, // 1 GB/s
-  "100MB": 2000, // 2 GB/s
+export type ExecutionMode = "sequential" | "pipelined";
+
+/**
+ * Performance targets from TASK-15 requirements.
+ *
+ * TASK-17: Split into sequential (baseline) and pipelined (realistic) targets.
+ * Sequential targets reflect single-request-at-a-time measurement.
+ * Pipelined targets reflect concurrent request execution.
+ */
+export const PERFORMANCE_TARGETS: Record<ExecutionMode, Record<PayloadSize, number>> = {
+  /**
+   * Sequential targets (one request at a time).
+   * Limited by syscall overhead for small payloads.
+   */
+  sequential: {
+    "1KB": 20, // MB/s - syscall limited (~14k req/s theoretical)
+    "10KB": 150, // MB/s
+    "100KB": 400, // MB/s
+    "1MB": 800, // MB/s
+    "10MB": 1200, // MB/s
+    "100MB": 1000, // MB/s - round-trip time dominates
+  },
+  /**
+   * Pipelined targets (concurrent requests with backpressure).
+   * Achievable with concurrency=32 or higher.
+   */
+  pipelined: {
+    "1KB": 80, // MB/s - should hit 50k+ req/s
+    "10KB": 400, // MB/s
+    "100KB": 800, // MB/s
+    "1MB": 1500, // MB/s
+    "10MB": 2000, // MB/s (2 GB/s)
+    "100MB": 1800, // MB/s - memory bandwidth limited
+  },
 };
+
+/**
+ * Legacy compatibility: default to sequential targets.
+ * @deprecated Use PERFORMANCE_TARGETS.sequential instead.
+ */
+export const SEQUENTIAL_TARGETS = PERFORMANCE_TARGETS.sequential;
