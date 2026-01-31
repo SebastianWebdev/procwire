@@ -17,7 +17,6 @@
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import type { ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import {
   FrameBuffer,
   type Frame,
@@ -25,6 +24,7 @@ import {
   Flags,
   HEADER_SIZE,
   encodeHeaderInto,
+  DrainWaiter,
 } from "@procwire/protocol";
 import { codecDeserialize, msgpackCodec, type Codec } from "@procwire/codecs";
 import type {
@@ -97,16 +97,9 @@ export class Module extends EventEmitter {
   private _pendingRequests = new Map<number, PendingRequest>();
   private _pendingStreams = new Map<number, PendingStream>();
 
-  // OPT-02: Header ring buffer for allocation-free sends
-  // Size 16 covers worst-case backpressure scenarios (see ROADMAP.md)
-  private static readonly HEADER_POOL_SIZE = 16;
-  private readonly _headerPool = Array.from({ length: Module.HEADER_POOL_SIZE }, () =>
-    Buffer.allocUnsafe(HEADER_SIZE),
-  );
-  private _headerPoolIndex = 0;
-
   // OPT-04: Backpressure tracking
   private _draining = false;
+  private _drainWaiter: DrainWaiter | null = null;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -250,6 +243,7 @@ export class Module extends EventEmitter {
    */
   _attachDataChannel(socket: Socket): void {
     this._socket = socket;
+    this._drainWaiter = new DrainWaiter(socket);
     this._frameBuffer = new FrameBuffer(
       this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
     );
@@ -306,6 +300,8 @@ export class Module extends EventEmitter {
 
     // Reset backpressure state
     this._draining = false;
+    this._drainWaiter?.clear();
+    this._drainWaiter = null;
   }
 
   /**
@@ -402,11 +398,9 @@ export class Module extends EventEmitter {
       );
     }
 
-    // Send frame (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
-
-    // Wait for response
-    return new Promise<TResponse>((resolve, reject) => {
+    // Wait for response - MUST register BEFORE sending to avoid race condition
+    // where response arrives before we're listening for it
+    const responsePromise = new Promise<TResponse>((resolve, reject) => {
       const timeout = schemaMethod.timeout ?? methodConfig.timeout;
       const timer = timeout
         ? setTimeout(() => {
@@ -423,6 +417,11 @@ export class Module extends EventEmitter {
         expectedResponse: schemaMethod.response as "ack" | "result",
       });
     });
+
+    // Send frame AFTER registering pending request (with backpressure support)
+    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
+
+    return responsePromise;
   }
 
   /**
@@ -585,11 +584,15 @@ export class Module extends EventEmitter {
       this._handleEvent(frame);
       return;
     }
+
   }
 
   private _handleResponse(frame: Frame): void {
     const pending = this._pendingRequests.get(frame.header.requestId);
-    if (!pending) return;
+    if (!pending) {
+      // Response arrived for unknown request - likely a race condition or duplicate
+      return;
+    }
 
     const isAckFrame = hasFlag(frame.header.flags, Flags.IS_ACK);
 
@@ -645,17 +648,6 @@ export class Module extends EventEmitter {
   }
 
   /**
-   * Acquire next header buffer from ring pool.
-   * Safe under backpressure because by the time we cycle through
-   * 16 buffers, earlier ones are guaranteed to be flushed.
-   */
-  private _acquireHeaderBuffer(): Buffer {
-    const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % Module.HEADER_POOL_SIZE;
-    return buffer;
-  }
-
-  /**
    * Send frame with backpressure support.
    * Pauses if socket buffer is full to prevent OOM.
    */
@@ -667,8 +659,11 @@ export class Module extends EventEmitter {
   ): Promise<void> {
     const payload = codec.serialize(data);
 
-    // OPT-02: Use ring buffer instead of allocating new header each time
-    const headerBuf = this._acquireHeaderBuffer();
+    // Allocate fresh header buffer for each request to avoid race conditions
+    // with concurrent pipelined requests. The ring buffer optimization doesn't
+    // work when we yield to wait for drain, as another request can overwrite
+    // the buffer before we write it.
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {
       methodId,
@@ -677,27 +672,24 @@ export class Module extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // OPT-04: Wait if socket needs drain (use actual socket state, not cached flag)
-    // The drain event may have been emitted while we were processing the response,
-    // so we check writableNeedDrain instead of our own _draining flag
-    if (this._socket!.writableNeedDrain) {
-      await once(this._socket!, "drain");
-    }
+    // OPT-04: Wait if socket needs drain (uses DrainWaiter singleton to avoid MaxListenersExceededWarning)
+    await this._drainWaiter!.waitForDrain();
 
     // Cork groups multiple writes into single syscall
     this._socket!.cork();
-    this._socket!.write(headerBuf); // 11 bytes from pool
-    const canContinue = this._socket!.write(payload); // payload (potentially GB)
-    this._socket!.uncork(); // flush
+    this._socket!.write(headerBuf);
+    const canContinue = this._socket!.write(payload);
+    this._socket!.uncork();
 
     // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
     if (!canContinue) {
-      await once(this._socket!, "drain");
+      await this._drainWaiter!.waitForDrain();
     }
   }
 
   private async _sendAbort(requestId: number): Promise<void> {
-    const headerBuf = this._acquireHeaderBuffer();
+    // Allocate fresh header for each abort to avoid race conditions
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {
       methodId: 0xffff,
@@ -706,10 +698,8 @@ export class Module extends EventEmitter {
       payloadLength: 0,
     });
 
-    // Use actual socket state instead of cached flag
-    if (this._socket!.writableNeedDrain) {
-      await once(this._socket!, "drain");
-    }
+    // Use DrainWaiter to avoid MaxListenersExceededWarning
+    await this._drainWaiter!.waitForDrain();
 
     this._socket!.cork();
     this._socket!.write(headerBuf);
@@ -718,7 +708,7 @@ export class Module extends EventEmitter {
 
     // Wait AFTER write if buffer is full
     if (!canContinue) {
-      await once(this._socket!, "drain");
+      await this._drainWaiter!.waitForDrain();
     }
   }
 

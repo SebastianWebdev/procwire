@@ -4,9 +4,9 @@
  * @module
  */
 
-import { once } from "node:events";
 import type { Socket } from "node:net";
 import { Flags, encodeHeaderInto } from "@procwire/protocol";
+import type { DrainWaiter } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
 import type { RequestContext } from "./types.js";
 
@@ -28,6 +28,7 @@ export class RequestContextImpl implements RequestContext {
     private readonly _socket: Socket,
     private readonly _abortCallbacks: Map<number, Set<() => void>>,
     private readonly _acquireHeader: () => Buffer,
+    private readonly _drainWaiter: DrainWaiter,
   ) {}
 
   get aborted(): boolean {
@@ -110,14 +111,12 @@ export class RequestContextImpl implements RequestContext {
   /**
    * Send response data with proper backpressure handling.
    *
-   * Uses socket.writableNeedDrain to check if we need to wait for drain,
-   * rather than a cached flag that could miss drain events.
+   * Uses DrainWaiter singleton to prevent MaxListenersExceededWarning
+   * when many concurrent requests are waiting for drain.
    */
   private async _sendResponse(data: unknown, flags: number): Promise<void> {
-    // Use actual socket state instead of cached flag to avoid missing drain events
-    if (this._socket.writableNeedDrain) {
-      await this._waitForDrain();
-    }
+    // Wait if socket needs drain (uses singleton DrainWaiter)
+    await this._drainWaiter.waitForDrain();
 
     // Empty payload cases:
     // 1. STREAM_END frames (null data)
@@ -142,19 +141,8 @@ export class RequestContextImpl implements RequestContext {
 
     if (!canContinue) {
       // Wait AFTER write if buffer is full - CRITICAL for preventing deadlock
-      await this._waitForDrain();
+      await this._drainWaiter.waitForDrain();
     }
-  }
-
-  /**
-   * Wait for socket drain event.
-   * Throws if socket is destroyed (e.g., connection closed).
-   */
-  private async _waitForDrain(): Promise<void> {
-    if (this._socket.destroyed) {
-      throw new Error("Socket closed during backpressure wait");
-    }
-    await once(this._socket, "drain");
   }
 
   private _cleanup(): void {

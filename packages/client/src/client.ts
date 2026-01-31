@@ -12,9 +12,16 @@
  * @module
  */
 
-import { EventEmitter, once } from "node:events";
+import { EventEmitter } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
-import { FrameBuffer, type Frame, Flags, encodeHeaderInto, HEADER_SIZE } from "@procwire/protocol";
+import {
+  FrameBuffer,
+  type Frame,
+  Flags,
+  encodeHeaderInto,
+  HEADER_SIZE,
+  DrainWaiter,
+} from "@procwire/protocol";
 import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
 import type { MethodDefinition, EventDefinition, MethodHandler, ClientOptions } from "./types.js";
 import { RequestContextImpl } from "./request-context.js";
@@ -68,7 +75,9 @@ export class Client extends EventEmitter {
     Buffer.allocUnsafe(HEADER_SIZE),
   );
   private _headerPoolIndex = 0;
-  private _draining = false;
+
+  // OPT-04: Backpressure tracking via singleton DrainWaiter
+  private _drainWaiter: DrainWaiter | null = null;
 
   constructor(options?: ClientOptions) {
     super();
@@ -242,6 +251,7 @@ export class Client extends EventEmitter {
     return new Promise((resolve, reject) => {
       this._server = createServer((socket) => {
         this._socket = socket;
+        this._drainWaiter = new DrainWaiter(socket);
         this._frameBuffer = new FrameBuffer();
 
         socket.on("data", (chunk: Buffer) => {
@@ -251,13 +261,11 @@ export class Client extends EventEmitter {
           }
         });
 
-        // Reset draining flag when socket drains
-        socket.on("drain", () => {
-          this._draining = false;
-        });
-
         socket.on("error", (err) => this.emit("error", err));
-        socket.on("close", () => this.emit("disconnected"));
+        socket.on("close", () => {
+          this._drainWaiter?.clear();
+          this.emit("disconnected");
+        });
       });
 
       this._server.on("error", reject);
@@ -330,8 +338,7 @@ export class Client extends EventEmitter {
     const codec = def.codec ?? this._defaultCodec;
     const data = codecDeserialize(codec, frame);
 
-    // Create request context
-    // Note: RequestContextImpl manages its own backpressure state internally
+    // Create request context with shared DrainWaiter
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
@@ -340,6 +347,7 @@ export class Client extends EventEmitter {
       this._socket!,
       this._abortCallbacks,
       () => this._acquireHeaderBuffer(),
+      this._drainWaiter!,
     );
 
     // Track active context for abort handling
@@ -426,6 +434,9 @@ export class Client extends EventEmitter {
   /**
    * Send a frame with proper backpressure handling.
    * Used for emitting events to parent.
+   *
+   * Uses DrainWaiter singleton to prevent MaxListenersExceededWarning
+   * when many concurrent requests are waiting for drain.
    */
   private async _sendFrame(
     methodId: number,
@@ -434,12 +445,10 @@ export class Client extends EventEmitter {
     codec: Codec,
     flags: number,
   ): Promise<void> {
-    if (!this._socket) return;
+    if (!this._socket || !this._drainWaiter) return;
 
-    // Use actual socket state instead of cached flag to avoid missing drain events
-    if (this._socket.writableNeedDrain) {
-      await this._waitForDrain();
-    }
+    // Wait if socket needs drain (uses singleton DrainWaiter)
+    await this._drainWaiter.waitForDrain();
 
     const payload = codec.serialize(data);
     const headerBuf = this._acquireHeaderBuffer();
@@ -457,21 +466,8 @@ export class Client extends EventEmitter {
     this._socket.uncork();
 
     if (!canContinue) {
-      this._draining = true;
       // Wait AFTER write if buffer is full
-      await this._waitForDrain();
+      await this._drainWaiter.waitForDrain();
     }
-  }
-
-  /**
-   * Wait for socket drain event.
-   * Throws if socket is destroyed.
-   */
-  private async _waitForDrain(): Promise<void> {
-    if (!this._socket || this._socket.destroyed) {
-      throw new Error("Socket closed during backpressure wait");
-    }
-    await once(this._socket, "drain");
-    this._draining = false;
   }
 }

@@ -233,14 +233,7 @@ export class BenchmarkRunner extends EventEmitter {
           for (const mode of scenario.modes) {
             const result =
               concurrency > 1
-                ? await this.runPipelinedBenchmark(
-                    module,
-                    scenario,
-                    size,
-                    codec,
-                    mode,
-                    concurrency,
-                  )
+                ? await this.runPipelinedBenchmark(module, scenario, size, codec, mode, concurrency)
                 : await this.runSingleBenchmark(module, scenario, size, codec, mode);
 
             this.results.push(result);
@@ -466,7 +459,18 @@ export class BenchmarkRunner extends EventEmitter {
                 durationMs: 0, // Not tracked separately
                 requestCount: 0,
                 requestsPerSecond: baselineLevel.requestsPerSecond,
-                latency: { min: 0, max: 0, mean: 0, stddev: 0, p50: 0, p75: 0, p90: 0, p95: 0, p99: 0, p999: 0 },
+                latency: {
+                  min: 0,
+                  max: 0,
+                  mean: 0,
+                  stddev: 0,
+                  p50: 0,
+                  p75: 0,
+                  p90: 0,
+                  p95: 0,
+                  p99: 0,
+                  p999: 0,
+                },
                 memory: { heapUsed: 0, heapTotal: 0, external: 0, rss: 0 },
                 errors: 0,
               };
@@ -497,17 +501,17 @@ export class BenchmarkRunner extends EventEmitter {
     let baselineRps = 0;
 
     for (const concurrency of concurrencyLevels) {
-      const result = concurrency === 1
-        ? await this.runSingleBenchmark(module, scenario, size, codec, mode)
-        : await this.runPipelinedBenchmark(module, scenario, size, codec, mode, concurrency);
+      const result =
+        concurrency === 1
+          ? await this.runSingleBenchmark(module, scenario, size, codec, mode)
+          : await this.runPipelinedBenchmark(module, scenario, size, codec, mode, concurrency);
 
       if (concurrency === 1) {
         baselineRps = result.requestsPerSecond;
       }
 
-      const improvement = baselineRps > 0
-        ? ((result.requestsPerSecond - baselineRps) / baselineRps) * 100
-        : 0;
+      const improvement =
+        baselineRps > 0 ? ((result.requestsPerSecond - baselineRps) / baselineRps) * 100 : 0;
 
       results.push({
         concurrency,
@@ -543,9 +547,10 @@ export class BenchmarkRunner extends EventEmitter {
     let prev = results[0]!;
     for (let i = 1; i < results.length; i++) {
       const curr = results[i]!;
-      const incrementalImprovement = prev.requestsPerSecond > 0
-        ? ((curr.requestsPerSecond - prev.requestsPerSecond) / prev.requestsPerSecond) * 100
-        : 0;
+      const incrementalImprovement =
+        prev.requestsPerSecond > 0
+          ? ((curr.requestsPerSecond - prev.requestsPerSecond) / prev.requestsPerSecond) * 100
+          : 0;
 
       // Less than 10% incremental improvement = saturated
       if (incrementalImprovement < 10) {

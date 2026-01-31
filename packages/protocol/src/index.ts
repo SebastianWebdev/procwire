@@ -56,3 +56,5 @@ export {
   type FrameBufferOptions,
   type FrameStreamHandler,
 } from "./frame-buffer.js";
+
+export { DrainWaiter } from "./drain-waiter.js";
