@@ -26,8 +26,9 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 import { BenchmarkRunner, type RunnerOptions } from "./runner.js";
+import { BunBenchmarkRunner } from "./bun-runner.js";
 import { getScenarios, listScenarioIds, ALL_CODECS, ALL_MODES, ALL_SIZES } from "./scenarios.js";
-import type { CodecType, ResponseMode, PayloadSize, TestCategory } from "./types.js";
+import type { CodecType, ResponseMode, PayloadSize, TestCategory, RuntimeType } from "./types.js";
 import { writeJsonReport } from "./report/json.js";
 import { writeMarkdownReport, generateMarkdownReport } from "./report/markdown.js";
 import { StressTestRunner, DEFAULT_STRESS_TESTS } from "./stress-runner.js";
@@ -59,6 +60,9 @@ OPTIONS:
 PIPELINING OPTIONS (TASK-17):
   --concurrency <n>         Concurrency level (1=sequential, >1=pipelined)
   --saturation              Run saturation curve analysis
+
+RUNTIME OPTIONS (TASK-38):
+  --runtime <name>          Runtime: node, bun (default: auto-detect)
 
 TEST CATEGORIES (TASK-17):
   --stress                  Run stress tests (sustained load, burst, soak)
@@ -97,6 +101,9 @@ EXAMPLES:
 
   # Run realistic workload tests
   pnpm bench --realistic
+
+  # Run with Bun runtime (when bun is installed)
+  bun run packages/bench/src/index.ts --runtime bun
 
 PERFORMANCE TARGETS (Sequential):
   - 1KB:   >20 MB/s
@@ -163,6 +170,14 @@ function parseCategory(value: string): TestCategory {
   throw new Error(`Invalid category: ${value}. Valid: ${valid.join(", ")}`);
 }
 
+function parseRuntime(value: string): RuntimeType {
+  const valid = ["node", "bun"];
+  if (valid.includes(value)) {
+    return value as RuntimeType;
+  }
+  throw new Error(`Invalid runtime: ${value}. Valid: ${valid.join(", ")}`);
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
@@ -180,6 +195,8 @@ async function main(): Promise<void> {
       stress: { type: "boolean", default: false },
       realistic: { type: "boolean", default: false },
       category: { type: "string" },
+      // TASK-38: Runtime option
+      runtime: { type: "string" },
     },
     allowPositionals: false,
   });
@@ -207,6 +224,7 @@ async function main(): Promise<void> {
   const sizes = values.sizes ? parseSizes(values.sizes) : undefined;
   const category = values.category ? parseCategory(values.category) : undefined;
   const concurrency = values.concurrency ? parseInt(values.concurrency, 10) : undefined;
+  const runtime = values.runtime ? parseRuntime(values.runtime) : undefined;
 
   const scenarios = getScenarios({
     ids: values.scenario as string[],
@@ -230,6 +248,9 @@ async function main(): Promise<void> {
   if (saturation) {
     runnerOptions.saturation = true;
   }
+  if (runtime) {
+    runnerOptions.runtime = runtime;
+  }
 
   if (!quiet) {
     console.log("\n========================================");
@@ -238,6 +259,9 @@ async function main(): Promise<void> {
     console.log(
       `Mode: ${values.quick ? "Quick" : "Full"}${concurrency ? ` (pipelined, c=${concurrency})` : " (sequential)"}`,
     );
+    if (runtime) {
+      console.log(`Runtime: ${runtime}`);
+    }
     if (saturation) {
       console.log("Running: Saturation curve analysis");
     }
@@ -257,7 +281,8 @@ async function main(): Promise<void> {
     console.log(`Output: ${outputDir}\n`);
   }
 
-  const runner = new BenchmarkRunner();
+  // Create appropriate runner based on runtime
+  const runner = runtime === "bun" ? new BunBenchmarkRunner() : new BenchmarkRunner();
 
   // Set up progress logging
   if (!quiet) {

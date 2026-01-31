@@ -166,11 +166,13 @@ function generateExecutiveSummary(results: BenchmarkResults): string {
   const baselineLatency = latencyBaseline ? `${latencyBaseline.latency.p50.toFixed(0)}us` : "N/A";
 
   const executionMode = results.executionMode ?? "sequential";
+  const runtime = results.meta.runtime ?? "node";
 
   return `## Executive Summary
 
 | Metric | Value |
 |--------|-------|
+| Runtime | **${runtime}** |
 | Execution Mode | **${executionMode}** |
 | Peak Throughput | **${formatThroughput(summary.peakThroughputMBps)}** (${peakResult.codec}/${peakResult.size}/${peakResult.mode}) |
 | Best Codec (Large Payloads) | **${bestLargeCodec}** |
@@ -453,10 +455,17 @@ export function generateMarkdownReport(results: BenchmarkResults): string {
   const meta = results.meta;
   const summary = results.summary;
 
+  // Generate runtime version string
+  const runtimeVersion =
+    meta.runtime === "bun" && meta.bunVersion
+      ? `Bun ${meta.bunVersion}`
+      : `Node.js ${meta.nodeVersion}`;
+
   return `# Procwire Benchmark Report
 
 **Generated:** ${meta.timestamp}
-**Platform:** ${meta.platform} ${meta.arch} | Node.js ${meta.nodeVersion}
+**Runtime:** ${meta.runtime} (${runtimeVersion})
+**Platform:** ${meta.platform} ${meta.arch}
 **Host:** ${meta.hostname} | ${meta.cpuModel} (${meta.cpuCores} cores) | ${meta.totalMemoryGB.toFixed(1)} GB RAM
 **Duration:** ${formatDuration(summary.totalDurationMs)}
 

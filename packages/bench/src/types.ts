@@ -9,6 +9,11 @@ export type CodecType = "raw" | "msgpack" | "arrow";
 export type ResponseMode = "result" | "stream" | "ack";
 
 /**
+ * Runtime environment for benchmarks.
+ */
+export type RuntimeType = "node" | "bun";
+
+/**
  * Test category for benchmarks.
  */
 export type TestCategory = "benchmark" | "stress" | "realistic";
@@ -160,6 +165,10 @@ export interface SystemMeta {
   arch: string;
   /** Node.js version */
   nodeVersion: string;
+  /** Bun version (if running on Bun) */
+  bunVersion?: string;
+  /** Runtime used (node or bun) */
+  runtime: RuntimeType;
   /** Hostname */
   hostname: string;
   /** CPU model */

@@ -35,12 +35,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "bench": "tsx src/index.ts",
-    "bench:quick": "tsx src/index.ts --quick"
+    "bench:quick": "tsx src/index.ts --quick",
+    "bench:bun": "bun run src/index.ts --runtime bun",
+    "bench:bun:quick": "bun run src/index.ts --runtime bun --quick",
+    "bench:compare": "tsx src/index.ts && bun run src/index.ts --runtime bun"
   },
   "dependencies": {
     "@procwire/client": "workspace:*",
     "@procwire/codecs": "workspace:*",
     "@procwire/core": "workspace:*",
+    "@procwire-bun/client": "workspace:*",
+    "@procwire-bun/core": "workspace:*",
     "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {

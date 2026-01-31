@@ -157,6 +157,7 @@ export class BenchmarkDbService {
       offset = 0,
       status,
       scenarioId,
+      runtime,
       orderBy = "started_at",
       order = "desc",
     } = options;
@@ -173,6 +174,11 @@ export class BenchmarkDbService {
     if (scenarioId) {
       conditions.push("json_extract(scenarios_run, '$') LIKE @scenarioId");
       params.scenarioId = `%"${scenarioId}"%`;
+    }
+
+    if (runtime) {
+      conditions.push("json_extract(meta, '$.runtime') = @runtime");
+      params.runtime = runtime;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

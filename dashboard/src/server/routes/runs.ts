@@ -51,6 +51,7 @@ function collectSystemMeta(): SystemMeta {
     platform: os.platform(),
     arch: os.arch(),
     nodeVersion: process.version,
+    runtime: "node", // Dashboard always runs on Node.js
     hostname: os.hostname(),
     cpuModel: cpus[0]?.model ?? "Unknown",
     cpuCores: cpus.length,

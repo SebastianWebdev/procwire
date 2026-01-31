@@ -8,6 +8,7 @@ export type CodecType = "raw" | "msgpack" | "arrow";
 export type ResponseMode = "result" | "stream" | "ack";
 export type ExecutionMode = "sequential" | "pipelined";
 export type RunStatus = "running" | "completed" | "failed";
+export type RuntimeType = "node" | "bun";
 
 /**
  * Latency statistics in microseconds.
@@ -43,6 +44,8 @@ export interface SystemMeta {
   platform: string;
   arch: string;
   nodeVersion: string;
+  bunVersion?: string;
+  runtime: RuntimeType;
   hostname: string;
   cpuModel: string;
   cpuCores: number;
@@ -177,6 +180,7 @@ export interface ListRunsOptions {
   offset?: number;
   status?: RunStatus;
   scenarioId?: string;
+  runtime?: RuntimeType;
   orderBy?: "started_at" | "completed_at";
   order?: "asc" | "desc";
 }
