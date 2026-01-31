@@ -1,0 +1,44 @@
+{
+  "name": "@procwire-bun/client",
+  "version": "0.0.1",
+  "description": "Child-side client for Procwire IPC (Bun.js optimized)",
+  "type": "module",
+  "sideEffects": false,
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "clean": "rimraf dist \"*.tsbuildinfo\""
+  },
+  "dependencies": {
+    "@procwire/protocol": "workspace:*",
+    "@procwire/codecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ipc",
+    "procwire",
+    "client",
+    "child-process",
+    "bun"
+  ]
+}
