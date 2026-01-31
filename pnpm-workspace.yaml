@@ -5,6 +5,7 @@ packages:
   - packages/core
   - packages/client
   - packages/bench
+  - packages/procwire-bun-core
   - astro-docs
   - dashboard
   - dashboard/client

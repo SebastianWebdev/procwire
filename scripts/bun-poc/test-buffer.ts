@@ -42,10 +42,10 @@ const buf32 = Buffer.alloc(8);
 buf32.writeUInt32BE(0x12345678, 0); // requestId
 buf32.writeUInt32BE(0xdeadbeef, 4); // payloadLength
 console.log(
-  `   Wrote 0x12345678 at offset 0: [${buf32[0].toString(16)}, ${buf32[1].toString(16)}, ${buf32[2].toString(16)}, ${buf32[3].toString(16)}]`
+  `   Wrote 0x12345678 at offset 0: [${buf32[0].toString(16)}, ${buf32[1].toString(16)}, ${buf32[2].toString(16)}, ${buf32[3].toString(16)}]`,
 );
 console.log(
-  `   Wrote 0xdeadbeef at offset 4: [${buf32[4].toString(16)}, ${buf32[5].toString(16)}, ${buf32[6].toString(16)}, ${buf32[7].toString(16)}]`
+  `   Wrote 0xdeadbeef at offset 4: [${buf32[4].toString(16)}, ${buf32[5].toString(16)}, ${buf32[6].toString(16)}, ${buf32[7].toString(16)}]`,
 );
 const match32 =
   buf32[0] === 0x12 &&
@@ -99,7 +99,11 @@ const view = new DataView(arrayBuffer);
 view.setUint32(0, 0x12345678, false); // Big-endian
 const fromAB = Buffer.from(arrayBuffer);
 console.log(`   DataView.setUint32(0x12345678, BE)`);
-console.log(`   Buffer.from(ArrayBuffer): [${Array.from(fromAB).map((b) => b.toString(16)).join(", ")}]`);
+console.log(
+  `   Buffer.from(ArrayBuffer): [${Array.from(fromAB)
+    .map((b) => b.toString(16))
+    .join(", ")}]`,
+);
 console.log(`   Match: ${fromAB.readUInt32BE(0) === 0x12345678 ? "✓" : "✗"}`);
 console.log("   ✓ PASS\n");
 

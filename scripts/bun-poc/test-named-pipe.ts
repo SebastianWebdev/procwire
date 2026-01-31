@@ -22,15 +22,12 @@ console.log(`Pipe path: ${pipePath}\n`);
 // Test 2a: Create a Unix socket / Named Pipe server
 console.log("2a. Create pipe server with Bun.listen():");
 
-let serverOpened = false;
 let serverData: Buffer | null = null;
-let clientSocket: ReturnType<typeof Bun.connect> extends Promise<infer T> ? T : never;
 
 const server = Bun.listen({
   unix: pipePath,
   socket: {
-    open(socket) {
-      serverOpened = true;
+    open(_socket) {
       console.log("   Server: client connected");
     },
     data(socket, data) {
@@ -39,13 +36,13 @@ const server = Bun.listen({
       // Echo back with prefix
       socket.write(Buffer.concat([Buffer.from("ECHO:"), data]));
     },
-    close(socket, error) {
+    close(_socket, _error) {
       console.log("   Server: client disconnected");
     },
-    drain(socket) {
+    drain(_socket) {
       console.log("   Server: drain event");
     },
-    error(socket, error) {
+    error(_socket, error) {
       console.error("   Server error:", error);
     },
   },
@@ -67,22 +64,22 @@ let clientDrained = false;
 const socket = await Bun.connect({
   unix: pipePath,
   socket: {
-    open(socket) {
+    open(_socket) {
       clientOpened = true;
       console.log("   Client: connected to server");
     },
-    data(socket, data) {
+    data(_socket, data) {
       clientData = Buffer.from(data);
       console.log(`   Client: received ${data.byteLength} bytes`);
     },
-    close(socket, error) {
+    close(_socket, _error) {
       console.log("   Client: disconnected");
     },
-    drain(socket) {
+    drain(_socket) {
       clientDrained = true;
       console.log("   Client: drain event");
     },
-    error(socket, error) {
+    error(_socket, error) {
       console.error("   Client error:", error);
     },
   },

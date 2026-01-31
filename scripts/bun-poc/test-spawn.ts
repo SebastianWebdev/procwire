@@ -25,17 +25,24 @@ console.log("   ✓ PASS\n");
 
 // Test 1b: stdin pipe write
 console.log("1b. stdin pipe write:");
-const echoProc = Bun.spawn(["bun", "-e", `
+const echoProc = Bun.spawn(
+  [
+    "bun",
+    "-e",
+    `
   const chunks: Buffer[] = [];
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(Buffer.from(chunk));
     break; // Read first chunk
   }
   console.log("Received:", Buffer.concat(chunks).toString());
-`], {
-  stdin: "pipe",
-  stdout: "pipe",
-});
+`,
+  ],
+  {
+    stdin: "pipe",
+    stdout: "pipe",
+  },
+);
 
 echoProc.stdin.write("Test message from parent");
 echoProc.stdin.end();
@@ -54,7 +61,7 @@ let exitData: { exitCode: number | null; signalCode: string | null } | null = nu
 const exitProc = Bun.spawn(["bun", "-e", "process.exit(42)"], {
   stdout: "ignore",
   stderr: "ignore",
-  onExit(proc, exitCode, signalCode, error) {
+  onExit(_proc, exitCode, signalCode, _error) {
     exitCalled = true;
     exitData = { exitCode, signalCode };
   },
@@ -72,7 +79,11 @@ console.log("   ✓ PASS\n");
 
 // Test 1d: Binary data through stdin/stdout
 console.log("1d. Binary data through pipes:");
-const binaryProc = Bun.spawn(["bun", "-e", `
+const binaryProc = Bun.spawn(
+  [
+    "bun",
+    "-e",
+    `
   const chunks: Buffer[] = [];
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(Buffer.from(chunk));
@@ -81,10 +92,13 @@ const binaryProc = Bun.spawn(["bun", "-e", `
   // Echo back with first byte incremented
   data[0] = data[0] + 1;
   process.stdout.write(data);
-`], {
-  stdin: "pipe",
-  stdout: "pipe",
-});
+`,
+  ],
+  {
+    stdin: "pipe",
+    stdout: "pipe",
+  },
+);
 
 const testBuffer = Buffer.from([0x00, 0x01, 0x02, 0x03]);
 binaryProc.stdin.write(testBuffer);

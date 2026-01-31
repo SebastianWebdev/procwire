@@ -113,23 +113,23 @@ await new Promise((r) => setTimeout(r, 100));
 
 console.log("3. Connecting to child's data plane...");
 
-let responses: string[] = [];
+const responses: string[] = [];
 
 const socket = await Bun.connect({
   unix: receivedPipePath,
   socket: {
-    open(socket) {
+    open(_socket) {
       console.log("   Connected to data plane!");
     },
-    data(socket, data) {
+    data(_socket, data) {
       const response = Buffer.from(data).toString();
       responses.push(response);
       console.log(`   Received response: ${response}`);
     },
-    close(socket) {
+    close(_socket) {
       console.log("   Data plane disconnected");
     },
-    error(socket, error) {
+    error(_socket, error) {
       console.error("   Socket error:", error);
     },
   },
