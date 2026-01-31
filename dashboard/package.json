@@ -16,6 +16,7 @@
     "clean": "rimraf dist client/dist"
   },
   "dependencies": {
+    "@procwire/bench": "workspace:*",
     "better-sqlite3": "^12.6.2",
     "fastify": "^5.0.0",
     "@fastify/cors": "^10.0.0",

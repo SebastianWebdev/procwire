@@ -11,8 +11,6 @@ import { registerWebSocket } from "./websocket.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // Extend Fastify types
 declare module "fastify" {
   interface FastifyInstance {
@@ -115,8 +113,11 @@ export async function startServer(options?: ServerOptions) {
   return fastify;
 }
 
-// CLI entry point
-if (import.meta.url === `file://${process.argv[1]}`) {
+// CLI entry point - use fileURLToPath for cross-platform comparison
+const currentFile = fileURLToPath(import.meta.url);
+const executedFile = path.resolve(process.argv[1]);
+
+if (currentFile === executedFile) {
   const args = process.argv.slice(2);
 
   const port = parseInt(args.find((a) => a.startsWith("--port="))?.split("=")[1] ?? "3001", 10);

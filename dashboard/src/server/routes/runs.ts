@@ -17,6 +17,7 @@ import type {
   SystemMeta,
 } from "../types.js";
 import { getScenariosByIds } from "./scenarios.js";
+import { runBenchmarkWithBroadcast } from "../runner-bridge.js";
 import os from "os";
 
 /**
@@ -154,9 +155,10 @@ export async function runsRoutes(fastify: FastifyInstance): Promise<void> {
       notes: metadata.notes,
     });
 
-    // TODO: Start benchmark in background (TASK-22 will add WebSocket broadcasting)
-    // For now, we just create the run record. The actual benchmark execution
-    // will be implemented when we have the WebSocket infrastructure.
+    // Start benchmark in background with WebSocket broadcasting
+    runBenchmarkWithBroadcast(fastify, run.id, validScenarios, options).catch((err) => {
+      fastify.log.error(err, "Benchmark failed");
+    });
 
     return reply.code(201).send({
       id: run.id,

@@ -24,12 +24,12 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./src/lib.d.ts",
+      "default": "./src/lib.ts"
     }
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/lib.ts",
+  "types": "./src/lib.d.ts",
   "scripts": {
     "clean": "rimraf dist results \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
