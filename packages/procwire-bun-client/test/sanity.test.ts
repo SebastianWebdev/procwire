@@ -11,6 +11,7 @@ import {
   RequestContextImpl,
   ProcwireClientError,
   ClientErrors,
+  BunDrainWaiter,
 } from "../src/index.js";
 
 describe("@procwire-bun/client exports", () => {
@@ -36,6 +37,11 @@ describe("@procwire-bun/client exports", () => {
     expect(typeof ClientErrors.notConnected).toBe("function");
     expect(typeof ClientErrors.unknownEvent).toBe("function");
     expect(typeof ClientErrors.responseAlreadySent).toBe("function");
+  });
+
+  it("should export BunDrainWaiter class", () => {
+    expect(BunDrainWaiter).toBeDefined();
+    expect(typeof BunDrainWaiter).toBe("function");
   });
 });
 
@@ -114,6 +120,47 @@ describe("Client", () => {
     client._socket = {} as never;
 
     await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event");
+  });
+});
+
+describe("BunDrainWaiter", () => {
+  it("should create a new instance", () => {
+    const waiter = new BunDrainWaiter();
+    expect(waiter.needsDrain).toBe(false);
+  });
+
+  it("should track drain state", () => {
+    const waiter = new BunDrainWaiter();
+
+    waiter.markNeedsDrain();
+    expect(waiter.needsDrain).toBe(true);
+
+    waiter.onDrain();
+    expect(waiter.needsDrain).toBe(false);
+  });
+
+  it("should resolve waiters on drain", async () => {
+    const waiter = new BunDrainWaiter();
+    waiter.markNeedsDrain();
+
+    let resolved = false;
+    const waitPromise = waiter.waitForDrain().then(() => {
+      resolved = true;
+    });
+
+    // Simulate drain event
+    waiter.onDrain();
+
+    await waitPromise;
+    expect(resolved).toBe(true);
+  });
+
+  it("should clear state on clear()", () => {
+    const waiter = new BunDrainWaiter();
+    waiter.markNeedsDrain();
+
+    waiter.clear();
+    expect(waiter.needsDrain).toBe(false);
   });
 });
 

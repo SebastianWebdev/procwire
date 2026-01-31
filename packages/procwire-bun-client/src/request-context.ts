@@ -6,8 +6,11 @@
  * @module
  */
 
+import { Flags, encodeHeaderInto } from "@procwire/protocol";
+import type { Codec } from "@procwire/codecs";
 import type { RequestContext } from "./types.js";
 import { ClientErrors } from "./errors.js";
+import type { BunDrainWaiter } from "./drain-waiter.js";
 
 // Bun socket type
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
@@ -26,8 +29,11 @@ export class RequestContextImpl implements RequestContext {
     public readonly requestId: number,
     public readonly method: string,
     private readonly _methodId: number,
+    private readonly _codec: Codec,
     private readonly _socket: BunSocket,
     private readonly _abortCallbacks: Map<number, Set<() => void>>,
+    private readonly _acquireHeader: () => Buffer,
+    private readonly _drainWaiter: BunDrainWaiter,
   ) {}
 
   get aborted(): boolean {
@@ -51,37 +57,46 @@ export class RequestContextImpl implements RequestContext {
     callbacks.add(callback);
   }
 
-  async respond(_data: unknown): Promise<void> {
+  async respond(data: unknown): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    // TODO: Implement response sending using Bun socket
-    throw new Error("Not implemented: RequestContext.respond() - will be implemented in TASK-37");
+    await this._sendResponse(data, Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT);
+    this._cleanup();
   }
 
-  async ack(_data?: unknown): Promise<void> {
+  async ack(data?: unknown): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    // TODO: Implement ack sending using Bun socket
-    throw new Error("Not implemented: RequestContext.ack() - will be implemented in TASK-37");
+    await this._sendResponse(
+      data ?? null,
+      Flags.IS_RESPONSE | Flags.IS_ACK | Flags.DIRECTION_TO_PARENT,
+    );
+    this._cleanup();
   }
 
-  async chunk(_data: unknown): Promise<void> {
-    // TODO: Implement chunk sending using Bun socket
-    throw new Error("Not implemented: RequestContext.chunk() - will be implemented in TASK-37");
+  async chunk(data: unknown): Promise<void> {
+    await this._sendResponse(data, Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.DIRECTION_TO_PARENT);
   }
 
   async end(): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    // TODO: Implement stream end using Bun socket
-    throw new Error("Not implemented: RequestContext.end() - will be implemented in TASK-37");
+    await this._sendResponse(
+      null,
+      Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.STREAM_END | Flags.DIRECTION_TO_PARENT,
+    );
+    this._cleanup();
   }
 
-  async error(_err: Error | string): Promise<void> {
+  async error(err: Error | string): Promise<void> {
     this._ensureNotResponded();
     this._responded = true;
-    // TODO: Implement error sending using Bun socket
-    throw new Error("Not implemented: RequestContext.error() - will be implemented in TASK-37");
+    const message = err instanceof Error ? err.message : err;
+    await this._sendResponse(
+      message,
+      Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+    );
+    this._cleanup();
   }
 
   /**
@@ -95,6 +110,39 @@ export class RequestContextImpl implements RequestContext {
   private _ensureNotResponded(): void {
     if (this._responded) {
       throw ClientErrors.responseAlreadySent();
+    }
+  }
+
+  /**
+   * Send response data with proper backpressure handling.
+   *
+   * Bun sockets don't have cork/uncork, so we concatenate buffers for atomic write.
+   */
+  private async _sendResponse(data: unknown, flags: number): Promise<void> {
+    // Empty payload cases:
+    // 1. STREAM_END frames (null data)
+    // 2. ACK without data (null/undefined data with IS_ACK flag)
+    // Don't serialize null - just use empty buffer (required for rawCodec compatibility)
+    const isStreamEnd = (flags & Flags.STREAM_END) !== 0;
+    const isEmptyAck = (flags & Flags.IS_ACK) !== 0 && data == null;
+    const payload = isStreamEnd || isEmptyAck ? Buffer.alloc(0) : this._codec.serialize(data);
+    const headerBuf = this._acquireHeader();
+
+    encodeHeaderInto(headerBuf, {
+      methodId: this._methodId,
+      flags,
+      requestId: this.requestId,
+      payloadLength: payload.length,
+    });
+
+    // Bun doesn't have cork/uncork, concatenate for atomic write
+    const combined = Buffer.concat([headerBuf, payload]);
+    const canContinue = this._socket.write(combined);
+
+    // OPT-04: Wait AFTER write if backpressure
+    if (!canContinue) {
+      this._drainWaiter.markNeedsDrain();
+      await this._drainWaiter.waitForDrain();
     }
   }
 
