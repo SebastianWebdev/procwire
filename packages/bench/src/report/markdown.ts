@@ -402,9 +402,10 @@ This section shows how throughput scales with concurrency level.
     section += `|-------------|------------|------------|-------------|\n`;
 
     for (const level of sat.levels) {
-      const improvement = level.improvementPercent >= 0
-        ? `+${level.improvementPercent.toFixed(0)}%`
-        : `${level.improvementPercent.toFixed(0)}%`;
+      const improvement =
+        level.improvementPercent >= 0
+          ? `+${level.improvementPercent.toFixed(0)}%`
+          : `${level.improvementPercent.toFixed(0)}%`;
       section += `| ${level.concurrency} | ${formatNumber(level.requestsPerSecond)} | ${formatThroughput(level.throughputMBps)} | ${improvement} |\n`;
     }
 

@@ -38,11 +38,13 @@
     "bench:quick": "tsx src/index.ts --quick"
   },
   "dependencies": {
-    "@procwire/core": "workspace:*",
     "@procwire/client": "workspace:*",
-    "@procwire/codecs": "workspace:*"
+    "@procwire/codecs": "workspace:*",
+    "@procwire/core": "workspace:*",
+    "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.21.0",

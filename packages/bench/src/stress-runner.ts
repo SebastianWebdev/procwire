@@ -374,7 +374,7 @@ export class StressTestRunner extends EventEmitter {
     // Evaluate pass/fail
     const failures: string[] = [];
 
-    if (config.maxErrorRate && (totalErrors / Math.max(1, totalRequests)) > config.maxErrorRate) {
+    if (config.maxErrorRate && totalErrors / Math.max(1, totalRequests) > config.maxErrorRate) {
       const errorRate = (totalErrors / totalRequests) * 100;
       failures.push(`Error rate ${errorRate.toFixed(2)}% > ${config.maxErrorRate * 100}%`);
     }
@@ -511,7 +511,7 @@ export class StressTestRunner extends EventEmitter {
       failures.push(`Dropped ${droppedRequests} requests > ${config.maxDroppedRequests}`);
     }
 
-    if (config.maxErrorRate && (totalErrors / Math.max(1, totalRequests)) > config.maxErrorRate) {
+    if (config.maxErrorRate && totalErrors / Math.max(1, totalRequests) > config.maxErrorRate) {
       const errorRate = (totalErrors / totalRequests) * 100;
       failures.push(`Error rate ${errorRate.toFixed(2)}% > ${config.maxErrorRate * 100}%`);
     }

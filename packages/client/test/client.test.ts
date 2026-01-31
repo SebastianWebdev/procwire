@@ -4,7 +4,7 @@ import type { Socket } from "node:net";
 import { Client } from "../src/client.js";
 import { RequestContextImpl } from "../src/request-context.js";
 import { msgpackCodec } from "@procwire/codecs";
-import { HEADER_SIZE } from "@procwire/protocol";
+import { HEADER_SIZE, DrainWaiter } from "@procwire/protocol";
 
 describe("Client", () => {
   describe("builder API", () => {
@@ -71,30 +71,41 @@ describe("Client", () => {
   });
 
   describe("RequestContextImpl", () => {
-    function createMockSocket(): Socket & EventEmitter {
-      const emitter = new EventEmitter();
-      return Object.assign(emitter, {
-        write: vi.fn().mockReturnValue(true),
-        destroy: vi.fn(),
-        destroyed: false,
-        cork: vi.fn(),
-        uncork: vi.fn(),
-      }) as unknown as Socket & EventEmitter;
+    interface MockSocket extends EventEmitter {
+      write: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+      destroyed: boolean;
+      cork: ReturnType<typeof vi.fn>;
+      uncork: ReturnType<typeof vi.fn>;
+      writableNeedDrain: boolean;
+    }
+
+    function createMockSocket(): MockSocket {
+      const emitter = new EventEmitter() as MockSocket;
+      emitter.write = vi.fn().mockReturnValue(true);
+      emitter.destroy = vi.fn();
+      emitter.destroyed = false;
+      emitter.cork = vi.fn();
+      emitter.uncork = vi.fn();
+      emitter.writableNeedDrain = false;
+      return emitter;
     }
 
     it("should send response with IS_RESPONSE flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42, // requestId
         "testMethod",
         1, // methodId
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.respond({ result: "success" });
@@ -109,15 +120,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.ack({ jobId: 123 });
@@ -130,15 +143,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.chunk({ data: 1 });
@@ -152,15 +167,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.chunk({ data: 1 });
@@ -173,15 +190,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.error(new Error("Something went wrong"));
@@ -194,15 +213,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await ctx.respond({ result: "first" });
@@ -217,15 +238,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       const callback = vi.fn();
@@ -239,15 +262,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       expect(ctx.aborted).toBe(false);
@@ -261,15 +286,17 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       ctx.onAbort(vi.fn());
@@ -284,21 +311,26 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
-      // Make write return false (buffer full)
-      (socket.write as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      // Make write return false (buffer full) and set writableNeedDrain
+      socket.write.mockImplementation(() => {
+        socket.writableNeedDrain = true;
+        return false;
+      });
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
-      // Start respond - should wait for drain
+      // Start respond - should wait for drain after write
       const respondPromise = ctx.respond({ large: "data" });
 
       // Promise should be pending (waiting for drain)
@@ -311,7 +343,8 @@ describe("Client", () => {
       await new Promise((r) => setImmediate(r));
       expect(resolved).toBe(false);
 
-      // Emit drain
+      // Emit drain (also clear writableNeedDrain)
+      socket.writableNeedDrain = false;
       socket.emit("drain");
 
       // Now should resolve
@@ -324,20 +357,23 @@ describe("Client", () => {
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
 
-      // Make write return false (buffer full)
-      (socket.write as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      // RING+SYNC: Write happens before await, so we need socket.write
+      // to return false (backpressure) to trigger waitForDrain
+      socket.write.mockReturnValue(false);
+      socket.writableNeedDrain = true;
+      socket.destroyed = true;
 
-      // Mark socket as destroyed
-      (socket as unknown as { destroyed: boolean }).destroyed = true;
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       await expect(ctx.respond({ data: "test" })).rejects.toThrow(
@@ -349,14 +385,19 @@ describe("Client", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
       const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
+      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       // First two writes succeed, then backpressure kicks in
       let writeCount = 0;
-      (socket.write as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      socket.write.mockImplementation(() => {
         writeCount++;
         // Header + payload for first chunk succeeds
         // Header + payload for second chunk triggers backpressure
-        return writeCount <= 2;
+        const canContinue = writeCount <= 2;
+        if (!canContinue) {
+          socket.writableNeedDrain = true;
+        }
+        return canContinue;
       });
 
       const ctx = new RequestContextImpl(
@@ -364,9 +405,10 @@ describe("Client", () => {
         "testMethod",
         1,
         msgpackCodec,
-        socket,
+        socket as unknown as Socket,
         abortCallbacks,
         acquireHeader,
+        drainWaiter,
       );
 
       // First chunk should complete
@@ -383,7 +425,8 @@ describe("Client", () => {
       await new Promise((r) => setImmediate(r));
       expect(chunk2Resolved).toBe(false);
 
-      // Emit drain
+      // Emit drain (also clear writableNeedDrain)
+      socket.writableNeedDrain = false;
       socket.emit("drain");
 
       await chunk2Promise;
@@ -443,7 +486,7 @@ describe("Client", () => {
         _socket: Socket | null;
         _eventNameToId: Map<string, number>;
       };
-      clientAny._socket = createMockSocket();
+      clientAny._socket = createMockSocket() as unknown as Socket;
       clientAny._eventNameToId.set("progress", 1);
 
       await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event: unknown");
@@ -465,26 +508,35 @@ describe("Client", () => {
       // Mock socket
       const clientAny = client as unknown as { _socket: Socket | null };
       const mockSocket = createMockSocket();
-      clientAny._socket = mockSocket;
+      clientAny._socket = mockSocket as unknown as Socket;
 
       expect(client.connected).toBe(true);
 
       // Mark as destroyed
-      (mockSocket as unknown as { destroyed: boolean }).destroyed = true;
+      mockSocket.destroyed = true;
 
       expect(client.connected).toBe(false);
     });
   });
 
   // Helper
-  function createMockSocket(): Socket & EventEmitter {
-    const emitter = new EventEmitter();
-    return Object.assign(emitter, {
-      write: vi.fn().mockReturnValue(true),
-      destroy: vi.fn(),
-      destroyed: false,
-      cork: vi.fn(),
-      uncork: vi.fn(),
-    }) as unknown as Socket & EventEmitter;
+  interface MockSocket extends EventEmitter {
+    write: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+    destroyed: boolean;
+    cork: ReturnType<typeof vi.fn>;
+    uncork: ReturnType<typeof vi.fn>;
+    writableNeedDrain: boolean;
+  }
+
+  function createMockSocket(): MockSocket {
+    const emitter = new EventEmitter() as MockSocket;
+    emitter.write = vi.fn().mockReturnValue(true);
+    emitter.destroy = vi.fn();
+    emitter.destroyed = false;
+    emitter.cork = vi.fn();
+    emitter.uncork = vi.fn();
+    emitter.writableNeedDrain = false;
+    return emitter;
   }
 });

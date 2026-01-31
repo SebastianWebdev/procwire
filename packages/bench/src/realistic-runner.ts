@@ -295,7 +295,10 @@ export class RealisticTestRunner extends EventEmitter {
 
         // Progress reporting
         const progress = (Date.now() - testStart) / config.duration;
-        if (Math.floor(progress * 10) !== Math.floor(((Date.now() - testStart - 100) / config.duration) * 10)) {
+        if (
+          Math.floor(progress * 10) !==
+          Math.floor(((Date.now() - testStart - 100) / config.duration) * 10)
+        ) {
           this.emit("test:progress", config.id, progress);
         }
       }
@@ -352,7 +355,7 @@ export class RealisticTestRunner extends EventEmitter {
         baselineRps = result.rps;
       }
 
-      const scalingEfficiency = baselineRps > 0 ? (result.rps / (baselineRps * workerCount)) : 1;
+      const scalingEfficiency = baselineRps > 0 ? result.rps / (baselineRps * workerCount) : 1;
 
       scaling.push({
         workerCount,
@@ -361,7 +364,11 @@ export class RealisticTestRunner extends EventEmitter {
         scalingEfficiency,
       });
 
-      this.emit("test:progress", config.id, config.workerCounts.indexOf(workerCount) / config.workerCounts.length);
+      this.emit(
+        "test:progress",
+        config.id,
+        config.workerCounts.indexOf(workerCount) / config.workerCounts.length,
+      );
     }
 
     // Find optimal worker count (highest RPS)

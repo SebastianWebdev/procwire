@@ -235,7 +235,9 @@ async function main(): Promise<void> {
     console.log("\n========================================");
     console.log("  Procwire Benchmark Suite");
     console.log("========================================\n");
-    console.log(`Mode: ${values.quick ? "Quick" : "Full"}${concurrency ? ` (pipelined, c=${concurrency})` : " (sequential)"}`);
+    console.log(
+      `Mode: ${values.quick ? "Quick" : "Full"}${concurrency ? ` (pipelined, c=${concurrency})` : " (sequential)"}`,
+    );
     if (saturation) {
       console.log("Running: Saturation curve analysis");
     }
@@ -330,9 +332,14 @@ async function runStressTests(outputDir: string, quiet: boolean): Promise<void> 
       console.log(`\n>>> Running: ${configId}`);
     });
 
-    runner.on("test:checkpoint", (_configId: string, entry: { rps: number; latencyP99: number; memoryMB: number }) => {
-      console.log(`    RPS: ${entry.rps.toFixed(0)} | P99: ${entry.latencyP99.toFixed(0)}μs | Mem: ${entry.memoryMB.toFixed(0)}MB`);
-    });
+    runner.on(
+      "test:checkpoint",
+      (_configId: string, entry: { rps: number; latencyP99: number; memoryMB: number }) => {
+        console.log(
+          `    RPS: ${entry.rps.toFixed(0)} | P99: ${entry.latencyP99.toFixed(0)}μs | Mem: ${entry.memoryMB.toFixed(0)}MB`,
+        );
+      },
+    );
   }
 
   const results = await runner.runAll(DEFAULT_STRESS_TESTS);
@@ -393,12 +400,17 @@ async function runRealisticTests(outputDir: string, quiet: boolean): Promise<voi
     console.log("  Mixed Workload Results");
     console.log("========================================\n");
 
-    console.log(`Overall: ${mixedResult.overallThroughputMBps.toFixed(0)} MB/s | ${mixedResult.overallRps.toFixed(0)} req/s\n`);
+    console.log(
+      `Overall: ${mixedResult.overallThroughputMBps.toFixed(0)} MB/s | ${mixedResult.overallRps.toFixed(0)} req/s\n`,
+    );
     console.log("By size:");
     for (const [size, count] of Object.entries(mixedResult.requestsBySize)) {
-      const throughput = mixedResult.throughputBySize[size as keyof typeof mixedResult.throughputBySize];
+      const throughput =
+        mixedResult.throughputBySize[size as keyof typeof mixedResult.throughputBySize];
       if (count > 0) {
-        console.log(`  ${size}: ${count.toLocaleString()} requests | ${throughput.toFixed(0)} MB/s`);
+        console.log(
+          `  ${size}: ${count.toLocaleString()} requests | ${throughput.toFixed(0)} MB/s`,
+        );
       }
     }
   }
@@ -414,9 +426,13 @@ async function runRealisticTests(outputDir: string, quiet: boolean): Promise<voi
     console.log("Worker scaling:");
     for (const s of multiResult.scaling) {
       const efficiency = (s.scalingEfficiency * 100).toFixed(0);
-      console.log(`  ${s.workerCount} worker(s): ${s.requestsPerSecond.toFixed(0)} req/s (${efficiency}% efficiency)`);
+      console.log(
+        `  ${s.workerCount} worker(s): ${s.requestsPerSecond.toFixed(0)} req/s (${efficiency}% efficiency)`,
+      );
     }
-    console.log(`\nOptimal: ${multiResult.optimalWorkerCount} workers @ ${multiResult.peakRps.toFixed(0)} req/s`);
+    console.log(
+      `\nOptimal: ${multiResult.optimalWorkerCount} workers @ ${multiResult.peakRps.toFixed(0)} req/s`,
+    );
   }
 
   process.exit(0);
