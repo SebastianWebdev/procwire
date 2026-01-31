@@ -6,6 +6,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **PRZED ROZPOCZĘCIEM PRACY** przeczytaj [`AGENT_MEMORY.md`](AGENT_MEMORY.md) - zawiera krótkie podsumowanie projektu, ostatnich decyzji, bugów i ważnych informacji między sesjami.
 
+### Kiedy aktualizować Agent Memory
+
+**ZAWSZE** aktualizuj `AGENT_MEMORY.md` na koniec sesji lub po zakończeniu znaczącego taska:
+
+1. **Ukończone taski** - dodaj do sekcji "TODO / W Trakcie" z checkboxem `[x]`
+2. **Nowe taski** - dodaj do sekcji "TODO / W Trakcie" z checkboxem `[ ]`
+3. **Ważne decyzje architektoniczne** - dodaj do "Ostatnie Ważne Decyzje" z datą
+4. **Naprawione bugi** - dodaj krótki postmortem do "Ostatnie Ważne Decyzje"
+5. **Benchmark results** - aktualizuj tabelę jeśli wyniki się zmieniły
+6. **Nowe notatki** - dodaj do "Notatki dla Agenta" jeśli odkryłeś coś ważnego
+
+### Co zapisywać (przykłady)
+
+```markdown
+### 2026-01-31: Nazwa decyzji/buga
+
+**Problem:** Krótki opis problemu
+**Root cause:** Co było przyczyną
+**Fix:** Jak naprawiono
+**Commit:** `abc1234` (opcjonalnie)
+```
+
+### Czego NIE zapisywać
+
+- Drobne refaktory bez wpływu na architekturę
+- Poprawki literówek, formatowania
+- Zmiany w dokumentacji (chyba że znaczące)
+- Rzeczy już udokumentowane w `docs/next/`
+
+## Task Management (docs/next/tasks/)
+
+Folder `docs/next/tasks/` to centralne miejsce zarządzania taskami projektu.
+
+### Struktura
+
+```
+docs/next/tasks/
+├── todo/           # Taski do zrobienia (TASK-XX-nazwa.md)
+├── done/           # Ukończone taski (przenoszone z todo/)
+└── README.md       # Opis konwencji (opcjonalnie)
+```
+
+### Gdy user prosi o "napisanie taska" lub "zrobienie taska"
+
+1. **Napisanie taska** = utworzenie pliku `docs/next/tasks/todo/TASK-XX-nazwa.md`
+2. **Zrobienie taska** = implementacja według pliku z `todo/`, potem przeniesienie do `done/`
+
+### Format pliku taska
+
+```markdown
+# TASK-XX: Krótki tytuł
+
+## Cel
+
+Co chcemy osiągnąć.
+
+## Zakres
+
+- [ ] Subtask 1
+- [ ] Subtask 2
+
+## Kontekst
+
+Dlaczego to robimy, powiązane pliki, decyzje.
+
+## Definition of Done
+
+- Testy przechodzą
+- Dokumentacja zaktualizowana
+- Code review (jeśli wymagane)
+```
+
+### Po ukończeniu taska - OBOWIĄZKOWE
+
+1. **Przenieś plik** z `todo/` do `done/`
+2. **Zaktualizuj `AGENT_MEMORY.md`**:
+   - Dodaj wpis `[x] TASK-XX: ...` w sekcji "TODO / W Trakcie"
+   - Jeśli wystąpił bug lub ważna decyzja → dodaj do "Ostatnie Ważne Decyzje"
+   - Jeśli odkryłeś coś przydatnego → dodaj do "Notatki dla Agenta"
+
+**PAMIĘTAJ:** Memory musi zawierać wzmiankę o każdym zrealizowanym tasku. Jeśli podczas pracy wyszedł jakiś bug, edge case lub istotna informacja architektoniczna - zapisz to w memory, aby kolejne sesje mogły z tego skorzystać.
+
 ## Project Overview
 
 This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
