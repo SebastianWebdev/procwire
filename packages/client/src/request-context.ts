@@ -119,10 +119,13 @@ export class RequestContextImpl implements RequestContext {
       await this._waitForDrain();
     }
 
-    // STREAM_END frames have empty payload (null data)
+    // Empty payload cases:
+    // 1. STREAM_END frames (null data)
+    // 2. ACK without data (null/undefined data with IS_ACK flag)
     // Don't serialize null - just use empty buffer (required for rawCodec compatibility)
     const isStreamEnd = (flags & Flags.STREAM_END) !== 0;
-    const payload = isStreamEnd ? Buffer.alloc(0) : this._codec.serialize(data);
+    const isEmptyAck = (flags & Flags.IS_ACK) !== 0 && data == null;
+    const payload = isStreamEnd || isEmptyAck ? Buffer.alloc(0) : this._codec.serialize(data);
     const headerBuf = this._acquireHeader();
 
     encodeHeaderInto(headerBuf, {

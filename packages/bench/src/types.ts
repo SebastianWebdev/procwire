@@ -2,7 +2,7 @@
  * Type definitions for the benchmark suite.
  */
 
-export type PayloadSize = "1KB" | "10KB" | "100KB" | "1MB" | "10MB";
+export type PayloadSize = "1KB" | "10KB" | "100KB" | "1MB" | "10MB" | "100MB";
 
 export type CodecType = "raw" | "msgpack" | "arrow";
 
@@ -184,6 +184,7 @@ export const PAYLOAD_SIZES: Record<PayloadSize, number> = {
   "100KB": 100 * 1024,
   "1MB": 1024 * 1024,
   "10MB": 10 * 1024 * 1024,
+  "100MB": 100 * 1024 * 1024,
 };
 
 /**
@@ -195,4 +196,5 @@ export const PERFORMANCE_TARGETS: Record<PayloadSize, number> = {
   "100KB": 400,
   "1MB": 500,
   "10MB": 1000, // 1 GB/s
+  "100MB": 2000, // 2 GB/s
 };

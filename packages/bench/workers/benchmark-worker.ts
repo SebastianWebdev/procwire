@@ -127,6 +127,16 @@ const client = new Client()
       await ctx.end();
     },
     { response: "stream", codec: arrowCodec },
+  )
+
+  // Arrow ack - acknowledge receipt of columnar data
+  // Note: Arrow codec only supports columnar data, so we use empty ack (no metadata)
+  .handle(
+    "arrow_ack",
+    async (_data, ctx) => {
+      await ctx.ack();
+    },
+    { response: "ack", codec: arrowCodec },
   );
 
 await client.start();

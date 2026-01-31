@@ -80,3 +80,17 @@ export function generateStreamChunks(
 export function getPayloadByteSize(size: PayloadSize): number {
   return PAYLOAD_SIZES[size];
 }
+
+/**
+ * Gets the optimal chunk count for streaming based on payload size.
+ * Larger payloads use more chunks to avoid memory pressure.
+ */
+export function getOptimalChunkCount(size: PayloadSize): number {
+  const bytes = PAYLOAD_SIZES[size];
+
+  // Target ~1MB chunks for large payloads, 10 chunks for small
+  if (bytes >= 100 * 1024 * 1024) return 100; // 100MB -> 100 chunks of 1MB
+  if (bytes >= 10 * 1024 * 1024) return 20; // 10MB -> 20 chunks of 500KB
+  if (bytes >= 1024 * 1024) return 10; // 1MB -> 10 chunks of 100KB
+  return 10; // Smaller payloads: 10 chunks
+}

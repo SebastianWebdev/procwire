@@ -24,6 +24,7 @@ import type {
 import { PERFORMANCE_TARGETS } from "./types.js";
 import { MetricsCollector } from "./metrics.js";
 import { generatePayload, getPayloadByteSize } from "./payload.js";
+import { getIterationsForSize } from "./scenarios.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_PATH = join(__dirname, "..", "workers", "benchmark-worker.ts");
@@ -81,7 +82,7 @@ function getSystemMeta(): SystemMeta {
  */
 function calculatePerformanceTargets(results: ScenarioResult[]): PerformanceTarget[] {
   const targets: PerformanceTarget[] = [];
-  const sizes: PayloadSize[] = ["1KB", "10KB", "100KB", "1MB", "10MB"];
+  const sizes: PayloadSize[] = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"];
 
   for (const size of sizes) {
     // Find best throughput for this size (raw codec, result mode)
@@ -216,10 +217,13 @@ export class BenchmarkRunner extends EventEmitter {
     const payload = generatePayload(size, codec);
     const payloadBytes = getPayloadByteSize(size);
 
+    // Get scaled iterations for this size (larger payloads = fewer iterations)
+    const { iterations, warmup } = getIterationsForSize(scenario, size);
+
     const collector = new MetricsCollector();
 
     // Warmup phase
-    for (let i = 0; i < scenario.warmup; i++) {
+    for (let i = 0; i < warmup; i++) {
       try {
         await this.executeRequest(module, methodName, mode, payload);
       } catch {
@@ -235,7 +239,7 @@ export class BenchmarkRunner extends EventEmitter {
     // Measurement phase
     collector.start();
 
-    for (let i = 0; i < scenario.iterations; i++) {
+    for (let i = 0; i < iterations; i++) {
       const requestStart = process.hrtime.bigint();
 
       try {
