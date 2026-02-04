@@ -28,15 +28,15 @@ import type { Socket } from "node:net";
  * with only a single event listener on the socket.
  */
 export class DrainWaiter {
-  private _waiters: Set<() => void> = new Set();
+  private _waiters: Set<{ resolve: () => void; reject: (err: Error) => void }> = new Set();
   private _listening = false;
   private _closed = false;
 
   private readonly _onDrain = (): void => {
     this._listening = false;
     // Resolve all waiters
-    for (const resolve of this._waiters) {
-      resolve();
+    for (const waiter of this._waiters) {
+      waiter.resolve();
     }
     this._waiters.clear();
   };
@@ -44,8 +44,11 @@ export class DrainWaiter {
   private readonly _onClose = (): void => {
     this._closed = true;
     this._listening = false;
-    // All pending waiters will be left hanging - but their socket
-    // operations will fail anyway since socket is closed
+    // Reject all pending waiters so they don't hang forever
+    const error = new Error("Socket closed during backpressure wait");
+    for (const waiter of this._waiters) {
+      waiter.reject(error);
+    }
     this._waiters.clear();
     this._socket.off("drain", this._onDrain);
   };
@@ -61,7 +64,7 @@ export class DrainWaiter {
    * If socket doesn't need drain, returns immediately.
    * Otherwise, registers a waiter and returns when drain fires.
    *
-   * @throws {Error} If socket is destroyed while waiting
+   * @throws {Error} If socket is destroyed or closes while waiting
    */
   async waitForDrain(): Promise<void> {
     // Fast path: no backpressure
@@ -81,8 +84,8 @@ export class DrainWaiter {
     }
 
     // Add this request to waiters
-    return new Promise<void>((resolve) => {
-      this._waiters.add(resolve);
+    return new Promise<void>((resolve, reject) => {
+      this._waiters.add({ resolve, reject });
     });
   }
 
@@ -93,6 +96,11 @@ export class DrainWaiter {
   clear(): void {
     this._listening = false;
     this._closed = true;
+    // Reject all pending waiters so they don't hang
+    const error = new Error("Socket closed during backpressure wait");
+    for (const waiter of this._waiters) {
+      waiter.reject(error);
+    }
     this._waiters.clear();
     this._socket.off("drain", this._onDrain);
     this._socket.off("close", this._onClose);

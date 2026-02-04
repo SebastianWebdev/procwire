@@ -136,18 +136,17 @@ describe("DrainWaiter", () => {
       expect(secondResolved).toBe(true);
     });
 
-    it("should handle socket close while waiting", async () => {
+    it("should reject pending waiters when socket closes", async () => {
       const mockSocket = createMockSocket({ needsDrain: true });
       const drainWaiter = new DrainWaiter(mockSocket as unknown as Socket);
 
-      // Start waiting (promise will never resolve after close)
-      drainWaiter.waitForDrain();
+      // Start waiting
+      const promise = drainWaiter.waitForDrain();
 
-      // Socket closes
+      // Socket closes - should reject the pending waiter
       mockSocket.emit("close");
 
-      // Internal state should be cleaned up
-      await vi.advanceTimersByTimeAsync(0);
+      await expect(promise).rejects.toThrow("Socket closed during backpressure wait");
 
       // Verify no drain listeners remain
       expect(mockSocket.listenerCount("drain")).toBe(0);
@@ -155,17 +154,21 @@ describe("DrainWaiter", () => {
   });
 
   describe("clear", () => {
-    it("should clear all pending waiters and mark as closed", async () => {
+    it("should reject all pending waiters and mark as closed", async () => {
       const mockSocket = createMockSocket({ needsDrain: true });
       const drainWaiter = new DrainWaiter(mockSocket as unknown as Socket);
 
-      // Start waiters (these will never resolve after clear)
-      drainWaiter.waitForDrain();
-      drainWaiter.waitForDrain();
+      // Start waiters
+      const promise1 = drainWaiter.waitForDrain();
+      const promise2 = drainWaiter.waitForDrain();
 
       drainWaiter.clear();
 
-      // Drain after clear should throw because socket is marked as closed
+      // Pending waiters should be rejected
+      await expect(promise1).rejects.toThrow("Socket closed during backpressure wait");
+      await expect(promise2).rejects.toThrow("Socket closed during backpressure wait");
+
+      // New drain requests after clear should throw immediately
       mockSocket.writableNeedDrain = true;
       await expect(drainWaiter.waitForDrain()).rejects.toThrow(
         "Socket closed during backpressure wait",
@@ -176,12 +179,17 @@ describe("DrainWaiter", () => {
       const mockSocket = createMockSocket({ needsDrain: true });
       const drainWaiter = new DrainWaiter(mockSocket as unknown as Socket);
 
-      // Start a waiter
-      drainWaiter.waitForDrain();
+      // Start a waiter - capture the rejection
+      const pendingPromise = drainWaiter.waitForDrain().catch(() => {
+        // Expected rejection, ignore
+      });
 
       drainWaiter.clear();
 
-      // No drain needed - should return immediately
+      // Wait for rejection to be handled
+      await pendingPromise;
+
+      // No drain needed - should return immediately (fast path before closed check)
       mockSocket.writableNeedDrain = false;
       await drainWaiter.waitForDrain();
       // Should complete without error
