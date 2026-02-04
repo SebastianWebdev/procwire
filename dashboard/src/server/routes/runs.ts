@@ -2,7 +2,7 @@
  * /api/runs - CRUD operations for benchmark runs.
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type {
   ListRunsQuery,
   ListRunsResponse,

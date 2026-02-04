@@ -107,7 +107,7 @@ export async function registerWebSocket(fastify: FastifyInstance): Promise<void>
   });
 
   // WebSocket endpoint
-  fastify.get("/ws", { websocket: true }, (socket, request) => {
+  fastify.get("/ws", { websocket: true }, (socket) => {
     // Add to connections
     connections.add(socket);
     fastify.log.info(`WebSocket client connected. Total: ${connections.size}`);

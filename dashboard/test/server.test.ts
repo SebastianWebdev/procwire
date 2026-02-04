@@ -63,7 +63,7 @@ describe("Dashboard API", () => {
   };
 
   beforeAll(async () => {
-    const { fastify: app, db } = await createServer({
+    const { fastify: app } = await createServer({
       dbPath: ":memory:",
       logger: false,
     });

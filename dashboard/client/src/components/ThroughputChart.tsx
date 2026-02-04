@@ -49,7 +49,7 @@ function ThroughputChart({ results }: ThroughputChartProps) {
       textStyle: { color: theme.colors.dark[0] },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       formatter: (params: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const lines = params.map(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (p: any) => `${p.marker} ${p.seriesName}: <strong>${formatThroughput(p.value)}</strong>`,

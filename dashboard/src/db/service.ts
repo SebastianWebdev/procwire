@@ -9,8 +9,6 @@ import { initializeSchema } from "./schema.js";
 import type {
   DbRun,
   DbResult,
-  DbRunInsert,
-  DbResultInsert,
   ListRunsOptions,
   CreateRunOptions,
   ScenarioResult,

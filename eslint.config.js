@@ -5,7 +5,17 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "examples/**", "**/.astro/**"],
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      "examples/**",
+      "**/.astro/**",
+      // Non-published packages - exclude from CI lint
+      "dashboard/**",
+      "astro-docs/**",
+      "tests/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
