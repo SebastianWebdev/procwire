@@ -26,7 +26,7 @@
  * worker.onEvent('progress', (p) => console.log(`${p}%`));
  * ```
  *
- * @module
+ * @module @procwire/core
  */
 
 export { Module } from "./module.js";
