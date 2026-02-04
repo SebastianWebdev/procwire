@@ -1,5 +1,5 @@
 /**
- * Sanity tests for @procwire-bun/core
+ * Sanity tests for @procwire/bun-core
  *
  * These tests verify that the package exports correctly and basic
  * type checking works. Full integration tests will be added in TASK-43.
@@ -18,7 +18,7 @@ import {
   BunDrainWaiter,
 } from "../src/index.js";
 
-describe("@procwire-bun/core exports", () => {
+describe("@procwire/bun-core exports", () => {
   it("should export Module class", () => {
     expect(Module).toBeDefined();
     expect(typeof Module).toBe("function");

@@ -1,15 +1,15 @@
 /**
  * Benchmark runner for Bun runtime.
  *
- * This runner uses @procwire-bun/core for parent-side operations,
- * spawning workers that use @procwire-bun/client.
+ * This runner uses @procwire/bun-core for parent-side operations,
+ * spawning workers that use @procwire/bun-client.
  */
 
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import os from "node:os";
-import { ModuleManager, Module } from "@procwire-bun/core";
+import { ModuleManager, Module } from "@procwire/bun-core";
 import { rawCodec, msgpackCodec, arrowCodec, type Codec } from "@procwire/codecs";
 
 import type {

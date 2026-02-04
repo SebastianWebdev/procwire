@@ -1,12 +1,12 @@
 /**
- * @procwire-bun/core - Core module system for Procwire binary protocol (Bun.js optimized).
+ * @procwire/bun-core - Core module system for Procwire binary protocol (Bun.js optimized).
  *
  * This package provides the Module class for defining and communicating
  * with worker processes using the binary data plane, optimized for Bun.js runtime.
  *
  * @example
  * ```typescript
- * import { Module } from '@procwire-bun/core';
+ * import { Module } from '@procwire/bun-core';
  * import { msgpackCodec, arrowCodec } from '@procwire/codecs';
  *
  * // Define a module

@@ -1,5 +1,5 @@
 {
-  "name": "@procwire-bun/core",
+  "name": "@procwire/bun-core",
   "version": "1.0.0",
   "description": "Core module system for Procwire binary protocol (Bun.js optimized).",
   "keywords": [

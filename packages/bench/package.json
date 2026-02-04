@@ -44,8 +44,8 @@
     "@procwire/client": "workspace:*",
     "@procwire/codecs": "workspace:*",
     "@procwire/core": "workspace:*",
-    "@procwire-bun/client": "workspace:*",
-    "@procwire-bun/core": "workspace:*",
+    "@procwire/bun-client": "workspace:*",
+    "@procwire/bun-core": "workspace:*",
     "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {

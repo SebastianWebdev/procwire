@@ -1,5 +1,5 @@
 /**
- * Type definitions for @procwire-bun/client.
+ * Type definitions for @procwire/bun-client.
  *
  * @module
  */

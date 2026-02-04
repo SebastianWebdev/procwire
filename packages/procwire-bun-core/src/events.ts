@@ -1,5 +1,5 @@
 /**
- * Event name constants for @procwire-bun/core.
+ * Event name constants for @procwire/bun-core.
  *
  * Using constants instead of string literals provides:
  * - Autocomplete in IDEs

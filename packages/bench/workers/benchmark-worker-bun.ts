@@ -2,10 +2,10 @@
  * Benchmark worker for Bun runtime - handles all benchmark methods.
  *
  * This worker provides methods for all codec/response-mode combinations
- * used in the benchmark suite, using @procwire-bun/client for Bun.js.
+ * used in the benchmark suite, using @procwire/bun-client for Bun.js.
  */
 
-import { Client } from "@procwire-bun/client";
+import { Client } from "@procwire/bun-client";
 import { rawCodec, msgpackCodec, arrowCodec } from "@procwire/codecs";
 
 const STREAM_CHUNK_COUNT = 10;

@@ -191,10 +191,10 @@ importers:
 
   packages/bench:
     dependencies:
-      '@procwire-bun/client':
+      '@procwire/bun-client':
         specifier: workspace:*
         version: link:../procwire-bun-client
-      '@procwire-bun/core':
+      '@procwire/bun-core':
         specifier: workspace:*
         version: link:../procwire-bun-core
       '@procwire/client':

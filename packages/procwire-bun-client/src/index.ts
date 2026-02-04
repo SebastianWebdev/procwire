@@ -1,12 +1,12 @@
 /**
- * @procwire-bun/client - Child-side API for Procwire IPC (Bun.js optimized).
+ * @procwire/bun-client - Child-side API for Procwire IPC (Bun.js optimized).
  *
  * This package provides the client-side implementation for child processes
  * to communicate with the parent process using Procwire's binary protocol.
  *
  * @example
  * ```typescript
- * import { Client } from '@procwire-bun/client';
+ * import { Client } from '@procwire/bun-client';
  *
  * const client = new Client()
  *   .handle('query', async (data, ctx) => {
