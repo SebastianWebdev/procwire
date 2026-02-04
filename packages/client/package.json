@@ -1,0 +1,38 @@
+{
+  "name": "@procwire/client",
+  "version": "1.0.0",
+  "description": "Child-side client for Procwire IPC",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@procwire/protocol": "workspace:*",
+    "@procwire/codecs": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  },
+  "keywords": [
+    "ipc",
+    "procwire",
+    "client",
+    "child-process"
+  ],
+  "license": "MIT"
+}

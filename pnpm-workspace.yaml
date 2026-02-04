@@ -1,4 +1,15 @@
 packages:
-  - "packages/*"
-  - "examples/*"
-  - "astro-docs"
+  - packages/transport
+  - packages/protocol
+  - packages/codecs
+  - packages/core
+  - packages/client
+  - packages/bench
+  - packages/procwire-bun-core
+  - packages/procwire-bun-client
+  - astro-docs
+  - dashboard
+  - dashboard/client
+
+onlyBuiltDependencies:
+  - better-sqlite3

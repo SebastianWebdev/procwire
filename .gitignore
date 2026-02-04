@@ -13,7 +13,16 @@ coverage
 
 # OS / tooling
 Thumbs.db
+docs/next
 nul
 
-# Claude Code
+# Agent session memory (local only)
+AGENT_MEMORY.md
+
+# Claude Code local settings
 .claude/settings.local.json
+
+# Dashboard
+dashboard/*.db
+dashboard/*.db-journal
+dashboard/client/dist

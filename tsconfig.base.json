@@ -4,7 +4,17 @@
     "baseUrl": ".",
     "paths": {
       "@procwire/transport": ["packages/transport/src/index.ts"],
-      "@procwire/transport/*": ["packages/transport/src/*"]
+      "@procwire/transport/*": ["packages/transport/src/*"],
+      "@procwire/protocol": ["packages/protocol/src/index.ts"],
+      "@procwire/protocol/*": ["packages/protocol/src/*"],
+      "@procwire/codecs": ["packages/codecs/src/index.ts"],
+      "@procwire/codecs/*": ["packages/codecs/src/*"],
+      "@procwire/core": ["packages/core/src/index.ts"],
+      "@procwire/core/*": ["packages/core/src/*"],
+      "@procwire/client": ["packages/client/src/index.ts"],
+      "@procwire/client/*": ["packages/client/src/*"],
+      "@procwire/bench": ["packages/bench/src/index.ts"],
+      "@procwire/bench/*": ["packages/bench/src/*"]
     },
 
     "target": "ES2022",

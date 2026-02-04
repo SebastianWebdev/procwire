@@ -36,10 +36,10 @@ export default defineConfig({
       plugins: [
         starlightTypeDoc({
           entryPoints: [
-            "../packages/transport/src/index.ts",
-            "../packages/codec-msgpack/src/index.ts",
-            "../packages/codec-protobuf/src/index.ts",
-            "../packages/codec-arrow/src/index.ts",
+            "../packages/protocol/src/index.ts",
+            "../packages/codecs/src/index.ts",
+            "../packages/core/src/index.ts",
+            "../packages/client/src/index.ts",
           ],
           tsconfig: "./tsconfig.typedoc.json",
 
@@ -58,12 +58,13 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: "Procwire",
           description:
-            "Documentation for Procwire library (Transport, Codecs: MsgPack, Protobuf, Arrow).",
+            "Documentation for Procwire v2 - high-performance binary IPC for Node.js (Protocol, Core, Client, Codecs).",
           details: `
 Key Architectural Concepts:
-- Procwire focuses on type-safe communication.
-- It supports multiple codecs (MsgPack, Protobuf, Arrow).
-- Prefer using the defined types from 'api' section over raw objects.
+- Procwire uses dual-channel architecture: Control Plane (JSON-RPC via stdio) + Data Plane (binary protocol via named pipes).
+- Data Plane achieves ~2.5 GB/s throughput with zero JSON overhead.
+- Four main packages: @procwire/protocol (wire format), @procwire/codecs (serialization), @procwire/core (parent-side), @procwire/client (child-side).
+- Response types: none, ack, result, stream.
 - All examples use TypeScript.
           `,
 

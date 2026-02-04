@@ -2,9 +2,97 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ FIRST: Read Agent Memory
+
+**PRZED ROZPOCZĘCIEM PRACY** przeczytaj [`AGENT_MEMORY.md`](AGENT_MEMORY.md) - zawiera krótkie podsumowanie projektu, ostatnich decyzji, bugów i ważnych informacji między sesjami.
+
+### Kiedy aktualizować Agent Memory
+
+**ZAWSZE** aktualizuj `AGENT_MEMORY.md` na koniec sesji lub po zakończeniu znaczącego taska:
+
+1. **Ukończone taski** - dodaj do sekcji "TODO / W Trakcie" z checkboxem `[x]`
+2. **Nowe taski** - dodaj do sekcji "TODO / W Trakcie" z checkboxem `[ ]`
+3. **Ważne decyzje architektoniczne** - dodaj do "Ostatnie Ważne Decyzje" z datą
+4. **Naprawione bugi** - dodaj krótki postmortem do "Ostatnie Ważne Decyzje"
+5. **Benchmark results** - aktualizuj tabelę jeśli wyniki się zmieniły
+6. **Nowe notatki** - dodaj do "Notatki dla Agenta" jeśli odkryłeś coś ważnego
+
+### Co zapisywać (przykłady)
+
+```markdown
+### 2026-01-31: Nazwa decyzji/buga
+
+**Problem:** Krótki opis problemu
+**Root cause:** Co było przyczyną
+**Fix:** Jak naprawiono
+**Commit:** `abc1234` (opcjonalnie)
+```
+
+### Czego NIE zapisywać
+
+- Drobne refaktory bez wpływu na architekturę
+- Poprawki literówek, formatowania
+- Zmiany w dokumentacji (chyba że znaczące)
+- Rzeczy już udokumentowane w `docs/next/`
+
+## Task Management (docs/next/tasks/)
+
+Folder `docs/next/tasks/` to centralne miejsce zarządzania taskami projektu.
+
+### Struktura
+
+```
+docs/next/tasks/
+├── todo/           # Taski do zrobienia (TASK-XX-nazwa.md)
+├── done/           # Ukończone taski (przenoszone z todo/)
+└── README.md       # Opis konwencji (opcjonalnie)
+```
+
+### Gdy user prosi o "napisanie taska" lub "zrobienie taska"
+
+1. **Napisanie taska** = utworzenie pliku `docs/next/tasks/todo/TASK-XX-nazwa.md`
+2. **Zrobienie taska** = implementacja według pliku z `todo/`, potem przeniesienie do `done/`
+
+### Format pliku taska
+
+```markdown
+# TASK-XX: Krótki tytuł
+
+## Cel
+
+Co chcemy osiągnąć.
+
+## Zakres
+
+- [ ] Subtask 1
+- [ ] Subtask 2
+
+## Kontekst
+
+Dlaczego to robimy, powiązane pliki, decyzje.
+
+## Definition of Done
+
+- Testy przechodzą
+- Dokumentacja zaktualizowana
+- Code review (jeśli wymagane)
+```
+
+### Po ukończeniu taska - OBOWIĄZKOWE
+
+1. **Przenieś plik** z `todo/` do `done/`
+2. **Zaktualizuj `AGENT_MEMORY.md`**:
+   - Dodaj wpis `[x] TASK-XX: ...` w sekcji "TODO / W Trakcie"
+   - Jeśli wystąpił bug lub ważna decyzja → dodaj do "Ostatnie Ważne Decyzje"
+   - Jeśli odkryłeś coś przydatnego → dodaj do "Notatki dla Agenta"
+
+**PAMIĘTAJ:** Memory musi zawierać wzmiankę o każdym zrealizowanym tasku. Jeśli podczas pracy wyszedł jakiś bug, edge case lub istotna informacja architektoniczna - zapisz to w memory, aby kolejne sesje mogły z tego skorzystać.
+
 ## Project Overview
 
 This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
+
+**STATUS: v2.0 refactoring in progress** - The library is being refactored to use a binary protocol for the data plane. See `docs/next/` for the new architecture.
 
 ### Packages
 
@@ -12,6 +100,36 @@ This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communicat
 - `@procwire/codec-msgpack` - MessagePack codec (peer dep: `@msgpack/msgpack`)
 - `@procwire/codec-protobuf` - Protocol Buffers codec (peer dep: `protobufjs`)
 - `@procwire/codec-arrow` - Apache Arrow IPC codec (peer dep: `apache-arrow`)
+
+## Architecture (v2.0 - in development)
+
+The library is being refactored to v2.0 with a new binary protocol for the data plane.
+
+### Key Architecture Documents
+
+- [`docs/next/ARCHITECTURE-CONTEXT.md`](docs/next/ARCHITECTURE-CONTEXT.md) - **READ THIS FIRST** - Explains why the architecture changed
+- [`docs/next/PLAN.md`](docs/next/PLAN.md) - Implementation plan with all tasks
+- [`docs/next/CHECKLIST.md`](docs/next/CHECKLIST.md) - Agent guidelines and checkpoints
+
+### Dual-Channel Architecture
+
+```
+Control Plane (stdio)     - JSON-RPC 2.0    - Handshake, heartbeat, lifecycle
+Data Plane (named pipe)   - BINARY PROTOCOL - User data, high throughput
+```
+
+**CRITICAL RULE**: Data Plane = Binary Protocol = ZERO JSON
+
+The old architecture used JSON-RPC on both channels, which destroyed performance (~30 MB/s vs ~2.5 GB/s).
+
+### Wire Format (Data Plane)
+
+```
++----------+-------+----------+----------+----------------------+
+| Method ID| Flags | Req ID   | Length   | Payload              |
+| 2 bytes  | 1 byte| 4 bytes  | 4 bytes  | N bytes              |
++----------+-------+----------+----------+----------------------+
+```
 
 ## Commands
 
@@ -62,76 +180,19 @@ The YAML frontmatter lists affected packages and their bump types. The body cont
 All packages support the same scripts when run from their directory:
 
 ```bash
-cd transport
+cd packages/transport
 pnpm typecheck           # TypeScript check (no emit)
 pnpm build               # Compile TypeScript
 pnpm test                # Run Vitest tests
 pnpm clean               # Remove dist/ and build artifacts
 ```
 
-### Working with Examples
-
-Examples are located in the `examples/` directory and demonstrate real-world usage:
-
-```bash
-# Build all examples
-pnpm --filter "./examples/**" build
-
-# Run a specific example
-pnpm --filter ./examples/basic-stdio dev
-pnpm --filter ./examples/dual-channel dev
-
-# Rust worker example (requires Cargo)
-cd examples/rust-worker/rust && cargo build --release && cd ../../..
-pnpm --filter ./examples/rust-worker dev
-
-# Clean examples
-pnpm --filter "./examples/**" clean
-```
-
-Note: Examples are excluded from ESLint checks (see [eslint.config.js](eslint.config.js)).
-
-## Architecture
-
-The library uses a **layered architecture** where each layer is independent and replaceable:
-
-```
-Application Layer (ProcessManager, ChannelPair)
-         ↓
-Channel Layer (RequestChannel, StreamChannel)
-         ↓
-Protocol Layer (JSON-RPC 2.0, custom protocols)
-         ↓
-Serialization Layer (JSON, MessagePack, Protobuf, Arrow)
-         ↓
-Framing Layer (line-delimited, length-prefixed)
-         ↓
-Transport Layer (stdio, named pipes, unix sockets)
-         ↓
-OS Layer (child_process, net.Server/Socket)
-```
-
-### Core Abstractions
-
-1. **Transport**: Raw byte transfer between endpoints (stdio, pipes, sockets)
-2. **Framing**: Message boundary detection in byte streams
-3. **Serialization**: Conversion between objects and binary representation
-4. **Protocol**: Application-level message protocol (request/response, notifications)
-5. **Channel**: High-level communication combining all layers
-
-### Key Design Principles
-
-- **Zero dependencies** in core package (`@procwire/transport`)
-- **Modular**: Each layer is independent and replaceable
-- **Type-safe**: Full TypeScript support with generics
-- **Cross-platform**: Windows (Named Pipes), macOS/Linux (Unix sockets)
-
 ## Codebase Structure
 
 ### Transport Package Structure
 
 ```
-transport/
+packages/transport/
 ├── src/
 │   ├── index.ts              # Re-exports all modules
 │   ├── transport/
@@ -145,13 +206,13 @@ transport/
 │   │   └── types.ts          # SerializationCodec interface
 │   ├── protocol/
 │   │   ├── index.ts
-│   │   └── types.ts          # Protocol interfaces
+│   │   └── types.ts          # Protocol interfaces (JSON-RPC for control plane)
 │   ├── channel/
 │   │   ├── index.ts
-│   │   └── types.ts          # Channel interfaces
+│   │   └── types.ts          # Channel interfaces (TO BE REFACTORED)
 │   ├── process/
 │   │   ├── index.ts
-│   │   └── types.ts          # ProcessManager interfaces
+│   │   └── types.ts          # ProcessManager interfaces (TO BE REFACTORED)
 │   └── utils/                # Internal utilities
 │       ├── assert.ts         # Assertion helpers
 │       ├── disposables.ts    # Disposable pattern
@@ -179,7 +240,7 @@ The transport package uses subpath exports for selective imports:
 
 ### Important Files
 
-- [`docs/procwire-transport-architecture.md`](docs/procwire-transport-architecture.md) - Comprehensive architecture documentation with diagrams, interfaces, and usage examples
+- [`docs/next/`](docs/next/) - v2.0 architecture documentation (source of truth)
 - [`pnpm-workspace.yaml`](pnpm-workspace.yaml) - Workspace configuration
 - [`package.json`](package.json) - Root package with shared scripts
 - [`tsconfig.base.json`](tsconfig.base.json) - Base TypeScript config
@@ -223,23 +284,7 @@ The transport package uses subpath exports for selective imports:
 
 - Uses **Vitest** for testing
 - Tests are in `test/` directories within each package
-- Currently has sanity tests; implementation tests are not yet written
 - Run tests: `pnpm test` (root) or `pnpm -r test` (all packages)
-
-## Implementation Status
-
-The project is in **early development**. The architecture documentation in [`docs/procwire-transport-architecture.md`](docs/procwire-transport-architecture.md) is comprehensive but the implementation has only stub files with type definitions. Key files currently contain only interface definitions without implementations.
-
-### Implementation Patterns
-
-When implementing features in this codebase:
-
-1. **Each layer has a `types.ts`** - All interfaces and types are defined in separate `types.ts` files
-2. **Export via `index.ts`** - Each module exports its public API through an `index.ts` file
-3. **Utilities are internal** - The `utils/` directory contains shared internal utilities (events, errors, disposables, platform detection, etc.)
-4. **Cross-platform support** - Use `utils/platform.ts` for OS detection and `utils/pipe-path.ts` for path resolution
-5. **Error handling** - Use custom error types from `utils/errors.ts`
-6. **Resource cleanup** - Use the disposable pattern from `utils/disposables.ts` for cleanup
 
 ## Task Completion Checklist
 
