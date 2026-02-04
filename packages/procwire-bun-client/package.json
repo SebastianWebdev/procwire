@@ -2,6 +2,23 @@
   "name": "@procwire/bun-client",
   "version": "1.0.1",
   "description": "Child-side client for Procwire IPC (Bun.js optimized)",
+  "keywords": [
+    "ipc",
+    "procwire",
+    "client",
+    "child-process",
+    "bun"
+  ],
+  "author": "Sebastian Webdev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SebastianWebdev/procwire.git",
+    "directory": "packages/procwire-bun-client"
+  },
+  "bugs": {
+    "url": "https://github.com/SebastianWebdev/procwire/issues"
+  },
+  "homepage": "https://www.procwire.dev",
   "type": "module",
   "sideEffects": false,
   "license": "MIT",
@@ -17,13 +34,19 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test",
-    "clean": "rimraf dist \"*.tsbuildinfo\""
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test"
   },
   "dependencies": {
     "@procwire/protocol": "workspace:*",
@@ -33,12 +56,5 @@
     "@types/bun": "latest",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3"
-  },
-  "keywords": [
-    "ipc",
-    "procwire",
-    "client",
-    "child-process",
-    "bun"
-  ]
+  }
 }
