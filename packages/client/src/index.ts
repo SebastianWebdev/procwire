@@ -25,7 +25,7 @@
  * client.emitEvent('progress', { percent: 50 });
  * ```
  *
- * @module
+ * @module @procwire/client
  */
 
 export { Client } from "./client.js";

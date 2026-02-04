@@ -31,7 +31,7 @@
  * }
  * ```
  *
- * @module
+ * @module @procwire/protocol
  */
 
 export {

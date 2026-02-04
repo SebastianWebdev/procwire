@@ -21,7 +21,7 @@
  * const table = arrowCodec.deserialize(payload);
  * ```
  *
- * @module
+ * @module @procwire/codecs
  */
 
 export type { Codec, RawCodecType, RawChunksCodecType, ObjectCodecType } from "./types.js";
