@@ -1,6 +1,6 @@
 {
   "name": "@procwire/protocol",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Binary wire format for Procwire data plane (zero JSON overhead).",
   "keywords": [
     "ipc",
