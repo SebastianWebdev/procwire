@@ -1,6 +1,6 @@
 {
   "name": "@procwire/client",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Child-side client for Procwire IPC",
   "type": "module",
   "sideEffects": false,

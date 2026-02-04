@@ -1,6 +1,6 @@
 {
   "name": "@procwire/bun-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Core module system for Procwire binary protocol (Bun.js optimized).",
   "keywords": [
     "ipc",
