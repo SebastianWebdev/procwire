@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildFrame, Frame, FrameBuffer, encodeHeader, HEADER_SIZE } from "../src/index.js";
+import { buildFrame, FrameBuffer, encodeHeader } from "../src/index.js";
+import type { Frame } from "../src/index.js";
 
 describe("FrameBuffer - Large Payload Performance", () => {
   it("should handle 10MB payload efficiently", () => {
