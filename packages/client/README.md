@@ -60,7 +60,7 @@ const client = new Client(options?)
 
 ```typescript
 interface ClientOptions {
-  defaultCodec?: Codec;  // Default codec for all methods/events
+  defaultCodec?: Codec; // Default codec for all methods/events
 }
 ```
 
@@ -69,14 +69,18 @@ interface ClientOptions {
 Register a method handler.
 
 ```typescript
-client.handle("process", async (data, ctx) => {
-  // Handle request and send response
-  ctx.respond(result);
-}, {
-  response: "result",      // "result" | "stream" | "ack" | "none"
-  codec: msgpackCodec,     // Optional, defaults to msgpack
-  cancellable: true,       // Support AbortSignal from parent
-});
+client.handle(
+  "process",
+  async (data, ctx) => {
+    // Handle request and send response
+    ctx.respond(result);
+  },
+  {
+    response: "result", // "result" | "stream" | "ack" | "none"
+    codec: msgpackCodec, // Optional, defaults to msgpack
+    cancellable: true, // Support AbortSignal from parent
+  },
+);
 ```
 
 #### `.event(name, definition?)`
@@ -110,17 +114,17 @@ Passed to method handlers to send responses back to parent.
 
 ```typescript
 interface RequestContext {
-  readonly requestId: number;   // For correlation
-  readonly method: string;      // Method being handled
-  readonly aborted: boolean;    // Was request aborted?
+  readonly requestId: number; // For correlation
+  readonly method: string; // Method being handled
+  readonly aborted: boolean; // Was request aborted?
 
-  onAbort(callback: () => void): void;  // Abort callback
+  onAbort(callback: () => void): void; // Abort callback
 
-  respond(data: unknown): Promise<void>;  // Full response
-  ack(data?: unknown): Promise<void>;     // Acknowledgment only
-  chunk(data: unknown): Promise<void>;    // Stream chunk
-  end(): Promise<void>;                   // End stream
-  error(err: Error | string): Promise<void>;  // Error response
+  respond(data: unknown): Promise<void>; // Full response
+  ack(data?: unknown): Promise<void>; // Acknowledgment only
+  chunk(data: unknown): Promise<void>; // Stream chunk
+  end(): Promise<void>; // End stream
+  error(err: Error | string): Promise<void>; // Error response
 }
 ```
 
@@ -131,40 +135,56 @@ interface RequestContext {
 #### Single Response (`result`)
 
 ```typescript
-client.handle("query", async (data, ctx) => {
-  const result = await processQuery(data);
-  await ctx.respond(result);
-}, { response: "result" });
+client.handle(
+  "query",
+  async (data, ctx) => {
+    const result = await processQuery(data);
+    await ctx.respond(result);
+  },
+  { response: "result" },
+);
 ```
 
 #### Streaming Response (`stream`)
 
 ```typescript
-client.handle("generate", async (data, ctx) => {
-  for (const item of generateItems(data)) {
-    await ctx.chunk(item);
-  }
-  await ctx.end();
-}, { response: "stream" });
+client.handle(
+  "generate",
+  async (data, ctx) => {
+    for (const item of generateItems(data)) {
+      await ctx.chunk(item);
+    }
+    await ctx.end();
+  },
+  { response: "stream" },
+);
 ```
 
 #### Acknowledgment (`ack`)
 
 ```typescript
-client.handle("enqueue", async (data, ctx) => {
-  await ctx.ack({ queued: true, position: 42 });
-  // Continue processing after acknowledgment
-  await processInBackground(data);
-}, { response: "ack" });
+client.handle(
+  "enqueue",
+  async (data, ctx) => {
+    await ctx.ack({ queued: true, position: 42 });
+    // Continue processing after acknowledgment
+    await processInBackground(data);
+  },
+  { response: "ack" },
+);
 ```
 
 #### Fire-and-Forget (`none`)
 
 ```typescript
-client.handle("log", (data, ctx) => {
-  logger.info(data);
-  // No response needed
-}, { response: "none" });
+client.handle(
+  "log",
+  (data, ctx) => {
+    logger.info(data);
+    // No response needed
+  },
+  { response: "none" },
+);
 ```
 
 #### Error Response
@@ -185,24 +205,28 @@ client.handle("validate", async (data, ctx) => {
 Handle request cancellation from parent.
 
 ```typescript
-client.handle("longTask", async (data, ctx) => {
-  const resources = await acquireResources();
+client.handle(
+  "longTask",
+  async (data, ctx) => {
+    const resources = await acquireResources();
 
-  // Register cleanup on abort
-  ctx.onAbort(() => {
-    resources.release();
-  });
+    // Register cleanup on abort
+    ctx.onAbort(() => {
+      resources.release();
+    });
 
-  // Check abort status periodically
-  for (const item of items) {
-    if (ctx.aborted) {
-      return;  // Stop processing
+    // Check abort status periodically
+    for (const item of items) {
+      if (ctx.aborted) {
+        return; // Stop processing
+      }
+      await ctx.chunk(process(item));
     }
-    await ctx.chunk(process(item));
-  }
 
-  await ctx.end();
-}, { response: "stream", cancellable: true });
+    await ctx.end();
+  },
+  { response: "stream", cancellable: true },
+);
 ```
 
 ### Error Handling
@@ -211,9 +235,9 @@ client.handle("longTask", async (data, ctx) => {
 import { ProcwireClientError, ClientErrors } from "@procwire/client";
 
 // Error factories
-ClientErrors.methodNotFound("unknown");     // Unknown method called
-ClientErrors.handlerError("process", err);  // Handler threw error
-ClientErrors.alreadyStarted();              // start() called twice
+ClientErrors.methodNotFound("unknown"); // Unknown method called
+ClientErrors.handlerError("process", err); // Handler threw error
+ClientErrors.alreadyStarted(); // start() called twice
 ```
 
 ## Architecture

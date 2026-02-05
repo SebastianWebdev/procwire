@@ -14,7 +14,11 @@
       "@procwire/client": ["packages/client/src/index.ts"],
       "@procwire/client/*": ["packages/client/src/*"],
       "@procwire/bench": ["packages/bench/src/index.ts"],
-      "@procwire/bench/*": ["packages/bench/src/*"]
+      "@procwire/bench/*": ["packages/bench/src/*"],
+      "@procwire/bun-core": ["packages/procwire-bun-core/dist/index.d.ts"],
+      "@procwire/bun-core/*": ["packages/procwire-bun-core/dist/*"],
+      "@procwire/bun-client": ["packages/procwire-bun-client/dist/index.d.ts"],
+      "@procwire/bun-client/*": ["packages/procwire-bun-client/dist/*"]
     },
 
     "target": "ES2022",

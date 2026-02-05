@@ -50,7 +50,6 @@ function LatencyChart({ results }: LatencyChartProps) {
       textStyle: { color: theme.colors.dark[0] },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       formatter: (params: any) => {
-         
         const lines = params.map(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (p: any) => `${p.marker} ${p.seriesName}: <strong>${p.value.toFixed(0)} us</strong>`,

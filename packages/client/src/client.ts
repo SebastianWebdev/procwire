@@ -24,8 +24,20 @@ import {
   ABORT_METHOD_ID,
   DrainWaiter,
 } from "@procwire/protocol";
-import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
-import type { MethodDefinition, EventDefinition, MethodHandler, ClientOptions } from "./types.js";
+import {
+  msgpackCodec,
+  codecDeserialize,
+  type Codec,
+  type Schema,
+  type EmptySchema,
+} from "@procwire/codecs";
+import type {
+  MethodDefinition,
+  EventDefinition,
+  MethodHandler,
+  ClientOptions,
+  TypedRequestContext,
+} from "./types.js";
 import { RequestContextImpl } from "./request-context.js";
 import { ClientErrors } from "./errors.js";
 
@@ -55,7 +67,9 @@ import { ClientErrors } from "./errors.js";
  * client.emitEvent('progress', { percent: 50 });
  * ```
  */
-export class Client extends EventEmitter {
+export class Client<S extends Schema = EmptySchema> extends EventEmitter {
+  declare readonly __schema: S;
+
   private _defaultCodec: Codec;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
@@ -105,11 +119,20 @@ export class Client extends EventEmitter {
    * });
    * ```
    */
+  handle<M extends string & keyof S["methods"]>(
+    method: M,
+    handler: (
+      data: S["methods"][M]["request"],
+      ctx: TypedRequestContext<S["methods"][M]["response"]>,
+    ) => void | Promise<void>,
+    options?: Partial<MethodDefinition>,
+  ): this;
   handle<TData = unknown>(
     method: string,
     handler: MethodHandler<TData>,
     options?: Partial<MethodDefinition>,
-  ): this {
+  ): this;
+  handle(method: string, handler: MethodHandler, options?: Partial<MethodDefinition>): this {
     if (this._started) {
       throw ClientErrors.cannotAddHandlerAfterStart();
     }
@@ -205,6 +228,11 @@ export class Client extends EventEmitter {
    * await client.emitEvent('progress', { percent: 50 });
    * ```
    */
+  async emitEvent<E extends string & keyof S["events"]>(
+    eventName: E,
+    data: S["events"][E]["data"],
+  ): Promise<void>;
+  async emitEvent(eventName: string, data: unknown): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void> {
     if (!this._socket) {
       throw ClientErrors.notConnected();

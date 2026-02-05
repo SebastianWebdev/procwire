@@ -76,7 +76,7 @@ extensionCodec.register({
  * // result === { name: 'test', count: 42 }
  * ```
  */
-export class MsgPackCodec<T = unknown> implements Codec<T, T> {
+export class MsgPackCodec<TIn = unknown, TOut = TIn> implements Codec<TIn, TOut> {
   readonly name = "msgpack";
 
   /**
@@ -84,7 +84,7 @@ export class MsgPackCodec<T = unknown> implements Codec<T, T> {
    *
    * ⚡️ OPTIMIZATION: Uses Buffer.from(view) instead of copying data.
    */
-  serialize(data: T): Buffer {
+  serialize(data: TIn): Buffer {
     const encoded = encode(data, { extensionCodec });
 
     // ⚡️ Create Buffer VIEW over the Uint8Array's underlying ArrayBuffer
@@ -95,8 +95,8 @@ export class MsgPackCodec<T = unknown> implements Codec<T, T> {
   /**
    * Deserialize MsgPack binary to object.
    */
-  deserialize(buffer: Buffer): T {
-    return decode(buffer, { extensionCodec }) as T;
+  deserialize(buffer: Buffer): TOut {
+    return decode(buffer, { extensionCodec }) as TOut;
   }
 }
 
@@ -105,3 +105,22 @@ export class MsgPackCodec<T = unknown> implements Codec<T, T> {
  * Use this when types don't matter or for convenience.
  */
 export const msgpackCodec = new MsgPackCodec();
+
+/**
+ * Create a typed MsgPack codec.
+ *
+ * Returns a new MsgPackCodec instance with the specified type parameters.
+ * Use this to get compile-time type safety for request/response data.
+ *
+ * @example
+ * ```typescript
+ * // Symmetric (same type for serialize and deserialize)
+ * const codec = msgpack<MyData>();
+ *
+ * // Asymmetric (different request and response types)
+ * const codec = msgpack<SearchQuery, SearchResult>();
+ * ```
+ */
+export function msgpack<TReq, TRes = TReq>(): MsgPackCodec<TReq, TRes> {
+  return new MsgPackCodec<TReq, TRes>();
+}

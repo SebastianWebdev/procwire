@@ -115,3 +115,23 @@ export interface RequestContext {
    */
   error(err: Error | string): Promise<void>;
 }
+
+/**
+ * Type-safe request context.
+ *
+ * Response methods (`respond`, `ack`, `chunk`) are typed to `TRes`,
+ * providing compile-time safety that the handler sends the correct response type.
+ *
+ * @typeParam TRes - Expected response data type
+ */
+export interface TypedRequestContext<TRes = unknown> {
+  readonly requestId: number;
+  readonly method: string;
+  readonly aborted: boolean;
+  onAbort(callback: () => void): void;
+  respond(data: TRes): Promise<void>;
+  ack(data?: TRes): Promise<void>;
+  chunk(data: TRes): Promise<void>;
+  end(): Promise<void>;
+  error(err: Error | string): Promise<void>;
+}

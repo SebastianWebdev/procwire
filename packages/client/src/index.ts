@@ -38,4 +38,8 @@ export type {
   ClientOptions,
   MethodHandler,
   RequestContext,
+  TypedRequestContext,
 } from "./types.js";
+
+// Re-export schema types from @procwire/codecs for convenience
+export type { Schema, EmptySchema, ExtractSchema } from "@procwire/codecs";

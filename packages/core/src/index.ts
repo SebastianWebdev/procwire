@@ -46,3 +46,22 @@ export type {
   ResponseType,
   InitMessage,
 } from "./types.js";
+
+export type {
+  AddMethod,
+  AddEvent,
+  SendReturn,
+  TypedMethodConfig,
+  TypedEventConfig,
+} from "./schema-types.js";
+
+// Re-export schema types from @procwire/codecs for convenience
+export type {
+  Schema,
+  EmptySchema,
+  ExtractSchema,
+  MethodDescriptor,
+  EventDescriptor,
+  InferCodecInput,
+  InferCodecOutput,
+} from "@procwire/codecs";

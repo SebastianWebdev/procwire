@@ -28,7 +28,15 @@ import {
   encodeHeaderInto,
   DrainWaiter,
 } from "@procwire/protocol";
-import { codecDeserialize, msgpackCodec, type Codec } from "@procwire/codecs";
+import {
+  codecDeserialize,
+  msgpackCodec,
+  type Codec,
+  type Schema,
+  type EmptySchema,
+  type InferCodecInput,
+  type InferCodecOutput,
+} from "@procwire/codecs";
 import type {
   ModuleState,
   ExecutableConfig,
@@ -36,7 +44,15 @@ import type {
   EventConfig,
   SpawnPolicy,
   ModuleSchema,
+  ResponseType,
 } from "./types.js";
+import type {
+  AddMethod,
+  AddEvent,
+  SendReturn,
+  TypedMethodConfig,
+  TypedEventConfig,
+} from "./schema-types.js";
 import { ModuleErrors } from "./errors.js";
 import { ModuleEvents } from "./events.js";
 
@@ -79,7 +95,9 @@ interface PendingStream {
  * worker.onEvent('progress', console.log);
  * ```
  */
-export class Module extends EventEmitter {
+export class Module<S extends Schema = EmptySchema> extends EventEmitter {
+  declare readonly __schema: S;
+
   readonly name: string;
 
   // Configuration (set via builder methods)
@@ -145,27 +163,32 @@ export class Module extends EventEmitter {
   /**
    * Register a method.
    */
-  method(
-    name: string,
-    config: Partial<Omit<MethodConfig, "cancellable">> & { cancellable?: boolean } = {},
-  ): this {
+  method<const N extends string, C extends Codec = Codec, const RT extends ResponseType = "result">(
+    name: N,
+    config: TypedMethodConfig<C> & { response?: RT } = {} as TypedMethodConfig<C> & {
+      response?: RT;
+    },
+  ): Module<AddMethod<S, N, InferCodecInput<C>, InferCodecOutput<C>, RT>> {
     this._methods.set(name, {
       codec: config.codec ?? msgpackCodec,
       response: config.response ?? "result",
       timeout: config.timeout,
       cancellable: config.cancellable ?? false,
     });
-    return this;
+    return this as unknown as Module<AddMethod<S, N, InferCodecInput<C>, InferCodecOutput<C>, RT>>;
   }
 
   /**
    * Register an event.
    */
-  event(name: string, config: Partial<EventConfig> = {}): this {
+  event<const N extends string, C extends Codec = Codec>(
+    name: N,
+    config: TypedEventConfig<C> = {} as TypedEventConfig<C>,
+  ): Module<AddEvent<S, N, InferCodecInput<C>>> {
     this._events.set(name, {
       codec: config.codec ?? msgpackCodec,
     });
-    return this;
+    return this as unknown as Module<AddEvent<S, N, InferCodecInput<C>>>;
   }
 
   /**
@@ -353,11 +376,17 @@ export class Module extends EventEmitter {
    * @throws {Error} if timeout
    * @throws {DOMException} if aborted
    */
+  async send<M extends string & keyof S["methods"]>(
+    method: M,
+    data: S["methods"][M]["request"],
+    options?: { signal?: AbortSignal },
+  ): Promise<SendReturn<S["methods"][M]["response"], S["methods"][M]["responseType"]>>;
   async send<TResponse = unknown, TRequest = unknown>(
     method: string,
     data: TRequest,
     options?: { signal?: AbortSignal },
-  ): Promise<TResponse> {
+  ): Promise<TResponse>;
+  async send(method: string, data: unknown, options?: { signal?: AbortSignal }): Promise<unknown> {
     this._ensureReady();
 
     const methodConfig = this._methods.get(method);
@@ -383,7 +412,7 @@ export class Module extends EventEmitter {
     // Fire-and-forget
     if (schemaMethod.response === "none") {
       await this._sendFrame(methodId, 0, data, methodConfig.codec);
-      return undefined as TResponse;
+      return undefined;
     }
 
     const requestId = this._nextRequestId++;
@@ -410,7 +439,7 @@ export class Module extends EventEmitter {
 
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
-    const responsePromise = new Promise<TResponse>((resolve, reject) => {
+    const responsePromise = new Promise<unknown>((resolve, reject) => {
       const timeout = schemaMethod.timeout ?? methodConfig.timeout;
       const timer = timeout
         ? setTimeout(() => {
@@ -442,11 +471,21 @@ export class Module extends EventEmitter {
    * @param options - Optional abort signal
    * @returns AsyncGenerator yielding response chunks
    */
-  async *stream<TChunk = unknown, TRequest = unknown>(
+  stream<M extends string & keyof S["methods"]>(
+    method: M,
+    data: S["methods"][M]["request"],
+    options?: { signal?: AbortSignal },
+  ): AsyncGenerator<S["methods"][M]["response"]>;
+  stream<TChunk = unknown, TRequest = unknown>(
     method: string,
     data: TRequest,
     options?: { signal?: AbortSignal },
-  ): AsyncGenerator<TChunk> {
+  ): AsyncGenerator<TChunk>;
+  async *stream(
+    method: string,
+    data: unknown,
+    options?: { signal?: AbortSignal },
+  ): AsyncGenerator<unknown> {
     this._ensureReady();
 
     const methodConfig = this._methods.get(method);
@@ -476,8 +515,8 @@ export class Module extends EventEmitter {
     // If child sends data faster than consumer processes it,
     // this queue will grow indefinitely and cause OOM.
     // For production use with large streams, implement credit-based backpressure.
-    const queue: TChunk[] = [];
-    let resolve: ((result: IteratorResult<TChunk>) => void) | null = null;
+    const queue: unknown[] = [];
+    let resolve: ((result: IteratorResult<unknown>) => void) | null = null;
     let finished = false;
     let error: Error | null = null;
 
@@ -485,19 +524,19 @@ export class Module extends EventEmitter {
     this._pendingStreams.set(requestId, {
       push: (chunk) => {
         if (resolve) {
-          resolve({ value: chunk as TChunk, done: false });
+          resolve({ value: chunk, done: false });
           resolve = null;
         } else {
-          queue.push(chunk as TChunk);
+          queue.push(chunk);
         }
       },
       end: () => {
         finished = true;
-        if (resolve) resolve({ value: undefined as TChunk, done: true });
+        if (resolve) resolve({ value: undefined, done: true });
       },
       error: (err) => {
         error = err;
-        if (resolve) resolve({ value: undefined as TChunk, done: true });
+        if (resolve) resolve({ value: undefined, done: true });
       },
       codec: methodConfig.codec,
     });
@@ -512,7 +551,7 @@ export class Module extends EventEmitter {
             // Ignore errors during abort
           });
           error = new DOMException("Aborted", "AbortError");
-          if (resolve) resolve({ value: undefined as TChunk, done: true });
+          if (resolve) resolve({ value: undefined, done: true });
         },
         { once: true },
       );
@@ -534,7 +573,7 @@ export class Module extends EventEmitter {
         if (finished || error) break;
 
         // Wait for next chunk
-        const result = await new Promise<IteratorResult<TChunk>>((r) => {
+        const result = await new Promise<IteratorResult<unknown>>((r) => {
           resolve = r;
         });
         if (result.done) break;
@@ -553,13 +592,18 @@ export class Module extends EventEmitter {
    * @param handler - Handler function
    * @returns Unsubscribe function
    */
-  onEvent<T = unknown>(eventName: string, handler: (data: T) => void): () => void {
+  onEvent<E extends string & keyof S["events"]>(
+    eventName: E,
+    handler: (data: S["events"][E]["data"]) => void,
+  ): () => void;
+  onEvent<T = unknown>(eventName: string, handler: (data: T) => void): () => void;
+  onEvent(eventName: string, handler: (data: unknown) => void): () => void {
     const eventConfig = this._events.get(eventName);
     if (!eventConfig) {
       throw ModuleErrors.unknownEvent(eventName);
     }
 
-    const wrappedHandler = (data: T) => handler(data);
+    const wrappedHandler = (data: unknown) => handler(data);
     this.on(`event:${eventName}`, wrappedHandler);
 
     return () => {
