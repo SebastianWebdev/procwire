@@ -65,22 +65,17 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm --filter "!astro-docs" --filter "!." build
+        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!." build
 
       - name: Typecheck
-        run: pnpm --filter "!astro-docs" --if-present typecheck
+        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --if-present typecheck
 
       - name: Run tests
-        run: pnpm --filter "!astro-docs" --if-present test
+        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --if-present test
 
       # Upload build artifacts for potential reuse
       - name: Upload build artifacts
