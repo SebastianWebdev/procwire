@@ -40,6 +40,23 @@ import type {
 } from "./types.js";
 import { RequestContextImpl } from "./request-context.js";
 import { ClientErrors } from "./errors.js";
+import type { ResponseType } from "./types.js";
+
+/**
+ * Options for `client.handle()`.
+ *
+ * Supports three codec patterns:
+ * - `{ codec }` — single codec for both request and response
+ * - `{ requestCodec, responseCodec }` — dual codecs
+ * - neither — uses default codec
+ */
+interface HandleOptions {
+  response?: ResponseType;
+  cancellable?: boolean;
+  codec?: Codec;
+  requestCodec?: Codec;
+  responseCodec?: Codec;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENT CLASS
@@ -122,25 +139,40 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   handle<M extends string & keyof S["methods"]>(
     method: M,
     handler: (
-      data: S["methods"][M]["request"],
-      ctx: TypedRequestContext<S["methods"][M]["response"]>,
+      data: S["methods"][M]["reqOut"],
+      ctx: TypedRequestContext<S["methods"][M]["resIn"]>,
     ) => void | Promise<void>,
-    options?: Partial<MethodDefinition>,
+    options?: HandleOptions,
   ): this;
   handle<TData = unknown>(
     method: string,
     handler: MethodHandler<TData>,
-    options?: Partial<MethodDefinition>,
+    options?: HandleOptions,
   ): this;
-  handle(method: string, handler: MethodHandler, options?: Partial<MethodDefinition>): this {
+  handle(method: string, handler: MethodHandler, options?: HandleOptions): this {
     if (this._started) {
       throw ClientErrors.cannotAddHandlerAfterStart();
+    }
+
+    let requestCodec: Codec;
+    let responseCodec: Codec;
+
+    if (options && "requestCodec" in options && "responseCodec" in options) {
+      requestCodec = options.requestCodec;
+      responseCodec = options.responseCodec;
+    } else if (options && "codec" in options && options.codec) {
+      requestCodec = options.codec;
+      responseCodec = options.codec;
+    } else {
+      requestCodec = this._defaultCodec;
+      responseCodec = this._defaultCodec;
     }
 
     this._methods.set(method, {
       def: {
         response: options?.response ?? "result",
-        codec: options?.codec ?? this._defaultCodec,
+        requestCodec,
+        responseCodec,
         cancellable: options?.cancellable ?? false,
       },
       handler: handler as MethodHandler,
@@ -230,7 +262,7 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
    */
   async emitEvent<E extends string & keyof S["events"]>(
     eventName: E,
-    data: S["events"][E]["data"],
+    data: S["events"][E]["dataIn"],
   ): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void> {
@@ -365,15 +397,14 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
     if (!methodEntry) return;
 
     const { def, handler } = methodEntry;
-    const codec = def.codec ?? this._defaultCodec;
-    const data = codecDeserialize(codec, frame);
+    const data = codecDeserialize(def.requestCodec, frame);
 
-    // Create request context with shared DrainWaiter
+    // Create request context with RESPONSE codec (child→parent direction)
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
       header.methodId,
-      codec,
+      def.responseCodec,
       this._socket!,
       this._abortCallbacks,
       () => this._acquireHeaderBuffer(),

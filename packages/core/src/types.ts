@@ -38,9 +38,16 @@ export type ResponseType =
 
 /**
  * Method configuration.
+ *
+ * Stores both codecs for full dual-codec support:
+ * - `requestCodec` — used for parent→child direction (parent serialize, child deserialize)
+ * - `responseCodec` — used for child→parent direction (child serialize, parent deserialize)
+ *
+ * For single-codec shorthand, both point to the same codec instance.
  */
 export interface MethodConfig {
-  codec: Codec;
+  requestCodec: Codec;
+  responseCodec: Codec;
   response: ResponseType;
   timeout?: number | undefined;
   cancellable: boolean;

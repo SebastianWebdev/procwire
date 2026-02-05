@@ -11,7 +11,9 @@ import {
   msgpack,
   msgpackCodec,
   rawCodec,
+  arrowCodec,
   type MsgPackCodec,
+  type ArrowCodec,
   type ExtractSchema,
   type InferCodecInput,
   type InferCodecOutput,
@@ -67,21 +69,7 @@ describe("Type Safety - Codec Type Extraction", () => {
   });
 });
 
-describe("Type Safety - Module Builder Accumulation", () => {
-  it("should infer method types from typed codec", () => {
-    const mod = new Module("test").method("search", {
-      codec: msgpack<SearchQuery, SearchResult>(),
-      response: "result",
-    });
-    void mod;
-
-    type S = ExtractSchema<typeof mod>;
-
-    expectTypeOf<S["methods"]["search"]["request"]>().toEqualTypeOf<SearchQuery>();
-    expectTypeOf<S["methods"]["search"]["response"]>().toEqualTypeOf<SearchResult>();
-    expectTypeOf<S["methods"]["search"]["responseType"]>().toEqualTypeOf<"result">();
-  });
-
+describe("Type Safety - Single Codec (Symmetric Shorthand)", () => {
   it("should infer symmetric types from single-param msgpack", () => {
     const mod = new Module("test").method("echo", {
       codec: msgpack<SearchQuery>(),
@@ -89,47 +77,26 @@ describe("Type Safety - Module Builder Accumulation", () => {
     void mod;
 
     type S = ExtractSchema<typeof mod>;
+    type M = S["methods"]["echo"];
 
-    expectTypeOf<S["methods"]["echo"]["request"]>().toEqualTypeOf<SearchQuery>();
-    expectTypeOf<S["methods"]["echo"]["response"]>().toEqualTypeOf<SearchQuery>();
+    // Single codec → all 4 types are the same
+    expectTypeOf<M["reqIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<M["reqOut"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<M["resIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<M["resOut"]>().toEqualTypeOf<SearchQuery>();
   });
 
   it("should accumulate multiple methods", () => {
     const mod = new Module("test")
-      .method("search", { codec: msgpack<SearchQuery, SearchResult>() })
-      .method("count", { codec: msgpack<{ table: string }, { count: number }>() });
+      .method("search", { codec: msgpack<SearchQuery>() })
+      .method("count", { codec: msgpack<{ table: string }>() });
     void mod;
 
     type S = ExtractSchema<typeof mod>;
 
-    expectTypeOf<S["methods"]["search"]["request"]>().toEqualTypeOf<SearchQuery>();
-    expectTypeOf<S["methods"]["count"]["request"]>().toEqualTypeOf<{ table: string }>();
-    expectTypeOf<S["methods"]["count"]["response"]>().toEqualTypeOf<{ count: number }>();
-  });
-
-  it("should accumulate events", () => {
-    const mod = new Module("test")
-      .method("search", { codec: msgpack<SearchQuery, SearchResult>() })
-      .event("progress", { codec: msgpack<ProgressEvent>() });
-    void mod;
-
-    type S = ExtractSchema<typeof mod>;
-
-    expectTypeOf<S["events"]["progress"]["data"]>().toEqualTypeOf<ProgressEvent>();
-  });
-
-  it("should preserve schema through non-schema builder methods", () => {
-    const mod = new Module("test")
-      .method("search", { codec: msgpack<SearchQuery, SearchResult>() })
-      .executable("node", ["worker.js"])
-      .spawnPolicy({ maxRetries: 5 })
-      .maxPayloadSize(1024 * 1024);
-    void mod;
-
-    type S = ExtractSchema<typeof mod>;
-
-    expectTypeOf<S["methods"]["search"]["request"]>().toEqualTypeOf<SearchQuery>();
-    expectTypeOf<S["methods"]["search"]["response"]>().toEqualTypeOf<SearchResult>();
+    expectTypeOf<S["methods"]["search"]["reqIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<S["methods"]["count"]["reqIn"]>().toEqualTypeOf<{ table: string }>();
+    expectTypeOf<S["methods"]["count"]["resOut"]>().toEqualTypeOf<{ table: string }>();
   });
 
   it("should handle rawCodec as Buffer types", () => {
@@ -138,8 +105,10 @@ describe("Type Safety - Module Builder Accumulation", () => {
 
     type S = ExtractSchema<typeof mod>;
 
-    expectTypeOf<S["methods"]["binary"]["request"]>().toEqualTypeOf<Buffer>();
-    expectTypeOf<S["methods"]["binary"]["response"]>().toEqualTypeOf<Buffer>();
+    expectTypeOf<S["methods"]["binary"]["reqIn"]>().toEqualTypeOf<Buffer>();
+    expectTypeOf<S["methods"]["binary"]["reqOut"]>().toEqualTypeOf<Buffer>();
+    expectTypeOf<S["methods"]["binary"]["resIn"]>().toEqualTypeOf<Buffer>();
+    expectTypeOf<S["methods"]["binary"]["resOut"]>().toEqualTypeOf<Buffer>();
   });
 
   it("should default to unknown for untyped msgpackCodec", () => {
@@ -148,8 +117,8 @@ describe("Type Safety - Module Builder Accumulation", () => {
 
     type S = ExtractSchema<typeof mod>;
 
-    expectTypeOf<S["methods"]["untyped"]["request"]>().toEqualTypeOf<unknown>();
-    expectTypeOf<S["methods"]["untyped"]["response"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<S["methods"]["untyped"]["reqIn"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<S["methods"]["untyped"]["resOut"]>().toEqualTypeOf<unknown>();
   });
 
   it("should default to unknown when no codec is specified", () => {
@@ -158,16 +127,82 @@ describe("Type Safety - Module Builder Accumulation", () => {
 
     type S = ExtractSchema<typeof mod>;
 
-    expectTypeOf<S["methods"]["bare"]["request"]>().toEqualTypeOf<unknown>();
-    expectTypeOf<S["methods"]["bare"]["response"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<S["methods"]["bare"]["reqIn"]>().toEqualTypeOf<unknown>();
+    expectTypeOf<S["methods"]["bare"]["resOut"]>().toEqualTypeOf<unknown>();
+  });
+});
+
+describe("Type Safety - Dual Codec", () => {
+  it("should infer correct types for dual-codec method", () => {
+    const mod = new Module("test").method("process", {
+      requestCodec: msgpack<SearchQuery>(),
+      responseCodec: msgpack<SearchResult>(),
+    });
+    void mod;
+
+    type S = ExtractSchema<typeof mod>;
+    type M = S["methods"]["process"];
+
+    // Request codec types
+    expectTypeOf<M["reqIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<M["reqOut"]>().toEqualTypeOf<SearchQuery>();
+    // Response codec types
+    expectTypeOf<M["resIn"]>().toEqualTypeOf<SearchResult>();
+    expectTypeOf<M["resOut"]>().toEqualTypeOf<SearchResult>();
+  });
+
+  it("should infer correct types for asymmetric codec (Arrow)", () => {
+    const mod = new Module("test").method("embed", {
+      requestCodec: msgpack<SearchQuery>(),
+      responseCodec: arrowCodec,
+    });
+    void mod;
+
+    type S = ExtractSchema<typeof mod>;
+    type M = S["methods"]["embed"];
+
+    // Request codec: MsgPackCodec<SearchQuery> → reqIn = reqOut = SearchQuery
+    expectTypeOf<M["reqIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<M["reqOut"]>().toEqualTypeOf<SearchQuery>();
+    // Response codec: ArrowCodec = Codec<ArrowSerializable, Table>
+    expectTypeOf<M["resIn"]>().toEqualTypeOf<InferCodecInput<ArrowCodec>>();
+    expectTypeOf<M["resOut"]>().toEqualTypeOf<InferCodecOutput<ArrowCodec>>();
+  });
+
+  it("should preserve responseType through dual-codec method", () => {
+    const mod = new Module("test").method("stream-embed", {
+      requestCodec: msgpack<SearchQuery>(),
+      responseCodec: arrowCodec,
+      response: "stream",
+    });
+    void mod;
+
+    type S = ExtractSchema<typeof mod>;
+
+    expectTypeOf<S["methods"]["stream-embed"]["responseType"]>().toEqualTypeOf<"stream">();
+  });
+});
+
+describe("Type Safety - Events (Dual Types)", () => {
+  it("should accumulate events with dataIn/dataOut", () => {
+    const mod = new Module("test")
+      .method("search", { codec: msgpack<SearchQuery>() })
+      .event("progress", { codec: msgpack<ProgressEvent>() });
+    void mod;
+
+    type S = ExtractSchema<typeof mod>;
+
+    // MsgPackCodec<ProgressEvent> is symmetric → dataIn === dataOut
+    expectTypeOf<S["events"]["progress"]["dataIn"]>().toEqualTypeOf<ProgressEvent>();
+    expectTypeOf<S["events"]["progress"]["dataOut"]>().toEqualTypeOf<ProgressEvent>();
   });
 });
 
 describe("Type Safety - ExtractSchema", () => {
   it("should extract full schema from Module", () => {
     const mod = new Module("test")
-      .method("search", { codec: msgpack<SearchQuery, SearchResult>(), response: "result" })
-      .method("stream", { codec: msgpack<string, number>(), response: "stream" })
+      .method("search", { codec: msgpack<SearchQuery>(), response: "result" })
+      .method("stream", { codec: msgpack<string>(), response: "stream" })
       .event("progress", { codec: msgpack<ProgressEvent>() });
     void mod;
 
@@ -213,6 +248,22 @@ describe("Type Safety - SendReturn", () => {
   });
 });
 
+describe("Type Safety - Builder Chain Preservation", () => {
+  it("should preserve schema through non-schema builder methods", () => {
+    const mod = new Module("test")
+      .method("search", { codec: msgpack<SearchQuery>() })
+      .executable("node", ["worker.js"])
+      .spawnPolicy({ maxRetries: 5 })
+      .maxPayloadSize(1024 * 1024);
+    void mod;
+
+    type S = ExtractSchema<typeof mod>;
+
+    expectTypeOf<S["methods"]["search"]["reqIn"]>().toEqualTypeOf<SearchQuery>();
+    expectTypeOf<S["methods"]["search"]["resOut"]>().toEqualTypeOf<SearchQuery>();
+  });
+});
+
 describe("Type Safety - Backward Compatibility", () => {
   it("should allow untyped Module with no generic parameter", () => {
     const mod = new Module("test").method("foo").executable("node", ["w.js"]);
@@ -223,7 +274,7 @@ describe("Type Safety - Backward Compatibility", () => {
 
   it("should allow EmptySchema Module to be assigned to Module", () => {
     const typed = new Module("test").method("search", {
-      codec: msgpack<SearchQuery, SearchResult>(),
+      codec: msgpack<SearchQuery>(),
     });
 
     // Module with schema is still a Module (covariant)

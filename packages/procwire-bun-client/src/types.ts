@@ -13,12 +13,18 @@ export type ResponseType = "result" | "stream" | "ack" | "none";
 
 /**
  * Method definition for registration.
+ *
+ * Stores both codecs for dual-codec support:
+ * - `requestCodec` — for deserializing incoming requests (parent→child)
+ * - `responseCodec` — for serializing outgoing responses (child→parent)
  */
 export interface MethodDefinition {
   /** Expected response type */
   response: ResponseType;
-  /** Codec for serialization (defaults to msgpack) */
-  codec?: Codec;
+  /** Codec for deserializing requests (parent→child direction) */
+  requestCodec: Codec;
+  /** Codec for serializing responses (child→parent direction) */
+  responseCodec: Codec;
   /** Can be cancelled via AbortSignal? */
   cancellable?: boolean;
 }

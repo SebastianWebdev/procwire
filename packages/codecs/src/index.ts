@@ -47,4 +47,10 @@ export type {
   Schema,
   EmptySchema,
   ExtractSchema,
+  ParentRequestType,
+  ParentResponseType,
+  ChildRequestType,
+  ChildResponseType,
+  ParentEventType,
+  ChildEventType,
 } from "./schema-types.js";

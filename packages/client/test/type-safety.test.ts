@@ -30,11 +30,17 @@ interface ProgressEvent {
 // Simulate a schema that would come from `ExtractSchema<typeof module>`
 type TestSchema = {
   methods: {
-    search: { request: SearchQuery; response: SearchResult; responseType: "result" };
-    ping: { request: string; response: string; responseType: "ack" };
+    search: {
+      reqIn: SearchQuery;
+      reqOut: SearchQuery;
+      resIn: SearchResult;
+      resOut: SearchResult;
+      responseType: "result";
+    };
+    ping: { reqIn: string; reqOut: string; resIn: string; resOut: string; responseType: "ack" };
   };
   events: {
-    progress: { data: ProgressEvent };
+    progress: { dataIn: ProgressEvent; dataOut: ProgressEvent };
   };
 };
 

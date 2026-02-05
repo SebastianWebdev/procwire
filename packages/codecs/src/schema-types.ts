@@ -30,13 +30,30 @@ export type InferCodecOutput<C> = C extends Codec<unknown, infer O> ? O : unknow
 /**
  * Type-level descriptor for a single registered method.
  *
- * - `request` — data type accepted by `Module.send()` / received by child handler
- * - `response` — data type accepted by `ctx.respond()` / returned by `Module.send()`
- * - `responseType` — "result" | "stream" | "ack" | "none"
+ * Stores all 4 types needed for full type-safety on both sides:
+ *
+ * ```
+ * Parent (Module)                    Child (Client)
+ * ──────────────                     ──────────────
+ * send(data: reqIn)  ──serialize──►  handle(data: reqOut)
+ *       ▲                                   │
+ *       │                                   ▼
+ *   returns resOut   ◄──deserialize──  ctx.respond(resIn)
+ * ```
+ *
+ * For symmetric codecs: reqIn === reqOut, resIn === resOut
+ * For asymmetric codecs: types may differ based on codec's serialize/deserialize
  */
 export interface MethodDescriptor {
-  readonly request: unknown;
-  readonly response: unknown;
+  /** Request type from PARENT perspective (serialize input) */
+  readonly reqIn: unknown;
+  /** Request type from CHILD perspective (deserialize output) */
+  readonly reqOut: unknown;
+  /** Response type from CHILD perspective (serialize input) */
+  readonly resIn: unknown;
+  /** Response type from PARENT perspective (deserialize output) */
+  readonly resOut: unknown;
+  /** Response mode: "result" | "stream" | "ack" | "none" */
   readonly responseType: string;
 }
 
@@ -44,7 +61,10 @@ export interface MethodDescriptor {
  * Type-level descriptor for a single registered event.
  */
 export interface EventDescriptor {
-  readonly data: unknown;
+  /** Event data type (child serialize input) */
+  readonly dataIn: unknown;
+  /** Event data type (parent deserialize output) */
+  readonly dataOut: unknown;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -81,7 +101,10 @@ export type EmptySchema = { methods: {}; events: {} };
  * ```typescript
  * // parent.ts
  * const worker = new Module("worker")
- *   .method("search", { codec: msgpack<SearchQuery, SearchResult>() });
+ *   .method("search", {
+ *     requestCodec: msgpack<SearchQuery>(),
+ *     responseCodec: msgpack<SearchResult>(),
+ *   });
  *
  * export type WorkerSchema = ExtractSchema<typeof worker>;
  *
@@ -93,3 +116,45 @@ export type EmptySchema = { methods: {}; events: {} };
 export type ExtractSchema<T> = T extends { readonly __schema: infer S extends Schema }
   ? S
   : EmptySchema;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PARENT-SIDE TYPE HELPERS (for Module)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Request type for Module.send() — what parent serializes.
+ */
+export type ParentRequestType<M extends MethodDescriptor> = M["reqIn"];
+
+/**
+ * Response type for Module.send() return — what parent deserializes.
+ */
+export type ParentResponseType<M extends MethodDescriptor> = M["resOut"];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHILD-SIDE TYPE HELPERS (for Client)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Request type for Client.handle() — what child deserializes.
+ */
+export type ChildRequestType<M extends MethodDescriptor> = M["reqOut"];
+
+/**
+ * Response type for ctx.respond() — what child serializes.
+ */
+export type ChildResponseType<M extends MethodDescriptor> = M["resIn"];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EVENT TYPE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Event data type for client.emitEvent() — what child serializes.
+ */
+export type ChildEventType<E extends EventDescriptor> = E["dataIn"];
+
+/**
+ * Event data type for module.onEvent() — what parent deserializes.
+ */
+export type ParentEventType<E extends EventDescriptor> = E["dataOut"];

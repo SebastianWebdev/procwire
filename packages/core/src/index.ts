@@ -49,9 +49,11 @@ export type {
 
 export type {
   AddMethod,
+  AddMethodSymmetric,
   AddEvent,
   SendReturn,
-  TypedMethodConfig,
+  DualCodecMethodConfig,
+  SingleCodecMethodConfig,
   TypedEventConfig,
 } from "./schema-types.js";
 
@@ -64,4 +66,10 @@ export type {
   EventDescriptor,
   InferCodecInput,
   InferCodecOutput,
+  ParentRequestType,
+  ParentResponseType,
+  ChildRequestType,
+  ChildResponseType,
+  ParentEventType,
+  ChildEventType,
 } from "@procwire/codecs";

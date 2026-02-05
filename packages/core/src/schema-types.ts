@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { Codec, Schema } from "@procwire/codecs";
+import type { Codec, Schema, InferCodecInput, InferCodecOutput } from "@procwire/codecs";
 import type { ResponseType } from "./types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -15,18 +15,54 @@ import type { ResponseType } from "./types.js";
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Add a method to the schema type.
+ * Add a method to schema with dual codecs (full 4-type control).
  *
- * Used internally by `Module.method()` to accumulate the schema.
+ * Used internally by `Module.method()` when `requestCodec` + `responseCodec` are provided.
  */
 export type AddMethod<
   S extends Schema,
   Name extends string,
-  TReq,
-  TRes,
+  CReq extends Codec,
+  CRes extends Codec,
   RT extends ResponseType,
 > = {
-  methods: S["methods"] & Record<Name, { request: TReq; response: TRes; responseType: RT }>;
+  methods: S["methods"] &
+    Record<
+      Name,
+      {
+        reqIn: InferCodecInput<CReq>;
+        reqOut: InferCodecOutput<CReq>;
+        resIn: InferCodecInput<CRes>;
+        resOut: InferCodecOutput<CRes>;
+        responseType: RT;
+      }
+    >;
+  events: S["events"];
+};
+
+/**
+ * Add a method with a single symmetric codec (shorthand).
+ *
+ * Used internally by `Module.method()` when `codec:` is provided.
+ * Uses the same codec for both request and response directions.
+ */
+export type AddMethodSymmetric<
+  S extends Schema,
+  Name extends string,
+  C extends Codec,
+  RT extends ResponseType,
+> = {
+  methods: S["methods"] &
+    Record<
+      Name,
+      {
+        reqIn: InferCodecInput<C>;
+        reqOut: InferCodecOutput<C>;
+        resIn: InferCodecInput<C>;
+        resOut: InferCodecOutput<C>;
+        responseType: RT;
+      }
+    >;
   events: S["events"];
 };
 
@@ -35,9 +71,16 @@ export type AddMethod<
  *
  * Used internally by `Module.event()` to accumulate the schema.
  */
-export type AddEvent<S extends Schema, Name extends string, TData> = {
+export type AddEvent<S extends Schema, Name extends string, C extends Codec> = {
   methods: S["methods"];
-  events: S["events"] & Record<Name, { data: TData }>;
+  events: S["events"] &
+    Record<
+      Name,
+      {
+        dataIn: InferCodecInput<C>;
+        dataOut: InferCodecOutput<C>;
+      }
+    >;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -65,13 +108,25 @@ export type SendReturn<TRes, TResponseType extends string> = TResponseType exten
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Method config that preserves the codec's generic type parameters.
+ * Method config with dual codecs (full control).
  *
- * This is the config parameter type for `Module.method()`.
- * By making `codec` generic over `C extends Codec`, TypeScript can
- * infer the codec's input/output types at the call site.
+ * Use when request and response need different codecs,
+ * or when using asymmetric codecs like Arrow.
  */
-export interface TypedMethodConfig<C extends Codec = Codec> {
+export interface DualCodecMethodConfig<CReq extends Codec = Codec, CRes extends Codec = Codec> {
+  requestCodec: CReq;
+  responseCodec: CRes;
+  response?: ResponseType;
+  timeout?: number | undefined;
+  cancellable?: boolean;
+}
+
+/**
+ * Method config with single codec (symmetric shorthand).
+ *
+ * Use when the same codec handles both request and response.
+ */
+export interface SingleCodecMethodConfig<C extends Codec = Codec> {
   codec?: C;
   response?: ResponseType;
   timeout?: number | undefined;
