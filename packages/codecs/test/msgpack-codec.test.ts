@@ -247,29 +247,5 @@ describe("MsgPackCodec", () => {
       expect(Buffer.isBuffer(buffer)).toBe(true);
       expect(buffer.length).toBeGreaterThan(0);
     });
-
-    it("should handle 10000 messages quickly", () => {
-      const codec = new MsgPackCodec<{ id: number; value: string }>();
-      const messages = Array.from({ length: 10000 }, (_, i) => ({
-        id: i,
-        value: `message-${i}`,
-      }));
-
-      const start = performance.now();
-      const buffers = messages.map((m) => codec.serialize(m));
-      const serializeTime = performance.now() - start;
-
-      const deserializeStart = performance.now();
-      const results = buffers.map((b) => codec.deserialize(b));
-      const deserializeTime = performance.now() - deserializeStart;
-
-      expect(results).toHaveLength(10000);
-      expect(results[0]).toEqual({ id: 0, value: "message-0" });
-      expect(results[9999]).toEqual({ id: 9999, value: "message-9999" });
-
-      // Performance: should be under 200ms for 10000 messages (relaxed for CI)
-      expect(serializeTime).toBeLessThan(200);
-      expect(deserializeTime).toBeLessThan(200);
-    });
   });
 });

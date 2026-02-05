@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should-release: ${{ steps.check.outputs.should-release }}
+
+    env:
+      PNPM_FILTER: --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!."
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +39,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -42,13 +51,13 @@ jobs:
         run: pnpm lint
 
       - name: Build packages
-        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!." build
+        run: pnpm ${{ env.PNPM_FILTER }} build
 
       - name: Typecheck
-        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --if-present typecheck
+        run: pnpm ${{ env.PNPM_FILTER }} --if-present typecheck
 
       - name: Run tests
-        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --if-present test
+        run: pnpm ${{ env.PNPM_FILTER }} --if-present test:ci
 
       - name: Check for changesets
         id: check
@@ -75,6 +84,9 @@ jobs:
       pull-requests: write
       id-token: write # Required for OIDC
 
+    env:
+      PNPM_FILTER: --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!."
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,7 +111,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages
-        run: pnpm --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!." build
+        run: pnpm ${{ env.PNPM_FILTER }} build
 
       - name: Create Release PR or Publish
         id: changesets

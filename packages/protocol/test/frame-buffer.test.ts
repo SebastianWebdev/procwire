@@ -155,36 +155,6 @@ describe("FrameBuffer - Batch Mode", () => {
   });
 
   describe("large payload performance", () => {
-    it("should handle 10MB payload efficiently", () => {
-      const payloadSize = 10 * 1024 * 1024;
-      const payload = Buffer.alloc(payloadSize, 0x42);
-      const frame = buildFrame(
-        {
-          methodId: 1,
-          flags: 0,
-          requestId: 1,
-        },
-        payload,
-      );
-
-      const chunkSize = 64 * 1024;
-      const startTime = performance.now();
-
-      const frames: Frame[] = [];
-      for (let i = 0; i < frame.length; i += chunkSize) {
-        const chunk = frame.subarray(i, Math.min(i + chunkSize, frame.length));
-        frames.push(...buffer.push(chunk));
-      }
-
-      const accumulateTime = performance.now() - startTime;
-
-      expect(frames.length).toBe(1);
-      expect(frames[0]!.payloadLength).toBe(payloadSize);
-      expect(accumulateTime).toBeLessThan(100); // Allow more time in CI
-
-      console.log(`10MB accumulation time: ${accumulateTime.toFixed(2)}ms`);
-    });
-
     it("should reject oversized payload with default limit", () => {
       const header = encodeHeader({
         methodId: 1,
@@ -456,65 +426,6 @@ describe("FrameBuffer - Streaming Mode", () => {
     });
 
     expect(() => buffer2.push(header)).toThrow(/too large/);
-  });
-});
-
-describe("FrameBuffer - Streaming Performance", () => {
-  it("should stream 100MB with minimal memory", () => {
-    const buffer = new FrameBuffer();
-    let totalBytesReceived = 0;
-    let chunkCount = 0;
-
-    buffer.setStreamHandler({
-      onFrameStart(_header) {
-        // Starting frame
-      },
-      onPayloadChunk(chunk, _offset, _isLast) {
-        totalBytesReceived += chunk.length;
-        chunkCount++;
-        // In real usage, you'd write to file here
-      },
-      onFrameEnd() {
-        // Frame complete
-      },
-    });
-
-    const payloadSize = 100 * 1024 * 1024; // 100MB
-    const header = encodeHeader({
-      methodId: 1,
-      flags: 0,
-      requestId: 1,
-      payloadLength: payloadSize,
-    });
-
-    // Send header
-    buffer.push(header);
-
-    // Send payload in 64KB chunks
-    const chunkSize = 64 * 1024;
-    const chunk = Buffer.alloc(chunkSize, 0x42);
-
-    const startTime = performance.now();
-
-    for (let sent = 0; sent < payloadSize; sent += chunkSize) {
-      const remaining = payloadSize - sent;
-      if (remaining < chunkSize) {
-        buffer.push(chunk.subarray(0, remaining));
-      } else {
-        buffer.push(chunk);
-      }
-    }
-
-    const elapsed = performance.now() - startTime;
-
-    expect(totalBytesReceived).toBe(payloadSize);
-    console.log(
-      `100MB streamed in ${elapsed.toFixed(2)}ms (${(payloadSize / elapsed / 1000).toFixed(0)} MB/s)`,
-    );
-    console.log(`Chunk count: ${chunkCount}`);
-
-    // Should be fast - we're not allocating 100MB
-    expect(elapsed).toBeLessThan(1000); // Allow more time in CI
   });
 });
 

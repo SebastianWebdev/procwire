@@ -46,7 +46,8 @@
     "clean": "rimraf dist \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "bun test"
+    "test": "bun test",
+    "test:ci": "bun test"
   },
   "dependencies": {
     "@procwire/protocol": "workspace:*",
