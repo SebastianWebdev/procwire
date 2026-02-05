@@ -41,16 +41,67 @@ jobs:
         run: pnpm format --check
 
   # ============================================
-  # Build & Test job - matrix for cross-platform
+  # Build & Test - Node.js packages, all platforms
   # ============================================
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: lint # Wait for lint to pass first
+    needs: lint
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+
+    # Excludes:
+    # - astro-docs: documentation site
+    # - @procwire/bench, procwire-dashboard: benchmarks (run manually, CI runners too slow)
+    # - @procwire/bun-core, @procwire/bun-client: tested in dedicated bun job
+    # - ".": root package (its test script bypasses our filters)
+    env:
+      PNPM_FILTER: --filter "!astro-docs" --filter "!@procwire/bench" --filter "!procwire-dashboard" --filter "!@procwire/bun-core" --filter "!@procwire/bun-client" --filter "!."
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm ${{ env.PNPM_FILTER }} build
+
+      - name: Typecheck
+        run: pnpm ${{ env.PNPM_FILTER }} --if-present typecheck
+
+      - name: Run tests
+        run: pnpm ${{ env.PNPM_FILTER }} --if-present test:ci
+
+      # Upload build artifacts for potential reuse
+      - name: Upload build artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist
+          retention-days: 1
+
+  # ============================================
+  # Bun packages - ubuntu only
+  # ============================================
+  bun-test:
+    name: Bun Packages
+    runs-on: ubuntu-latest
+    needs: lint
 
     steps:
       - name: Checkout
@@ -73,24 +124,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm --filter "!astro-docs" --filter "!." build
+      # Bun packages depend on protocol + codecs, build those first
+      - name: Build dependencies
+        run: pnpm --filter "@procwire/protocol" --filter "@procwire/codecs" build
 
-      - name: Typecheck
-        run: pnpm --filter "!astro-docs" --if-present typecheck
+      - name: Build Bun packages
+        run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" build
 
-      - name: Run tests
-        run: pnpm --filter "!astro-docs" --if-present test
+      - name: Typecheck Bun packages
+        run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" --if-present typecheck
 
-      # Upload build artifacts for potential reuse
-      - name: Upload build artifacts
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: |
-            packages/*/dist
-          retention-days: 1
+      - name: Test Bun packages
+        run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" --if-present test
 
   # ============================================
   # Final status check - for branch protection
@@ -98,13 +143,14 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [lint, build-and-test]
+    needs: [lint, build-and-test, bun-test]
     if: always()
     steps:
       - name: Check CI status
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ]] || \
-             [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
+             [[ "${{ needs.build-and-test.result }}" != "success" ]] || \
+             [[ "${{ needs.bun-test.result }}" != "success" ]]; then
             echo "❌ CI failed"
             exit 1
           fi
