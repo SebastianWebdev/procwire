@@ -1,5 +1,13 @@
 # @procwire/bench
 
+## 1.0.3
+
+### Patch Changes
+
+- Updated dependencies [[`6bbbe62`](https://github.com/SebastianWebdev/procwire/commit/6bbbe62cf128a9680692f44acea2a1352d00befd)]:
+  - @procwire/bun-core@1.0.2
+  - @procwire/bun-client@1.0.2
+
 ## 1.0.2
 
 ### Patch Changes
