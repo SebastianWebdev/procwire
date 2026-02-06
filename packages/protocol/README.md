@@ -14,10 +14,10 @@ Binary wire format for Procwire data plane - zero JSON overhead.
 
 Procwire uses a dual-channel architecture:
 
-| Channel | Transport | Format | Purpose |
-|---------|-----------|--------|---------|
-| Control Plane | stdio | JSON-RPC 2.0 | Handshake, heartbeat, lifecycle |
-| Data Plane | Named Pipe | **BINARY** | User data, high throughput |
+| Channel       | Transport  | Format       | Purpose                         |
+| ------------- | ---------- | ------------ | ------------------------------- |
+| Control Plane | stdio      | JSON-RPC 2.0 | Handshake, heartbeat, lifecycle |
+| Data Plane    | Named Pipe | **BINARY**   | User data, high throughput      |
 
 This package provides the **binary protocol for the Data Plane**.
 
@@ -36,15 +36,15 @@ Payload: N bytes (variable, serialized by codec)
 
 ## Flags Byte
 
-| Bit | Flag | Values |
-|-----|------|--------|
-| 0 | `DIRECTION_TO_PARENT` | 0 = to child, 1 = to parent |
-| 1 | `IS_RESPONSE` | 0 = request/event, 1 = response |
-| 2 | `IS_ERROR` | 0 = ok, 1 = error response |
-| 3 | `IS_STREAM` | 0 = single message, 1 = stream chunk |
-| 4 | `STREAM_END` | 0 = more coming, 1 = final chunk |
-| 5 | `IS_ACK` | 0 = full response, 1 = ack only |
-| 6-7 | Reserved | Must be 0 |
+| Bit | Flag                  | Values                               |
+| --- | --------------------- | ------------------------------------ |
+| 0   | `DIRECTION_TO_PARENT` | 0 = to child, 1 = to parent          |
+| 1   | `IS_RESPONSE`         | 0 = request/event, 1 = response      |
+| 2   | `IS_ERROR`            | 0 = ok, 1 = error response           |
+| 3   | `IS_STREAM`           | 0 = single message, 1 = stream chunk |
+| 4   | `STREAM_END`          | 0 = more coming, 1 = final chunk     |
+| 5   | `IS_ACK`              | 0 = full response, 1 = ack only      |
+| 6-7 | Reserved              | Must be 0                            |
 
 ## Installation
 
@@ -85,13 +85,13 @@ if (hasFlag(decoded.flags, Flags.IS_STREAM)) {
 
 ### Constants
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `HEADER_SIZE` | 11 | Header size in bytes |
-| `DEFAULT_MAX_PAYLOAD_SIZE` | 1 GB | Default max payload |
-| `ABSOLUTE_MAX_PAYLOAD_SIZE` | ~2 GB | Node.js Buffer limit |
-| `ABORT_METHOD_ID` | 0xFFFF | Reserved for cancellation |
-| `HEADER_POOL_SIZE` | 16 | Ring buffer pool size |
+| Constant                    | Value  | Description               |
+| --------------------------- | ------ | ------------------------- |
+| `HEADER_SIZE`               | 11     | Header size in bytes      |
+| `DEFAULT_MAX_PAYLOAD_SIZE`  | 1 GB   | Default max payload       |
+| `ABSOLUTE_MAX_PAYLOAD_SIZE` | ~2 GB  | Node.js Buffer limit      |
+| `ABORT_METHOD_ID`           | 0xFFFF | Reserved for cancellation |
+| `HEADER_POOL_SIZE`          | 16     | Ring buffer pool size     |
 
 ### Functions
 
@@ -155,8 +155,8 @@ Parsed frame with header and payload.
 ```typescript
 interface Frame {
   header: FrameHeader;
-  payloadChunks: readonly Buffer[];  // Zero-copy chunks
-  payload: Buffer;                   // Merged (may allocate)
+  payloadChunks: readonly Buffer[]; // Zero-copy chunks
+  payload: Buffer; // Merged (may allocate)
   payloadLength: number;
 }
 ```

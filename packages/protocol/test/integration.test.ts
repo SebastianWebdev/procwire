@@ -350,7 +350,6 @@ describe("Protocol Integration", () => {
       }
     });
   });
-
 });
 
 describe("Protocol exports", () => {

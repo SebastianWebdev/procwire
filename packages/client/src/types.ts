@@ -13,12 +13,18 @@ export type ResponseType = "result" | "stream" | "ack" | "none";
 
 /**
  * Method definition for registration.
+ *
+ * Stores both codecs for dual-codec support:
+ * - `requestCodec` — for deserializing incoming requests (parent→child)
+ * - `responseCodec` — for serializing outgoing responses (child→parent)
  */
 export interface MethodDefinition {
   /** Expected response type */
   response: ResponseType;
-  /** Codec for serialization (defaults to msgpack) */
-  codec?: Codec;
+  /** Codec for deserializing requests (parent→child direction) */
+  requestCodec: Codec;
+  /** Codec for serializing responses (child→parent direction) */
+  responseCodec: Codec;
   /** Can be cancelled via AbortSignal? */
   cancellable?: boolean;
 }
@@ -113,5 +119,25 @@ export interface RequestContext {
    * @returns Promise that resolves when the error has been written
    *          and socket buffer has drained (if backpressure occurred).
    */
+  error(err: Error | string): Promise<void>;
+}
+
+/**
+ * Type-safe request context.
+ *
+ * Response methods (`respond`, `ack`, `chunk`) are typed to `TRes`,
+ * providing compile-time safety that the handler sends the correct response type.
+ *
+ * @typeParam TRes - Expected response data type
+ */
+export interface TypedRequestContext<TRes = unknown> {
+  readonly requestId: number;
+  readonly method: string;
+  readonly aborted: boolean;
+  onAbort(callback: () => void): void;
+  respond(data: TRes): Promise<void>;
+  ack(data?: TRes): Promise<void>;
+  chunk(data: TRes): Promise<void>;
+  end(): Promise<void>;
   error(err: Error | string): Promise<void>;
 }

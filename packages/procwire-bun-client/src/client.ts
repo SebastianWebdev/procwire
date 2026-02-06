@@ -111,16 +111,38 @@ export class Client extends EventEmitter {
   handle<TData = unknown>(
     method: string,
     handler: MethodHandler<TData>,
-    options?: Partial<MethodDefinition>,
+    options?: Partial<MethodDefinition> & { codec?: Codec },
   ): this {
     if (this._started) {
       throw ClientErrors.cannotAddHandlerAfterStart();
     }
 
+    let requestCodec: Codec;
+    let responseCodec: Codec;
+
+    // Validate: partial dual-codec config is not allowed
+    const hasRequestCodec = !!(options && "requestCodec" in options && options.requestCodec);
+    const hasResponseCodec = !!(options && "responseCodec" in options && options.responseCodec);
+    if (hasRequestCodec !== hasResponseCodec) {
+      throw new Error("Both requestCodec and responseCodec must be provided together");
+    }
+
+    if (options?.requestCodec && options?.responseCodec) {
+      requestCodec = options.requestCodec;
+      responseCodec = options.responseCodec;
+    } else if (options && "codec" in options && options.codec) {
+      requestCodec = options.codec;
+      responseCodec = options.codec;
+    } else {
+      requestCodec = this._defaultCodec;
+      responseCodec = this._defaultCodec;
+    }
+
     this._methods.set(method, {
       def: {
         response: options?.response ?? "result",
-        codec: options?.codec ?? this._defaultCodec,
+        requestCodec,
+        responseCodec,
         cancellable: options?.cancellable ?? false,
       },
       handler: handler as MethodHandler,
@@ -386,15 +408,14 @@ export class Client extends EventEmitter {
     if (!methodEntry) return;
 
     const { def, handler } = methodEntry;
-    const codec = def.codec ?? this._defaultCodec;
-    const data = codecDeserialize(codec, frame);
+    const data = codecDeserialize(def.requestCodec, frame);
 
-    // Create request context
+    // Create request context with RESPONSE codec (child→parent direction)
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
       header.methodId,
-      codec,
+      def.responseCodec,
       this._socket!,
       this._abortCallbacks,
       () => this._acquireHeaderBuffer(),

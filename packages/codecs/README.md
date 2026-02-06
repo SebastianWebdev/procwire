@@ -11,12 +11,12 @@ Serialization codecs for Procwire binary protocol.
 
 ## Codec Comparison
 
-| Codec | Input Type | Output Type | Zero-Copy | Use Case |
-|-------|-----------|-------------|-----------|----------|
-| `rawCodec` | `Buffer` | `Buffer` | No | Pre-serialized binary data |
-| `rawChunksCodec` | `Buffer[]` | `Buffer[]` | Yes | Large files, streaming |
-| `msgpackCodec` | `object` | `object` | No | Small/medium objects, configs |
-| `arrowCodec` | `Table/object` | `Table` | Yes (read) | ML embeddings, DB results |
+| Codec            | Input Type     | Output Type | Zero-Copy  | Use Case                      |
+| ---------------- | -------------- | ----------- | ---------- | ----------------------------- |
+| `rawCodec`       | `Buffer`       | `Buffer`    | No         | Pre-serialized binary data    |
+| `rawChunksCodec` | `Buffer[]`     | `Buffer[]`  | Yes        | Large files, streaming        |
+| `msgpackCodec`   | `object`       | `object`    | No         | Small/medium objects, configs |
+| `arrowCodec`     | `Table/object` | `Table`     | Yes (read) | ML embeddings, DB results     |
 
 ## Installation
 
@@ -56,7 +56,7 @@ All codecs implement the `Codec<TInput, TOutput>` interface:
 interface Codec<TInput = unknown, TOutput = TInput> {
   serialize(data: TInput): Buffer;
   deserialize(buffer: Buffer): TOutput;
-  deserializeChunks?(chunks: readonly Buffer[]): TOutput;  // Optional zero-copy
+  deserializeChunks?(chunks: readonly Buffer[]): TOutput; // Optional zero-copy
   readonly name: string;
 }
 ```
@@ -68,7 +68,7 @@ Pass-through codec for pre-serialized binary data.
 ```typescript
 import { rawCodec } from "@procwire/codecs";
 
-const buffer = rawCodec.serialize(myBuffer);       // Returns same buffer
+const buffer = rawCodec.serialize(myBuffer); // Returns same buffer
 const data = rawCodec.deserialize(receivedBuffer); // Returns same buffer
 ```
 
@@ -97,7 +97,7 @@ import { msgpackCodec } from "@procwire/codecs";
 const data = {
   name: "test",
   buffer: Buffer.from("hello"),
-  date: new Date()
+  date: new Date(),
 };
 
 const serialized = msgpackCodec.serialize(data);
@@ -107,6 +107,7 @@ const deserialized = msgpackCodec.deserialize(serialized);
 ```
 
 **Extension types:**
+
 - Type 1: `Buffer` - preserved as Buffer on deserialization
 - Type 2: `Date` - preserved as Date on deserialization
 

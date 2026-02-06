@@ -38,7 +38,8 @@ describe("Module", () => {
       const config = mod.methods.get("process");
       expect(config?.response).toBe("result");
       expect(config?.cancellable).toBe(false);
-      expect(config?.codec).toBe(msgpackCodec);
+      expect(config?.requestCodec).toBe(msgpackCodec);
+      expect(config?.responseCodec).toBe(msgpackCodec);
     });
 
     it("should register methods with custom config", () => {
@@ -49,7 +50,8 @@ describe("Module", () => {
       expect(mod.methods.size).toBe(2);
       expect(mod.methods.get("process")?.response).toBe("result");
       expect(mod.methods.get("batch")?.response).toBe("stream");
-      expect(mod.methods.get("batch")?.codec).toBe(arrowCodec);
+      expect(mod.methods.get("batch")?.requestCodec).toBe(arrowCodec);
+      expect(mod.methods.get("batch")?.responseCodec).toBe(arrowCodec);
     });
 
     it("should register events with default codec", () => {

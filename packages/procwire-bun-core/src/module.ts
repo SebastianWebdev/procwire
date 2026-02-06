@@ -58,7 +58,8 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout> | null;
-  codec: Codec;
+  /** Codec for deserializing response (child→parent direction) */
+  responseCodec: Codec;
   /** Expected response type: "ack" or "result" */
   expectedResponse: "ack" | "result";
 }
@@ -67,7 +68,8 @@ interface PendingStream {
   push: (chunk: unknown) => void;
   end: () => void;
   error: (err: Error) => void;
-  codec: Codec;
+  /** Codec for deserializing response chunks (child→parent direction) */
+  responseCodec: Codec;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -155,13 +157,41 @@ export class Module extends EventEmitter {
 
   /**
    * Register a method.
+   *
+   * Accepts either dual codecs (`requestCodec`/`responseCodec`) or
+   * a single `codec` shorthand that sets both.
    */
   method(
     name: string,
-    config: Partial<Omit<MethodConfig, "cancellable">> & { cancellable?: boolean } = {},
+    config: Partial<Omit<MethodConfig, "cancellable">> & {
+      codec?: Codec;
+      cancellable?: boolean;
+    } = {},
   ): this {
+    // Validate: partial dual-codec config is not allowed
+    const hasRequestCodec = !!config.requestCodec;
+    const hasResponseCodec = !!config.responseCodec;
+    if (hasRequestCodec !== hasResponseCodec) {
+      throw new Error("Both requestCodec and responseCodec must be provided together");
+    }
+
+    let requestCodec: Codec;
+    let responseCodec: Codec;
+
+    if (config.requestCodec && config.responseCodec) {
+      requestCodec = config.requestCodec;
+      responseCodec = config.responseCodec;
+    } else if (config.codec) {
+      requestCodec = config.codec;
+      responseCodec = config.codec;
+    } else {
+      requestCodec = msgpackCodec;
+      responseCodec = msgpackCodec;
+    }
+
     this._methods.set(name, {
-      codec: config.codec ?? msgpackCodec,
+      requestCodec,
+      responseCodec,
       response: config.response ?? "result",
       timeout: config.timeout,
       cancellable: config.cancellable ?? false,
@@ -411,7 +441,7 @@ export class Module extends EventEmitter {
 
     // Fire-and-forget
     if (schemaMethod.response === "none") {
-      await this._sendFrame(methodId, 0, data, methodConfig.codec);
+      await this._sendFrame(methodId, 0, data, methodConfig.requestCodec);
       return undefined as TResponse;
     }
 
@@ -452,13 +482,13 @@ export class Module extends EventEmitter {
         resolve: resolve as (value: unknown) => void,
         reject,
         timeout: timer,
-        codec: methodConfig.codec,
+        responseCodec: methodConfig.responseCodec,
         expectedResponse: schemaMethod.response as "ack" | "result",
       });
     });
 
     // Send frame AFTER registering pending request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
+    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
 
     return responsePromise;
   }
@@ -528,7 +558,7 @@ export class Module extends EventEmitter {
         error = err;
         if (resolve) resolve({ value: undefined as TChunk, done: true });
       },
-      codec: methodConfig.codec,
+      responseCodec: methodConfig.responseCodec,
     });
 
     // Abort handling
@@ -548,7 +578,7 @@ export class Module extends EventEmitter {
     }
 
     // Send request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.codec);
+    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
 
     // Yield chunks
     try {
@@ -640,10 +670,10 @@ export class Module extends EventEmitter {
     // "ack" methods accept both ACK and full response (graceful fallback)
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      const errorData = codecDeserialize(pending.codec, frame);
+      const errorData = codecDeserialize(pending.responseCodec, frame);
       pending.reject(ModuleErrors.remoteError(errorData));
     } else {
-      const data = codecDeserialize(pending.codec, frame);
+      const data = codecDeserialize(pending.responseCodec, frame);
       pending.resolve(data);
     }
 
@@ -655,7 +685,7 @@ export class Module extends EventEmitter {
     if (!stream) return;
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      const errorData = codecDeserialize(stream.codec, frame);
+      const errorData = codecDeserialize(stream.responseCodec, frame);
       stream.error(ModuleErrors.remoteError(errorData));
       return;
     }
@@ -667,7 +697,7 @@ export class Module extends EventEmitter {
     }
 
     // Regular chunk - deserialize and push
-    const data = codecDeserialize(stream.codec, frame);
+    const data = codecDeserialize(stream.responseCodec, frame);
     stream.push(data);
   }
 

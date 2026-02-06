@@ -89,10 +89,10 @@ Register a method the worker can handle.
 
 ```typescript
 module.method("process", {
-  codec: msgpackCodec,        // Serialization codec
-  response: "result",         // "result" | "stream" | "ack" | "none"
-  timeout: 30000,             // Optional timeout in ms
-  cancellable: true,          // Support AbortController
+  codec: msgpackCodec, // Serialization codec
+  response: "result", // "result" | "stream" | "ack" | "none"
+  timeout: 30000, // Optional timeout in ms
+  cancellable: true, // Support AbortController
 });
 ```
 
@@ -110,12 +110,12 @@ Configure spawn and restart behavior.
 
 ```typescript
 module.spawnPolicy({
-  initTimeout: 30000,         // Timeout for $init message
-  maxRetries: 3,              // Spawn retry attempts
+  initTimeout: 30000, // Timeout for $init message
+  maxRetries: 3, // Spawn retry attempts
   retryDelay: { type: "exponential", base: 1000, max: 30000 },
-  restartOnCrash: true,       // Auto-restart on unexpected exit
+  restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
-  socketBufferSize: 4 * 1024 * 1024,  // 4MB for large payloads
+  socketBufferSize: 4 * 1024 * 1024, // 4MB for large payloads
 });
 ```
 
@@ -186,12 +186,12 @@ await manager.shutdown("worker1"); // Specific
 
 ```typescript
 type ModuleState =
-  | "created"       // Defined but not spawned
-  | "initializing"  // Process started, waiting for $init
-  | "connecting"    // Connecting data channel
-  | "ready"         // Fully operational
-  | "disconnected"  // Lost connection (may restart)
-  | "closed";       // Terminated
+  | "created" // Defined but not spawned
+  | "initializing" // Process started, waiting for $init
+  | "connecting" // Connecting data channel
+  | "ready" // Fully operational
+  | "disconnected" // Lost connection (may restart)
+  | "closed"; // Terminated
 ```
 
 ### Response Types
@@ -283,6 +283,7 @@ Switching between runtimes requires only changing the import:
 ```
 
 Communication channels:
+
 - **Control Plane (stdio):** JSON-RPC 2.0 — handshake, heartbeat
 - **Data Plane (named pipe):** Binary protocol — user data
 

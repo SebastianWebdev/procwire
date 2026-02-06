@@ -86,10 +86,10 @@ Register a method the worker can handle.
 
 ```typescript
 module.method("process", {
-  codec: msgpackCodec,        // Serialization codec
-  response: "result",         // "result" | "stream" | "ack" | "none"
-  timeout: 30000,             // Optional timeout in ms
-  cancellable: true,          // Support AbortController
+  codec: msgpackCodec, // Serialization codec
+  response: "result", // "result" | "stream" | "ack" | "none"
+  timeout: 30000, // Optional timeout in ms
+  cancellable: true, // Support AbortController
 });
 ```
 
@@ -107,12 +107,12 @@ Configure spawn and restart behavior.
 
 ```typescript
 module.spawnPolicy({
-  initTimeout: 30000,         // Timeout for $init message
-  maxRetries: 3,              // Spawn retry attempts
+  initTimeout: 30000, // Timeout for $init message
+  maxRetries: 3, // Spawn retry attempts
   retryDelay: { type: "exponential", base: 1000, max: 30000 },
-  restartOnCrash: true,       // Auto-restart on unexpected exit
+  restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
-  socketBufferSize: 4 * 1024 * 1024,  // 4MB for large payloads
+  socketBufferSize: 4 * 1024 * 1024, // 4MB for large payloads
 });
 ```
 
@@ -183,22 +183,22 @@ await manager.shutdown("worker1"); // Specific
 
 ```typescript
 type ModuleState =
-  | "created"       // Defined but not spawned
-  | "initializing"  // Process started, waiting for $init
-  | "connecting"    // Connecting data channel
-  | "ready"         // Fully operational
-  | "disconnected"  // Lost connection (may restart)
-  | "closed";       // Terminated
+  | "created" // Defined but not spawned
+  | "initializing" // Process started, waiting for $init
+  | "connecting" // Connecting data channel
+  | "ready" // Fully operational
+  | "disconnected" // Lost connection (may restart)
+  | "closed"; // Terminated
 ```
 
 ### Response Types
 
-| Type | Description | Parent API |
-|------|-------------|------------|
-| `result` | Single response | `await module.send()` |
-| `stream` | Multiple chunks | `for await (... of module.stream())` |
-| `ack` | Acknowledgment only | `await module.send()` (returns ack data) |
-| `none` | Fire-and-forget | `module.send()` (returns immediately) |
+| Type     | Description         | Parent API                               |
+| -------- | ------------------- | ---------------------------------------- |
+| `result` | Single response     | `await module.send()`                    |
+| `stream` | Multiple chunks     | `for await (... of module.stream())`     |
+| `ack`    | Acknowledgment only | `await module.send()` (returns ack data) |
+| `none`   | Fire-and-forget     | `module.send()` (returns immediately)    |
 
 ### Error Handling
 
@@ -215,11 +215,11 @@ try {
 }
 
 // Error factories
-ModuleErrors.notReady("worker");           // Module not ready
-ModuleErrors.methodNotFound("unknown");    // Unknown method
-ModuleErrors.timeout("process", 30000);    // Request timeout
+ModuleErrors.notReady("worker"); // Module not ready
+ModuleErrors.methodNotFound("unknown"); // Unknown method
+ModuleErrors.timeout("process", 30000); // Request timeout
 
-ManagerErrors.notRegistered("worker");     // Module not registered
+ManagerErrors.notRegistered("worker"); // Module not registered
 ManagerErrors.alreadyRegistered("worker"); // Duplicate registration
 ```
 
@@ -261,6 +261,7 @@ module.on(ModuleEvents.DISCONNECTED, () => console.log("Disconnected"));
 ```
 
 Communication channels:
+
 - **Control Plane (stdio):** JSON-RPC 2.0 - handshake, heartbeat
 - **Data Plane (named pipe):** Binary protocol - user data (~2.5 GB/s)
 

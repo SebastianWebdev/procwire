@@ -24,10 +24,39 @@ import {
   ABORT_METHOD_ID,
   DrainWaiter,
 } from "@procwire/protocol";
-import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
-import type { MethodDefinition, EventDefinition, MethodHandler, ClientOptions } from "./types.js";
+import {
+  msgpackCodec,
+  codecDeserialize,
+  type Codec,
+  type Schema,
+  type EmptySchema,
+} from "@procwire/codecs";
+import type {
+  MethodDefinition,
+  EventDefinition,
+  MethodHandler,
+  ClientOptions,
+  TypedRequestContext,
+} from "./types.js";
 import { RequestContextImpl } from "./request-context.js";
 import { ClientErrors } from "./errors.js";
+import type { ResponseType } from "./types.js";
+
+/**
+ * Options for `client.handle()`.
+ *
+ * Supports three codec patterns:
+ * - `{ codec }` — single codec for both request and response
+ * - `{ requestCodec, responseCodec }` — dual codecs
+ * - neither — uses default codec
+ */
+interface HandleOptions {
+  response?: ResponseType;
+  cancellable?: boolean;
+  codec?: Codec;
+  requestCodec?: Codec;
+  responseCodec?: Codec;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENT CLASS
@@ -55,7 +84,9 @@ import { ClientErrors } from "./errors.js";
  * client.emitEvent('progress', { percent: 50 });
  * ```
  */
-export class Client extends EventEmitter {
+export class Client<S extends Schema = EmptySchema> extends EventEmitter {
+  declare readonly __schema: S;
+
   private _defaultCodec: Codec;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
@@ -105,19 +136,56 @@ export class Client extends EventEmitter {
    * });
    * ```
    */
+  handle<M extends string & keyof S["methods"]>(
+    method: M,
+    handler: (
+      data: S["methods"][M]["reqOut"],
+      ctx: TypedRequestContext<S["methods"][M]["resIn"]>,
+    ) => void | Promise<void>,
+    options?: HandleOptions,
+  ): this;
   handle<TData = unknown>(
     method: string,
     handler: MethodHandler<TData>,
-    options?: Partial<MethodDefinition>,
-  ): this {
+    options?: HandleOptions,
+  ): this;
+  handle(method: string, handler: MethodHandler, options?: HandleOptions): this {
     if (this._started) {
       throw ClientErrors.cannotAddHandlerAfterStart();
+    }
+
+    let requestCodec: Codec;
+    let responseCodec: Codec;
+
+    // Validate: partial dual-codec config is not allowed
+    const hasRequestCodec = !!(options && "requestCodec" in options && options.requestCodec);
+    const hasResponseCodec = !!(options && "responseCodec" in options && options.responseCodec);
+    if (hasRequestCodec !== hasResponseCodec) {
+      throw new Error("Both requestCodec and responseCodec must be provided together");
+    }
+
+    if (
+      options &&
+      "requestCodec" in options &&
+      "responseCodec" in options &&
+      options.requestCodec &&
+      options.responseCodec
+    ) {
+      requestCodec = options.requestCodec;
+      responseCodec = options.responseCodec;
+    } else if (options && "codec" in options && options.codec) {
+      requestCodec = options.codec;
+      responseCodec = options.codec;
+    } else {
+      requestCodec = this._defaultCodec;
+      responseCodec = this._defaultCodec;
     }
 
     this._methods.set(method, {
       def: {
         response: options?.response ?? "result",
-        codec: options?.codec ?? this._defaultCodec,
+        requestCodec,
+        responseCodec,
         cancellable: options?.cancellable ?? false,
       },
       handler: handler as MethodHandler,
@@ -205,6 +273,11 @@ export class Client extends EventEmitter {
    * await client.emitEvent('progress', { percent: 50 });
    * ```
    */
+  async emitEvent<E extends string & keyof S["events"]>(
+    eventName: E,
+    data: S["events"][E]["dataIn"],
+  ): Promise<void>;
+  async emitEvent(eventName: string, data: unknown): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void> {
     if (!this._socket) {
       throw ClientErrors.notConnected();
@@ -337,15 +410,14 @@ export class Client extends EventEmitter {
     if (!methodEntry) return;
 
     const { def, handler } = methodEntry;
-    const codec = def.codec ?? this._defaultCodec;
-    const data = codecDeserialize(codec, frame);
+    const data = codecDeserialize(def.requestCodec, frame);
 
-    // Create request context with shared DrainWaiter
+    // Create request context with RESPONSE codec (child→parent direction)
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
       header.methodId,
-      codec,
+      def.responseCodec,
       this._socket!,
       this._abortCallbacks,
       () => this._acquireHeaderBuffer(),

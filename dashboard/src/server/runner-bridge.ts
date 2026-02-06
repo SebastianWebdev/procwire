@@ -64,54 +64,51 @@ export function createRunnerWithBroadcast(
   });
 
   // Progress update
-  runner.on(
-    "scenario:progress",
-    (scenarioId: string, current: number, total: number) => {
-      fastify.broadcast({
-        type: "scenario:progress",
-        runId,
-        scenarioId,
-        current,
-        total,
-        currentTest: {
-          codec: "raw",
-          size: "1KB",
-          mode: "result",
-        },
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
-
-  // Single result complete
-  runner.on(
-    "scenario:complete",
-    (scenarioId: string, result: ScenarioResult) => {
-      // Save result to database immediately
-      fastify.db.saveResult(runId, result);
-
-      fastify.broadcast({
-        type: "result:complete",
-        runId,
-        scenarioId,
-        result,
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
-
-  // Full benchmark complete
-  runner.on("benchmark:complete", (results: { summary: import("../db/types.js").BenchmarkSummary }) => {
-    const duration = Date.now() - startTime;
-
+  runner.on("scenario:progress", (scenarioId: string, current: number, total: number) => {
     fastify.broadcast({
-      type: "run:complete",
+      type: "scenario:progress",
       runId,
-      summary: results.summary,
-      duration,
+      scenarioId,
+      current,
+      total,
+      currentTest: {
+        codec: "raw",
+        size: "1KB",
+        mode: "result",
+      },
       timestamp: new Date().toISOString(),
     });
   });
+
+  // Single result complete
+  runner.on("scenario:complete", (scenarioId: string, result: ScenarioResult) => {
+    // Save result to database immediately
+    fastify.db.saveResult(runId, result);
+
+    fastify.broadcast({
+      type: "result:complete",
+      runId,
+      scenarioId,
+      result,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Full benchmark complete
+  runner.on(
+    "benchmark:complete",
+    (results: { summary: import("../db/types.js").BenchmarkSummary }) => {
+      const duration = Date.now() - startTime;
+
+      fastify.broadcast({
+        type: "run:complete",
+        runId,
+        summary: results.summary,
+        duration,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  );
 
   return runner;
 }
@@ -157,8 +154,7 @@ export async function runBenchmarkWithBroadcast(
       const regressions = pairs.filter((p) => {
         if (!p.baseline || !p.compare) return false;
         const diff =
-          ((p.compare.throughputMBps - p.baseline.throughputMBps) /
-            p.baseline.throughputMBps) *
+          ((p.compare.throughputMBps - p.baseline.throughputMBps) / p.baseline.throughputMBps) *
           100;
         return diff < -5; // 5% regression threshold
       });
@@ -166,8 +162,7 @@ export async function runBenchmarkWithBroadcast(
       const criticalRegressions = regressions.filter((p) => {
         if (!p.baseline || !p.compare) return false;
         const diff =
-          ((p.compare.throughputMBps - p.baseline.throughputMBps) /
-            p.baseline.throughputMBps) *
+          ((p.compare.throughputMBps - p.baseline.throughputMBps) / p.baseline.throughputMBps) *
           100;
         return diff < -20; // 20% critical threshold
       });

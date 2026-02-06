@@ -30,7 +30,7 @@ export { codecDeserialize } from "./types.js";
 
 export { RawCodec, rawCodec, RawChunksCodec, rawChunksCodec } from "./raw-codec.js";
 
-export { MsgPackCodec, msgpackCodec } from "./msgpack-codec.js";
+export { MsgPackCodec, msgpackCodec, msgpack } from "./msgpack-codec.js";
 
 export {
   ArrowCodec,
@@ -38,3 +38,19 @@ export {
   type ArrowSerializable,
   type ArrowObjectInput,
 } from "./arrow-codec.js";
+
+export type {
+  InferCodecInput,
+  InferCodecOutput,
+  MethodDescriptor,
+  EventDescriptor,
+  Schema,
+  EmptySchema,
+  ExtractSchema,
+  ParentRequestType,
+  ParentResponseType,
+  ChildRequestType,
+  ChildResponseType,
+  ParentEventType,
+  ChildEventType,
+} from "./schema-types.js";

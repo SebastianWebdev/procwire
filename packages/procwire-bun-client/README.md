@@ -62,7 +62,7 @@ const client = new Client(options?)
 
 ```typescript
 interface ClientOptions {
-  defaultCodec?: Codec;  // Default codec for all methods/events
+  defaultCodec?: Codec; // Default codec for all methods/events
 }
 ```
 
@@ -71,14 +71,18 @@ interface ClientOptions {
 Register a method handler.
 
 ```typescript
-client.handle("process", async (data, ctx) => {
-  // Handle request and send response
-  await ctx.respond(result);
-}, {
-  response: "result",      // "result" | "stream" | "ack" | "none"
-  codec: msgpackCodec,     // Optional, defaults to msgpack
-  cancellable: true,       // Support AbortSignal from parent
-});
+client.handle(
+  "process",
+  async (data, ctx) => {
+    // Handle request and send response
+    await ctx.respond(result);
+  },
+  {
+    response: "result", // "result" | "stream" | "ack" | "none"
+    codec: msgpackCodec, // Optional, defaults to msgpack
+    cancellable: true, // Support AbortSignal from parent
+  },
+);
 ```
 
 #### `.event(name, definition?)`
@@ -120,17 +124,17 @@ Passed to method handlers to send responses back to parent.
 
 ```typescript
 interface RequestContext {
-  readonly requestId: number;   // For correlation
-  readonly method: string;      // Method being handled
-  readonly aborted: boolean;    // Was request aborted?
+  readonly requestId: number; // For correlation
+  readonly method: string; // Method being handled
+  readonly aborted: boolean; // Was request aborted?
 
-  onAbort(callback: () => void): void;  // Abort callback
+  onAbort(callback: () => void): void; // Abort callback
 
-  respond(data: unknown): Promise<void>;  // Full response
-  ack(data?: unknown): Promise<void>;     // Acknowledgment only
-  chunk(data: unknown): Promise<void>;    // Stream chunk
-  end(): Promise<void>;                   // End stream
-  error(err: Error | string): Promise<void>;  // Error response
+  respond(data: unknown): Promise<void>; // Full response
+  ack(data?: unknown): Promise<void>; // Acknowledgment only
+  chunk(data: unknown): Promise<void>; // Stream chunk
+  end(): Promise<void>; // End stream
+  error(err: Error | string): Promise<void>; // Error response
 }
 ```
 
@@ -139,36 +143,44 @@ interface RequestContext {
 ### Streaming Responses
 
 ```typescript
-client.handle("generate", async (data, ctx) => {
-  for (const item of data.items) {
-    if (ctx.aborted) break;
-    await ctx.chunk(process(item));
-  }
-  await ctx.end();
-}, { response: "stream", cancellable: true });
+client.handle(
+  "generate",
+  async (data, ctx) => {
+    for (const item of data.items) {
+      if (ctx.aborted) break;
+      await ctx.chunk(process(item));
+    }
+    await ctx.end();
+  },
+  { response: "stream", cancellable: true },
+);
 ```
 
 ### Cancellation
 
 ```typescript
-client.handle("longTask", async (data, ctx) => {
-  const resources = await acquireResources();
+client.handle(
+  "longTask",
+  async (data, ctx) => {
+    const resources = await acquireResources();
 
-  // Register cleanup on abort
-  ctx.onAbort(() => {
-    resources.release();
-  });
+    // Register cleanup on abort
+    ctx.onAbort(() => {
+      resources.release();
+    });
 
-  // Check abort status periodically
-  for (const item of items) {
-    if (ctx.aborted) {
-      return;  // Stop processing
+    // Check abort status periodically
+    for (const item of items) {
+      if (ctx.aborted) {
+        return; // Stop processing
+      }
+      await ctx.chunk(process(item));
     }
-    await ctx.chunk(process(item));
-  }
 
-  await ctx.end();
-}, { response: "stream", cancellable: true });
+    await ctx.end();
+  },
+  { response: "stream", cancellable: true },
+);
 ```
 
 ### Error Handling
@@ -177,11 +189,11 @@ client.handle("longTask", async (data, ctx) => {
 import { ProcwireClientError, ClientErrors } from "@procwire/bun-client";
 
 // Error factories
-ClientErrors.cannotAddHandlerAfterStart();  // handle() called after start()
-ClientErrors.alreadyStarted();              // start() called twice
-ClientErrors.notConnected();                // Operation before connection
-ClientErrors.unknownEvent("unknown");       // Unknown event name
-ClientErrors.responseAlreadySent();         // Double response
+ClientErrors.cannotAddHandlerAfterStart(); // handle() called after start()
+ClientErrors.alreadyStarted(); // start() called twice
+ClientErrors.notConnected(); // Operation before connection
+ClientErrors.unknownEvent("unknown"); // Unknown event name
+ClientErrors.responseAlreadySent(); // Double response
 ```
 
 ## Differences from `@procwire/client`
