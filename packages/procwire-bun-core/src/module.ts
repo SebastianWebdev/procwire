@@ -168,10 +168,30 @@ export class Module extends EventEmitter {
       cancellable?: boolean;
     } = {},
   ): this {
-    const codec = config.codec;
+    // Validate: partial dual-codec config is not allowed
+    const hasRequestCodec = !!config.requestCodec;
+    const hasResponseCodec = !!config.responseCodec;
+    if (hasRequestCodec !== hasResponseCodec) {
+      throw new Error("Both requestCodec and responseCodec must be provided together");
+    }
+
+    let requestCodec: Codec;
+    let responseCodec: Codec;
+
+    if (config.requestCodec && config.responseCodec) {
+      requestCodec = config.requestCodec;
+      responseCodec = config.responseCodec;
+    } else if (config.codec) {
+      requestCodec = config.codec;
+      responseCodec = config.codec;
+    } else {
+      requestCodec = msgpackCodec;
+      responseCodec = msgpackCodec;
+    }
+
     this._methods.set(name, {
-      requestCodec: config.requestCodec ?? codec ?? msgpackCodec,
-      responseCodec: config.responseCodec ?? codec ?? msgpackCodec,
+      requestCodec,
+      responseCodec,
       response: config.response ?? "result",
       timeout: config.timeout,
       cancellable: config.cancellable ?? false,

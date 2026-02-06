@@ -103,6 +103,15 @@ export type SendReturn<TRes, TResponseType extends string> = TResponseType exten
       ? void
       : never;
 
+/**
+ * Extract method names that have a specific response type.
+ *
+ * Used to constrain `stream()` to only accept methods with `responseType: "stream"`.
+ */
+export type MethodsWithResponseType<S extends Schema, RT extends string> = {
+  [K in keyof S["methods"]]: S["methods"][K]["responseType"] extends RT ? K : never;
+}[keyof S["methods"]];
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPED CONFIG (preserves codec generics through method() call)
 // ═══════════════════════════════════════════════════════════════════════════

@@ -49,6 +49,7 @@ import type {
   AddMethodSymmetric,
   AddEvent,
   SendReturn,
+  MethodsWithResponseType,
   DualCodecMethodConfig,
   SingleCodecMethodConfig,
   TypedEventConfig,
@@ -530,7 +531,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
    * @param options - Optional abort signal
    * @returns AsyncGenerator yielding response chunks
    */
-  stream<M extends string & keyof S["methods"]>(
+  stream<M extends MethodsWithResponseType<S, "stream"> & string>(
     method: M,
     data: S["methods"][M]["reqIn"],
     options?: { signal?: AbortSignal },

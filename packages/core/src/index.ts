@@ -52,6 +52,7 @@ export type {
   AddMethodSymmetric,
   AddEvent,
   SendReturn,
+  MethodsWithResponseType,
   DualCodecMethodConfig,
   SingleCodecMethodConfig,
   TypedEventConfig,
