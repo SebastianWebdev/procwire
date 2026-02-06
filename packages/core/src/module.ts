@@ -200,13 +200,19 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     let responseCodec: Codec;
 
     // Validate: partial dual-codec config is not allowed
-    const hasRequestCodec = config && "requestCodec" in config;
-    const hasResponseCodec = config && "responseCodec" in config;
+    const hasRequestCodec = !!(config && "requestCodec" in config && config.requestCodec);
+    const hasResponseCodec = !!(config && "responseCodec" in config && config.responseCodec);
     if (hasRequestCodec !== hasResponseCodec) {
       throw new Error("Both requestCodec and responseCodec must be provided together");
     }
 
-    if (config && "requestCodec" in config && "responseCodec" in config) {
+    if (
+      config &&
+      "requestCodec" in config &&
+      "responseCodec" in config &&
+      config.requestCodec &&
+      config.responseCodec
+    ) {
       // Dual-codec config
       requestCodec = config.requestCodec;
       responseCodec = config.responseCodec;

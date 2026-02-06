@@ -158,13 +158,19 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
     let responseCodec: Codec;
 
     // Validate: partial dual-codec config is not allowed
-    const hasRequestCodec = options && "requestCodec" in options;
-    const hasResponseCodec = options && "responseCodec" in options;
+    const hasRequestCodec = !!(options && "requestCodec" in options && options.requestCodec);
+    const hasResponseCodec = !!(options && "responseCodec" in options && options.responseCodec);
     if (hasRequestCodec !== hasResponseCodec) {
       throw new Error("Both requestCodec and responseCodec must be provided together");
     }
 
-    if (options && "requestCodec" in options && "responseCodec" in options) {
+    if (
+      options &&
+      "requestCodec" in options &&
+      "responseCodec" in options &&
+      options.requestCodec &&
+      options.responseCodec
+    ) {
       requestCodec = options.requestCodec;
       responseCodec = options.responseCodec;
     } else if (options && "codec" in options && options.codec) {
