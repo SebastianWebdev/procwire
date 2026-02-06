@@ -199,11 +199,18 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     let requestCodec: Codec;
     let responseCodec: Codec;
 
+    // Validate: partial dual-codec config is not allowed
+    const hasRequestCodec = config && "requestCodec" in config;
+    const hasResponseCodec = config && "responseCodec" in config;
+    if (hasRequestCodec !== hasResponseCodec) {
+      throw new Error("Both requestCodec and responseCodec must be provided together");
+    }
+
     if (config && "requestCodec" in config && "responseCodec" in config) {
       // Dual-codec config
       requestCodec = config.requestCodec;
       responseCodec = config.responseCodec;
-    } else if (config && "codec" in config) {
+    } else if (config && "codec" in config && config.codec) {
       // Single-codec shorthand
       requestCodec = config.codec;
       responseCodec = config.codec;
