@@ -50,6 +50,7 @@ import type {
   AddEvent,
   SendReturn,
   MethodsWithResponseType,
+  MethodsWithoutResponseType,
   DualCodecMethodConfig,
   SingleCodecMethodConfig,
   TypedEventConfig,
@@ -436,7 +437,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
    * @throws {Error} if timeout
    * @throws {DOMException} if aborted
    */
-  async send<M extends string & keyof S["methods"]>(
+  async send<M extends MethodsWithoutResponseType<S, "stream"> & string>(
     method: M,
     data: S["methods"][M]["reqIn"],
     options?: { signal?: AbortSignal },

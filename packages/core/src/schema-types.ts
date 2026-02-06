@@ -26,7 +26,7 @@ export type AddMethod<
   CRes extends Codec,
   RT extends ResponseType,
 > = {
-  methods: S["methods"] &
+  methods: Omit<S["methods"], Name> &
     Record<
       Name,
       {
@@ -52,7 +52,7 @@ export type AddMethodSymmetric<
   C extends Codec,
   RT extends ResponseType,
 > = {
-  methods: S["methods"] &
+  methods: Omit<S["methods"], Name> &
     Record<
       Name,
       {
@@ -73,7 +73,7 @@ export type AddMethodSymmetric<
  */
 export type AddEvent<S extends Schema, Name extends string, C extends Codec> = {
   methods: S["methods"];
-  events: S["events"] &
+  events: Omit<S["events"], Name> &
     Record<
       Name,
       {
@@ -110,6 +110,15 @@ export type SendReturn<TRes, TResponseType extends string> = TResponseType exten
  */
 export type MethodsWithResponseType<S extends Schema, RT extends string> = {
   [K in keyof S["methods"]]: S["methods"][K]["responseType"] extends RT ? K : never;
+}[keyof S["methods"]];
+
+/**
+ * Extract method names that do NOT have a specific response type.
+ *
+ * Used to constrain `send()` to reject methods with `responseType: "stream"`.
+ */
+export type MethodsWithoutResponseType<S extends Schema, RT extends string> = {
+  [K in keyof S["methods"]]: S["methods"][K]["responseType"] extends RT ? never : K;
 }[keyof S["methods"]];
 
 // ═══════════════════════════════════════════════════════════════════════════

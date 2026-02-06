@@ -53,6 +53,7 @@ export type {
   AddEvent,
   SendReturn,
   MethodsWithResponseType,
+  MethodsWithoutResponseType,
   DualCodecMethodConfig,
   SingleCodecMethodConfig,
   TypedEventConfig,
