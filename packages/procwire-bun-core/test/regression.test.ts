@@ -407,4 +407,26 @@ describe("Feature D1 (bun-core): heartbeat detects an unresponsive child", () =>
       jest.useRealTimers();
     }
   });
+
+  it("does not kill a healthy child when timeoutMs <= intervalMs", () => {
+    // Regression: timeout must be measured from an actual ping, not startup.
+    // With timeoutMs <= intervalMs the old check killed a healthy child on the
+    // first interval tick before it was ever pinged.
+    jest.useFakeTimers();
+    try {
+      const { manager, mod, calls } = setup();
+      const api = manager as unknown as HeartbeatApi;
+      api.startHeartbeat(mod, { intervalMs: 10000, timeoutMs: 3000 }); // timeout < interval
+      api.handlePong("worker"); // child answers the initial ping promptly
+
+      for (let i = 0; i < 5; i++) {
+        jest.advanceTimersByTime(10000); // interval tick -> next ping
+        api.handlePong("worker"); // answered promptly each time
+      }
+
+      expect(calls.kill).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

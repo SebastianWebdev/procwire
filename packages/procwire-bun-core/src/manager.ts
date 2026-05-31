@@ -129,7 +129,9 @@ export class ModuleManager extends EventEmitter {
   private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Control-plane heartbeat state (only populated when a module enables it).
   private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
-  private readonly lastPongAt = new Map<string, number>();
+  // Timestamp of an outstanding (unanswered) $ping per module; cleared on $pong.
+  // Lets us measure the timeout from an actual ping rather than from startup.
+  private readonly heartbeatPingAt = new Map<string, number>();
   private readonly heartbeatReaders = new Map<string, AbortController>();
   private isShuttingDown = false;
 
@@ -697,24 +699,40 @@ export class ModuleManager extends EventEmitter {
   private startHeartbeat(module: Module, config: HeartbeatConfig): void {
     const { name } = module;
     this.stopHeartbeat(name); // never run two timers for one module
-    this.lastPongAt.set(name, Date.now());
     this.startPongReader(module);
 
+    // Send the first ping immediately so the timeout is always measured from an
+    // actual ping rather than from when the module became ready.
+    this._sendHeartbeatPing(module);
+
     const timer = setInterval(() => {
-      if (Date.now() - (this.lastPongAt.get(name) ?? 0) >= config.timeoutMs) {
-        this.onHeartbeatTimeout(module, config.timeoutMs);
+      const pingAt = this.heartbeatPingAt.get(name);
+      if (pingAt !== undefined) {
+        // A ping is still unanswered: time out only relative to that ping, and
+        // don't stack another ping (it would reset the deadline so a dead child
+        // would never be detected).
+        if (Date.now() - pingAt >= config.timeoutMs) {
+          this.onHeartbeatTimeout(module, config.timeoutMs);
+        }
         return;
       }
-      const stdin = module.process?.stdin as
-        | { write: (data: string) => number; flush?: () => void }
-        | undefined;
-      if (stdin) {
-        stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
-        stdin.flush?.();
-      }
+      // Previous ping was answered: send the next one.
+      this._sendHeartbeatPing(module);
     }, config.intervalMs);
 
     this.heartbeatTimers.set(name, timer);
+  }
+
+  /** Write a `$ping` to the child and mark it outstanding (awaiting `$pong`). */
+  private _sendHeartbeatPing(module: Module): void {
+    const stdin = module.process?.stdin as
+      | { write: (data: string) => number; flush?: () => void }
+      | undefined;
+    if (stdin) {
+      stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+      stdin.flush?.();
+      this.heartbeatPingAt.set(module.name, Date.now());
+    }
   }
 
   /**
@@ -767,10 +785,10 @@ export class ModuleManager extends EventEmitter {
     void loop();
   }
 
-  /** Record a `$pong` from the child, keeping it marked alive. */
+  /** Record a `$pong`: the outstanding ping was answered. */
   private handlePong(name: string): void {
     if (this.heartbeatTimers.has(name)) {
-      this.lastPongAt.set(name, Date.now());
+      this.heartbeatPingAt.delete(name);
     }
   }
 
@@ -798,7 +816,7 @@ export class ModuleManager extends EventEmitter {
       reader.abort();
       this.heartbeatReaders.delete(name);
     }
-    this.lastPongAt.delete(name);
+    this.heartbeatPingAt.delete(name);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

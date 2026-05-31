@@ -118,7 +118,10 @@ export class ModuleManager extends EventEmitter {
   private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Control-plane heartbeat state (only populated when a module enables it).
   private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
-  private readonly lastPongAt = new Map<string, number>();
+  // Timestamp of an outstanding (unanswered) $ping per module; cleared once the
+  // matching $pong arrives. Lets us measure the timeout from an actual ping
+  // rather than from startup.
+  private readonly heartbeatPingAt = new Map<string, number>();
   private isShuttingDown = false;
 
   /**
@@ -607,33 +610,52 @@ export class ModuleManager extends EventEmitter {
   /**
    * Start the control-plane heartbeat for a ready module.
    *
-   * Every `intervalMs` we send a `$ping` over the child's stdin and check that
-   * a `$pong` has been seen within `timeoutMs`; otherwise the child is treated
-   * as dead (killed -> the normal crash/restart path runs).
+   * Sends a `$ping` over the child's stdin and, while a ping is unanswered,
+   * checks that the matching `$pong` arrives within `timeoutMs` of *that ping*
+   * (never from startup). A new ping is only sent once the previous one was
+   * answered, so a dead child is reliably detected regardless of how
+   * `intervalMs` and `timeoutMs` relate. On timeout the child is treated as
+   * dead (killed -> the normal crash/restart path runs).
    */
   private startHeartbeat(module: Module, config: HeartbeatConfig): void {
     const { name } = module;
     this.stopHeartbeat(name); // never run two timers for one module
-    this.lastPongAt.set(name, Date.now());
+
+    // Send the first ping immediately so the timeout is always measured from an
+    // actual ping rather than from when the module became ready.
+    this._sendHeartbeatPing(module);
 
     const timer = setInterval(() => {
-      if (Date.now() - (this.lastPongAt.get(name) ?? 0) >= config.timeoutMs) {
-        this.onHeartbeatTimeout(module, config.timeoutMs);
+      const pingAt = this.heartbeatPingAt.get(name);
+      if (pingAt !== undefined) {
+        // A ping is still unanswered: time out only relative to that ping. Do
+        // not send another ping meanwhile (it would reset the deadline and a
+        // dead child would never be detected).
+        if (Date.now() - pingAt >= config.timeoutMs) {
+          this.onHeartbeatTimeout(module, config.timeoutMs);
+        }
         return;
       }
-      const proc = module.process;
-      if (proc?.stdin?.writable) {
-        proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
-      }
+      // Previous ping was answered: send the next one.
+      this._sendHeartbeatPing(module);
     }, config.intervalMs);
 
     this.heartbeatTimers.set(name, timer);
   }
 
-  /** Record a `$pong` from the child, keeping it marked alive. */
+  /** Write a `$ping` to the child and mark it outstanding (awaiting `$pong`). */
+  private _sendHeartbeatPing(module: Module): void {
+    const proc = module.process;
+    if (proc?.stdin?.writable) {
+      proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+      this.heartbeatPingAt.set(module.name, Date.now());
+    }
+  }
+
+  /** Record a `$pong`: the outstanding ping was answered. */
   private handlePong(name: string): void {
     if (this.heartbeatTimers.has(name)) {
-      this.lastPongAt.set(name, Date.now());
+      this.heartbeatPingAt.delete(name);
     }
   }
 
@@ -656,7 +678,7 @@ export class ModuleManager extends EventEmitter {
       clearInterval(timer);
       this.heartbeatTimers.delete(name);
     }
-    this.lastPongAt.delete(name);
+    this.heartbeatPingAt.delete(name);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
