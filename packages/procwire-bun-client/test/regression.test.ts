@@ -4,7 +4,7 @@
  * Each `describe` targets ONE bug: written to FAIL against the buggy code and
  * PASS once the fix is applied. These mirror the @procwire/client fixes.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import { Client } from "../src/index.js";
 import { buildFrame } from "@procwire/protocol";
 import { msgpackCodec } from "@procwire/codecs";
@@ -147,5 +147,41 @@ describe("Bug C4b (bun-client): must honor maxPayloadSize", () => {
     );
     expect(() => internals._onSocketData(socket, ok)).not.toThrow();
     expect(ended).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Feature D1 (bun-client): the child answers control-plane heartbeat pings so
+// the parent can detect a hung child. A $ping must produce a $pong on stdout.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Feature D1 (bun-client): responds to heartbeat ping with pong", () => {
+  function handleControl(client: Client, line: string): void {
+    (client as unknown as { _handleControlLine(line: string): void })._handleControlLine(line);
+  }
+
+  it("writes a $pong when it receives a $ping", () => {
+    const client = new Client();
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toMatchObject({ method: "$pong" });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("ignores non-ping and malformed control lines", () => {
+    const client = new Client();
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$shutdown" }));
+      handleControl(client, "not json");
+
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

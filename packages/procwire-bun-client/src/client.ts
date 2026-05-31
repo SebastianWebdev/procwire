@@ -67,6 +67,7 @@ export class Client extends EventEmitter {
   private _server: BunServer | null = null;
   private _socket: BunSocket | null = null;
   private _frameBuffer: FrameBuffer | null = null;
+  private _controlReaderStopped = false;
 
   private _methodNameToId = new Map<string, number>();
   private _methodIdToName = new Map<number, string>();
@@ -220,6 +221,52 @@ export class Client extends EventEmitter {
 
     // Send $init to parent (via stdout, JSON-RPC control plane)
     this._sendInit(pipePath);
+
+    // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
+    void this._startControlReader();
+  }
+
+  /**
+   * @internal Read the parent's control plane (stdin) line by line.
+   */
+  private async _startControlReader(): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for await (const chunk of Bun.stdin.stream()) {
+        if (this._controlReaderStopped) break;
+        buffer += decoder.decode(chunk as Uint8Array);
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          this._handleControlLine(line);
+        }
+      }
+    } catch {
+      // stdin closed / unreadable - nothing more to do.
+    }
+  }
+
+  /**
+   * @internal Handle one line from the parent's control plane (stdin).
+   *
+   * Currently answers heartbeat pings; unknown/non-JSON lines are ignored.
+   */
+  private _handleControlLine(line: string): void {
+    if (!line.startsWith("{")) return;
+    try {
+      const msg = JSON.parse(line) as { method?: string };
+      if (msg.method === "$ping") {
+        this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      }
+    } catch {
+      // Ignore non-JSON / malformed control lines.
+    }
+  }
+
+  /** Write a JSON-RPC control message to the parent over stdout. */
+  private _sendControl(message: unknown): void {
+    console.log(JSON.stringify(message));
   }
 
   /**
@@ -255,6 +302,7 @@ export class Client extends EventEmitter {
    * Graceful shutdown.
    */
   async shutdown(): Promise<void> {
+    this._controlReaderStopped = true;
     this._socket?.end();
     this._server?.stop(true);
     this._drainWaiter?.clear();

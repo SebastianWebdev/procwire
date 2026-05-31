@@ -332,3 +332,79 @@ describe("Bug D2 (bun-core): stream backpressure pauses/resumes the socket", () 
     expect(resumed).toBeGreaterThan(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Feature D1 (bun-core): control-plane heartbeat. The parent pings the child
+// and, if no pong arrives within the timeout, treats it as dead (kills it so
+// the normal crash/restart path runs).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Feature D1 (bun-core): heartbeat detects an unresponsive child", () => {
+  function setup(): {
+    manager: ModuleManager;
+    mod: Module;
+    calls: { kill: number; write: number };
+  } {
+    const manager = new ModuleManager();
+    manager.on("module:error", () => {}); // swallow heartbeat-timeout error
+    const mod = new Module("worker").executable("bun", ["x.ts"]).method("foo");
+    manager.register(mod);
+    const calls = { kill: 0, write: 0 };
+    const proc = {
+      stdin: {
+        write: () => {
+          calls.write++;
+          return 0;
+        },
+        flush: () => {},
+      },
+      kill: () => {
+        calls.kill++;
+      },
+      // no stdout -> the pong reader is skipped, keeping the test focused.
+    };
+    mod._attachProcess(proc as never);
+    mod._setState("ready");
+    return { manager, mod, calls };
+  }
+
+  type HeartbeatApi = {
+    startHeartbeat(m: Module, c: { intervalMs: number; timeoutMs: number }): void;
+    handlePong(name: string): void;
+  };
+
+  it("kills the process after the timeout when no pong arrives", () => {
+    jest.useFakeTimers();
+    try {
+      const { manager, mod, calls } = setup();
+      (manager as unknown as HeartbeatApi).startHeartbeat(mod, {
+        intervalMs: 1000,
+        timeoutMs: 3000,
+      });
+
+      jest.advanceTimersByTime(3500);
+
+      expect(calls.kill).toBeGreaterThan(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps the process alive while pongs keep arriving", () => {
+    jest.useFakeTimers();
+    try {
+      const { manager, mod, calls } = setup();
+      const api = manager as unknown as HeartbeatApi;
+      api.startHeartbeat(mod, { intervalMs: 1000, timeoutMs: 3000 });
+
+      for (let i = 0; i < 6; i++) {
+        jest.advanceTimersByTime(1000);
+        api.handlePong("worker");
+      }
+
+      expect(calls.kill).toBe(0);
+      expect(calls.write).toBeGreaterThan(0); // pings were sent
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
