@@ -49,6 +49,9 @@ const RESTART_WAIT_DELAY_MS = 1000;
 /** Timeout for graceful shutdown before force kill (ms) */
 const FORCE_KILL_TIMEOUT_MS = 5000;
 
+/** Timeout for connecting to the child's data-plane pipe before giving up (ms) */
+const DATA_CHANNEL_CONNECT_TIMEOUT_MS = 10000;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SPAWN ERROR
 // ═══════════════════════════════════════════════════════════════════════════
@@ -102,6 +105,10 @@ export class ModuleManager extends EventEmitter {
   private readonly modules = new Map<string, Module>();
   private readonly restartTimestamps = new Map<string, number[]>();
   private readonly stdoutReaders = new Map<string, ReadlineInterface>();
+  // Pending crash-restart timers, kept so they can be cancelled on shutdown to
+  // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
+  // the isShuttingDown window, which is reset when shutdown() returns).
+  private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private isShuttingDown = false;
 
   /**
@@ -406,11 +413,27 @@ export class ModuleManager extends EventEmitter {
   /**
    * Connect to data channel.
    */
-  private connectDataChannel(pipePath: string, socketBufferSize?: number): Promise<Socket> {
+  private connectDataChannel(
+    pipePath: string,
+    socketBufferSize?: number,
+    timeoutMs: number = DATA_CHANNEL_CONNECT_TIMEOUT_MS,
+  ): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const socket = createConnection(pipePath);
 
+      // Without a timeout, a child that advertises a pipe it never accepts on
+      // would hang the spawn forever (and leak the child). Bound the wait.
+      const timer = setTimeout(() => {
+        socket.destroy();
+        reject(
+          ManagerErrors.dataChannelFailed(
+            `connection to "${pipePath}" timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+
       socket.on("connect", () => {
+        clearTimeout(timer);
         // OPT-01: Disable Nagle's algorithm for lower latency
         // Sends data immediately instead of buffering small packets
         socket.setNoDelay(true);
@@ -432,7 +455,10 @@ export class ModuleManager extends EventEmitter {
 
         resolve(socket);
       });
-      socket.on("error", (err) => reject(ManagerErrors.dataChannelFailed(err.message)));
+      socket.on("error", (err) => {
+        clearTimeout(timer);
+        reject(ManagerErrors.dataChannelFailed(err.message));
+      });
     });
   }
 
@@ -517,12 +543,37 @@ export class ModuleManager extends EventEmitter {
   /**
    * Restart a module.
    */
-  private async restartModule(module: Module): Promise<void> {
-    // Wait a bit before restart
-    await this.sleep(RESTART_WAIT_DELAY_MS);
+  private restartModule(module: Module): Promise<void> {
+    // Wait a bit before restart, using a tracked timer so shutdown() can cancel it.
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.restartTimers.delete(module.name);
 
-    // Re-spawn with retry logic
-    await this.spawnModule(module.name);
+        // Bail if the module was shut down (or closed) during the delay; the
+        // isShuttingDown flag is reset once shutdown() returns, so the module
+        // state is the reliable signal here.
+        if (this.isShuttingDown || module.state === "closed") {
+          resolve();
+          return;
+        }
+
+        // Re-spawn with retry logic.
+        this.spawnModule(module.name).then(resolve, reject);
+      }, RESTART_WAIT_DELAY_MS);
+
+      this.restartTimers.set(module.name, timer);
+    });
+  }
+
+  /**
+   * Cancel a pending crash-restart timer, if any.
+   */
+  private cancelRestart(name: string): void {
+    const timer = this.restartTimers.get(name);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.restartTimers.delete(name);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -535,6 +586,9 @@ export class ModuleManager extends EventEmitter {
   private async shutdownModule(name: string): Promise<void> {
     const module = this.modules.get(name);
     if (!module) return;
+
+    // Cancel any pending crash-restart so the module isn't resurrected.
+    this.cancelRestart(name);
 
     const proc = module.process;
     if (!proc) {

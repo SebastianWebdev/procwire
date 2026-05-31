@@ -9,6 +9,7 @@ import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import { Module } from "../src/module.js";
+import { ModuleManager } from "../src/manager.js";
 import { msgpackCodec } from "@procwire/codecs";
 import { buildFrame, Flags } from "@procwire/protocol";
 
@@ -414,5 +415,52 @@ describe("Bug D2: stream backpressure pauses/resumes the socket", () => {
     }
 
     expect(resumeMock).toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C10: a crashed module schedules a restart after a delay. shutdown() sets
+// isShuttingDown only for its own duration and resets it on return, so a
+// restart timer that fires after shutdown completes would re-spawn ("resurrect")
+// the module. Pending restarts must be cancelled on shutdown.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C10: shutdown must cancel a pending crash-restart", () => {
+  it("does not resurrect a module when shutdown races the restart delay", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new ModuleManager();
+      manager.on("module:error", () => {}); // swallow crash/error events
+
+      const mod = new Module("worker")
+        .executable("node", ["x.js"])
+        .method("foo", { codec: msgpackCodec })
+        .spawnPolicy({ restartOnCrash: true });
+      manager.register(mod);
+      mod._setState("ready");
+
+      const spawnSpy = vi
+        .spyOn(manager as unknown as { spawnModule: (n: string) => Promise<void> }, "spawnModule")
+        .mockResolvedValue(undefined);
+
+      // Simulate a crash of a ready module -> schedules a restart after a delay.
+      (
+        manager as unknown as {
+          handleProcessExit: (m: Module, c: number | null, s: string | null) => void;
+        }
+      ).handleProcessExit(mod, 1, null);
+
+      // Shut down while the restart is still pending.
+      const shutdownDone = manager.shutdown();
+
+      // Advance well past the restart delay.
+      await vi.advanceTimersByTimeAsync(5000);
+      await shutdownDone;
+
+      // Fixed: the pending restart was cancelled -> no re-spawn.
+      // Buggy: the restart timer fired after shutdown -> spawnModule was called.
+      expect(spawnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
