@@ -132,11 +132,10 @@ export class RequestContextImpl implements RequestContext {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy because Named Pipes on Windows
-    // may not synchronously copy buffer data.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket.cork();
-    this._socket.write(Buffer.from(headerBuf));
+    this._socket.write(headerBuf);
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 

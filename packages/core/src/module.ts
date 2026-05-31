@@ -23,7 +23,6 @@ import {
   hasFlag,
   Flags,
   HEADER_SIZE,
-  HEADER_POOL_SIZE,
   ABORT_METHOD_ID,
   encodeHeaderInto,
   DrainWaiter,
@@ -152,12 +151,6 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _nextRequestId = 1;
   private _pendingRequests = new Map<number, PendingRequest>();
   private _pendingStreams = new Map<number, PendingStream>();
-
-  // OPT-02: Header ring buffer for allocation-free sends
-  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
-    Buffer.allocUnsafe(HEADER_SIZE),
-  );
-  private _headerPoolIndex = 0;
 
   // OPT-04: Backpressure tracking
   private _draining = false;
@@ -885,13 +878,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   }
 
   /**
-   * Acquire a header buffer from the ring buffer pool.
-   * OPT-02: Allocation-free sends - reuse pre-allocated buffers.
+   * Allocate a fresh header buffer for a single send.
+   *
+   * A pre-allocated ring pool used to back this, but every send has to copy the
+   * header before writing anyway (write() doesn't synchronously consume it), so
+   * the pool allocated a copy per send regardless. Allocating directly is the
+   * same cost and lets us write the buffer without an extra copy.
    */
   private _acquireHeaderBuffer(): Buffer {
-    const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
-    return buffer;
+    return Buffer.allocUnsafe(HEADER_SIZE);
   }
 
   /**
@@ -916,11 +911,10 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy because Named Pipes on Windows
-    // may not synchronously copy buffer data.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket!.cork();
-    this._socket!.write(Buffer.from(headerBuf));
+    this._socket!.write(headerBuf);
     const canContinue = this._socket!.write(payload);
     this._socket!.uncork();
 
@@ -941,10 +935,10 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: 0,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy for Named Pipes compatibility.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket!.cork();
-    this._socket!.write(Buffer.from(headerBuf));
+    this._socket!.write(headerBuf);
     const canContinue = this._socket!.write(Buffer.alloc(0));
     this._socket!.uncork();
 

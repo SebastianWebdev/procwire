@@ -21,7 +21,6 @@ import {
   Flags,
   encodeHeaderInto,
   HEADER_SIZE,
-  HEADER_POOL_SIZE,
   ABORT_METHOD_ID,
   DrainWaiter,
 } from "@procwire/protocol";
@@ -105,12 +104,6 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   private _abortCallbacks = new Map<number, Set<() => void>>();
   private _activeContexts = new Map<number, RequestContextImpl>();
   private _started = false;
-
-  // Ring buffer for headers (OPT-02: allocation-free sends)
-  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
-    Buffer.allocUnsafe(HEADER_SIZE),
-  );
-  private _headerPoolIndex = 0;
 
   // OPT-04: Backpressure tracking via singleton DrainWaiter
   private _drainWaiter: DrainWaiter | null = null;
@@ -597,12 +590,10 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Copy the pooled header before writing: write() does not synchronously
-    // consume the buffer, so under backpressure the 16-slot ring could reuse
-    // and overwrite this header while it is still queued (consistent with
-    // _sendFrame / RequestContextImpl._sendResponse).
+    // headerBuf is freshly allocated and owned by this call, so it can be
+    // written without an extra copy.
     this._socket?.cork();
-    this._socket?.write(Buffer.from(headerBuf));
+    this._socket?.write(headerBuf);
     this._socket?.write(payload);
     this._socket?.uncork();
   }
@@ -611,10 +602,13 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   // PRIVATE: Frame Sending
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Allocate a fresh header buffer for a single send. (A ring pool used to back
+   * this, but every send copies the header before writing anyway, so the pool
+   * saved nothing; allocating directly lets us write without an extra copy.)
+   */
   private _acquireHeaderBuffer(): Buffer {
-    const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
-    return buffer;
+    return Buffer.allocUnsafe(HEADER_SIZE);
   }
 
   /**
@@ -643,11 +637,10 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy because Named Pipes on Windows
-    // may not synchronously copy buffer data.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket.cork();
-    this._socket.write(Buffer.from(headerBuf));
+    this._socket.write(headerBuf);
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 
