@@ -311,10 +311,7 @@ export class Client extends EventEmitter {
           unix: pipePath,
           socket: {
             open: (socket: BunSocket) => {
-              // Parent connected
-              this._socket = socket;
-              this._drainWaiter = new BunDrainWaiter();
-              this._frameBuffer = new FrameBuffer();
+              this._onConnectionOpen(socket);
             },
             data: (_socket: BunSocket, data: Buffer) => {
               // Handle incoming data
@@ -328,8 +325,7 @@ export class Client extends EventEmitter {
               this._onSocketError(err);
             },
             close: (_socket: BunSocket) => {
-              this._drainWaiter?.clear();
-              this.emit("disconnected");
+              this._onConnectionClose();
             },
             drain: (_socket: BunSocket) => {
               // Backpressure released
@@ -344,6 +340,55 @@ export class Client extends EventEmitter {
         reject(error);
       }
     });
+  }
+
+  /**
+   * @internal Handle a new parent connection.
+   *
+   * Single-parent model: the parent connects exactly once. Reject any extra or
+   * stray connection rather than overwriting (and corrupting) the active
+   * connection's in-flight state.
+   */
+  private _onConnectionOpen(socket: BunSocket): void {
+    if (this._socket) {
+      socket.end();
+      return;
+    }
+    this._socket = socket;
+    this._drainWaiter = new BunDrainWaiter();
+    this._frameBuffer = new FrameBuffer();
+  }
+
+  /**
+   * @internal Tear down per-connection state when the parent disconnects.
+   *
+   * In-flight requests are abandoned by the parent on disconnect, so we abort
+   * their contexts, fire their onAbort callbacks (user cleanup: close cursors,
+   * kill queries), drop all references so nothing leaks, and emit "disconnected".
+   */
+  private _onConnectionClose(): void {
+    this._drainWaiter?.clear();
+
+    for (const ctx of this._activeContexts.values()) {
+      ctx._markAborted();
+    }
+    for (const callbacks of this._abortCallbacks.values()) {
+      for (const cb of callbacks) {
+        try {
+          cb();
+        } catch {
+          /* ignore - user cleanup errors must not block teardown */
+        }
+      }
+    }
+    this._activeContexts.clear();
+    this._abortCallbacks.clear();
+
+    this._socket = null;
+    this._frameBuffer = null;
+    this._drainWaiter = null;
+
+    this.emit("disconnected");
   }
 
   /**
