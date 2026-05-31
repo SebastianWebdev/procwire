@@ -1,5 +1,15 @@
 # @procwire/bench
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies [[`c120c45`](https://github.com/SebastianWebdev/procwire/commit/c120c45d4e8b0d1eb928da09cb328148e8cdfad8), [`c120c45`](https://github.com/SebastianWebdev/procwire/commit/c120c45d4e8b0d1eb928da09cb328148e8cdfad8), [`c120c45`](https://github.com/SebastianWebdev/procwire/commit/c120c45d4e8b0d1eb928da09cb328148e8cdfad8), [`c120c45`](https://github.com/SebastianWebdev/procwire/commit/c120c45d4e8b0d1eb928da09cb328148e8cdfad8)]:
+  - @procwire/client@1.2.0
+  - @procwire/bun-client@1.2.0
+  - @procwire/core@1.2.0
+  - @procwire/bun-core@1.2.0
+
 ## 1.0.4
 
 ### Patch Changes

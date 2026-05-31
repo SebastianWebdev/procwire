@@ -1,6 +1,6 @@
 {
   "name": "@procwire/core",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Core module system for Procwire binary protocol.",
   "keywords": [
     "ipc",

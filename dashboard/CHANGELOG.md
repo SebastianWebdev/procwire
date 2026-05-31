@@ -1,5 +1,12 @@
 # procwire-dashboard
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @procwire/bench@1.0.5
+
 ## 1.0.4
 
 ### Patch Changes
