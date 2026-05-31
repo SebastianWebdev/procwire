@@ -4,7 +4,7 @@
  * Each `describe` targets ONE bug: written to FAIL against the buggy code and
  * PASS once the fix is applied. These mirror the @procwire/core fixes.
  */
-import { describe, it, expect, spyOn } from "bun:test";
+import { describe, it, expect, spyOn, jest } from "bun:test";
 import { Module, ModuleErrors } from "../src/index.js";
 
 interface ModuleInternals {
@@ -12,6 +12,20 @@ interface ModuleInternals {
   _nextRequestId: number;
   _allocateRequestId(): number;
 }
+
+const mockSocket = (): never => ({ write: () => true, end: () => {} }) as never;
+
+function readyModule(): Module {
+  const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+  mod._setState("ready");
+  mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
+  mod._attachDataChannel(mockSocket());
+  return mod;
+}
+
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Bug C5 (bun-core): _onSocketError forwarded socket errors via emit("error").
@@ -107,5 +121,57 @@ describe("Bug C7 (bun-core): abort listener must be removed when a request settl
     (mod as unknown as { _cleanupRequest(id: number): void })._cleanupRequest(1);
 
     expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C2 (bun-core): send() to a method with no configured timeout waited
+// forever. A default request timeout bounds it; it is overridable per-module
+// via .requestTimeout(), and a value of 0 disables it.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C2 (bun-core): a default request timeout bounds hanging requests", () => {
+  it("rejects with a timeout when the method has no explicit timeout", async () => {
+    jest.useFakeTimers();
+    try {
+      const mod = readyModule();
+      let outcome: unknown = "pending";
+      void mod.send("foo", {}).then(
+        (v) => (outcome = ["resolved", v]),
+        (e) => (outcome = e),
+      );
+
+      jest.advanceTimersByTime(0);
+      await flush();
+      expect(outcome).toBe("pending"); // not settled before the timeout
+
+      jest.advanceTimersByTime(30_000);
+      await flush();
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/timeout/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("treats requestTimeout(0) as disabling the default", async () => {
+    jest.useFakeTimers();
+    try {
+      const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo").requestTimeout(0);
+      mod._setState("ready");
+      mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
+      mod._attachDataChannel(mockSocket());
+
+      let outcome: unknown = "pending";
+      void mod.send("foo", {}).then(
+        () => (outcome = "resolved"),
+        (e) => (outcome = e),
+      );
+
+      jest.advanceTimersByTime(120_000);
+      await flush();
+      expect(outcome).toBe("pending"); // never times out
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
