@@ -60,6 +60,7 @@ type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
  */
 export class Client extends EventEmitter {
   private _defaultCodec: Codec;
+  private readonly _maxPayloadSize?: number;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
 
@@ -87,6 +88,9 @@ export class Client extends EventEmitter {
   constructor(options?: ClientOptions) {
     super();
     this._defaultCodec = options?.defaultCodec ?? msgpackCodec;
+    if (options?.maxPayloadSize !== undefined) {
+      this._maxPayloadSize = options.maxPayloadSize;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -313,13 +317,8 @@ export class Client extends EventEmitter {
             open: (socket: BunSocket) => {
               this._onConnectionOpen(socket);
             },
-            data: (_socket: BunSocket, data: Buffer) => {
-              // Handle incoming data
-              if (!this._frameBuffer) return;
-              const frames = this._frameBuffer.push(data);
-              for (const frame of frames) {
-                this._handleFrame(frame);
-              }
+            data: (socket: BunSocket, data: Buffer) => {
+              this._onSocketData(socket, data);
             },
             error: (_socket: BunSocket, err: Error) => {
               this._onSocketError(err);
@@ -356,7 +355,33 @@ export class Client extends EventEmitter {
     }
     this._socket = socket;
     this._drainWaiter = new BunDrainWaiter();
-    this._frameBuffer = new FrameBuffer();
+    this._frameBuffer = new FrameBuffer(
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
+    );
+  }
+
+  /**
+   * @internal Process inbound bytes into frames.
+   *
+   * Wrapped in try/catch so an oversized/invalid frame (e.g. a payload above
+   * maxPayloadSize) drops the connection instead of throwing out of the socket
+   * data handler and crashing the child.
+   */
+  private _onSocketData(socket: BunSocket, data: Buffer): void {
+    if (!this._frameBuffer) return;
+    let frames;
+    try {
+      frames = this._frameBuffer.push(data);
+    } catch (err) {
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err as Error);
+      }
+      socket.end();
+      return;
+    }
+    for (const frame of frames) {
+      this._handleFrame(frame);
+    }
   }
 
   /**

@@ -6,11 +6,14 @@
  */
 import { describe, it, expect } from "bun:test";
 import { Client } from "../src/index.js";
+import { buildFrame } from "@procwire/protocol";
+import { msgpackCodec } from "@procwire/codecs";
 
 interface ClientInternals {
   _onSocketError(err: Error): void;
   _onConnectionOpen(socket: unknown): void;
   _onConnectionClose(): void;
+  _onSocketData(socket: unknown, data: Buffer): void;
   _socket: unknown;
   _activeContexts: Map<number, { _markAborted(): void }>;
   _abortCallbacks: Map<number, Set<() => void>>;
@@ -108,5 +111,41 @@ describe("Bug C3 (bun-client): disconnect must clean up in-flight request state"
     expect(internals._activeContexts.size).toBe(0);
     expect(internals._abortCallbacks.size).toBe(0);
     expect(internals._socket).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C4b (bun-client): the client ignored the maxPayloadSize option (always a
+// default 1GB FrameBuffer), and an oversized/invalid frame threw out of the
+// data handler (crash). Honor the option and drop the connection instead.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C4b (bun-client): must honor maxPayloadSize", () => {
+  it("drops the connection on a frame exceeding maxPayloadSize (no crash)", () => {
+    const client = new Client({ maxPayloadSize: 100 });
+    const internals = client as unknown as ClientInternals;
+
+    let ended = false;
+    const socket = { end: () => (ended = true), write: () => true };
+    internals._onConnectionOpen(socket);
+
+    const oversized = buildFrame({ methodId: 999, flags: 0, requestId: 1 }, Buffer.alloc(200));
+    expect(() => internals._onSocketData(socket, oversized)).not.toThrow();
+    expect(ended).toBe(true);
+  });
+
+  it("accepts a frame within maxPayloadSize", () => {
+    const client = new Client({ maxPayloadSize: 1000 });
+    const internals = client as unknown as ClientInternals;
+
+    let ended = false;
+    const socket = { end: () => (ended = true), write: () => true };
+    internals._onConnectionOpen(socket);
+
+    const ok = buildFrame(
+      { methodId: 999, flags: 0, requestId: 1 },
+      msgpackCodec.serialize({ x: 1 }),
+    );
+    expect(() => internals._onSocketData(socket, ok)).not.toThrow();
+    expect(ended).toBe(false);
   });
 });
