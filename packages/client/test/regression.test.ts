@@ -114,3 +114,29 @@ describe("Bug C3: disconnect must clean up in-flight request state", () => {
     expect(() => socket.emit("data", frame)).not.toThrow();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C5 (client): the client forwarded socket errors via emit("error"). Node's
+// EventEmitter throws synchronously when "error" is emitted with no listener, so
+// an unobserved socket error crashed the whole child process.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C5 (client): unobserved socket error must not crash the child", () => {
+  it("does not throw when the socket errors and no 'error' listener is attached", () => {
+    const client = new Client().handle("foo", vi.fn());
+    const { socket } = connectClient(client, "foo", 1);
+
+    expect(() => socket.emit("error", new Error("ECONNRESET"))).not.toThrow();
+  });
+
+  it("forwards socket errors to a registered 'error' listener", () => {
+    const client = new Client().handle("foo", vi.fn());
+    const onError = vi.fn();
+    client.on("error", onError);
+
+    const { socket } = connectClient(client, "foo", 1);
+    const err = new Error("EPIPE");
+
+    expect(() => socket.emit("error", err)).not.toThrow();
+    expect(onError).toHaveBeenCalledWith(err);
+  });
+});

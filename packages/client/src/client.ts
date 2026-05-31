@@ -348,7 +348,14 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       }
     });
 
-    socket.on("error", (err) => this.emit("error", err));
+    socket.on("error", (err) => {
+      // EventEmitter throws synchronously when "error" is emitted with no
+      // listener, which would crash the whole child process. Only emit when
+      // someone is listening; "close" -> _handleDisconnect() still runs.
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err);
+      }
+    });
     socket.on("close", () => this._handleDisconnect());
   }
 
