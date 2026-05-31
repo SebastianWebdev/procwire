@@ -464,3 +464,49 @@ describe("Bug C10: shutdown must cancel a pending crash-restart", () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug M1: a remote error whose payload is an object collapsed to the useless
+// string "[object Object]" because remoteError used String(errorData). The
+// message must be derived sensibly (object.message, else JSON), and the
+// original payload preserved on the error for programmatic access.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug M1: remote error must preserve a useful message", () => {
+  function sendAndReject(errorPayload: unknown): Promise<unknown> {
+    const { mod, socket } = setupReadyModule();
+    let rejection: unknown = "pending";
+    const p = mod.send("foo", {});
+    p.then(
+      () => (rejection = "resolved"),
+      (e) => (rejection = e),
+    );
+    return new Promise((r) => setTimeout(r, 5)).then(() => {
+      socket.emit(
+        "data",
+        buildFrame(
+          { methodId: 1, flags: Flags.IS_RESPONSE | Flags.IS_ERROR, requestId: 1 },
+          msgpackCodec.serialize(errorPayload),
+        ),
+      );
+      return new Promise((r) => setTimeout(r, 5)).then(() => rejection);
+    });
+  }
+
+  it("uses the object's message field instead of String(obj)", async () => {
+    const rejection = await sendAndReject({ message: "boom", code: 42 });
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).message).toBe("boom");
+    expect((rejection as { data?: unknown }).data).toEqual({ message: "boom", code: 42 });
+  });
+
+  it("falls back to JSON for an object without a message field", async () => {
+    const rejection = await sendAndReject({ code: "E_OOPS" });
+    expect((rejection as Error).message).not.toBe("[object Object]");
+    expect((rejection as Error).message).toContain("E_OOPS");
+  });
+
+  it("still passes a plain string message through unchanged", async () => {
+    const rejection = await sendAndReject("plain failure");
+    expect((rejection as Error).message).toBe("plain failure");
+  });
+});
