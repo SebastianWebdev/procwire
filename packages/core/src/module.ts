@@ -505,7 +505,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       return undefined;
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
     // Abort handling
     if (options?.signal && methodConfig.cancellable) {
@@ -598,7 +598,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       throw ModuleErrors.methodNotStream(method, schemaMethod.response);
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
     // ⚠️ TODO: Implement Backpressure
     // Current implementation uses unbounded in-memory queue.
@@ -785,6 +785,19 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
 
     const data = codecDeserialize(eventConfig.codec, frame);
     this.emit(`event:${eventName}`, data);
+  }
+
+  /**
+   * Allocate the next correlation id.
+   *
+   * requestId is a uint32 on the wire. The counter wraps within [1, 0xFFFFFFFF]
+   * and skips 0, which is reserved for fire-and-forget requests and events.
+   * Without wrapping, writeUInt32BE would throw RangeError after 2^32 requests.
+   */
+  private _allocateRequestId(): number {
+    const id = this._nextRequestId;
+    this._nextRequestId = id >= 0xffffffff ? 1 : id + 1;
+    return id;
   }
 
   /**

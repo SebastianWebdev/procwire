@@ -110,3 +110,52 @@ describe("Bug C8: _detach must remove socket listeners and survive late events",
     expect(socket.listenerCount("close")).toBe(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C6: requestId is a uint32 on the wire but _nextRequestId++ never wraps.
+// After 2^32 requests, encodeHeaderInto -> writeUInt32BE throws RangeError and
+// every subsequent send breaks. The id must wrap within the uint32 range and
+// skip 0 (reserved for fire-and-forget / events).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C6: requestId must wrap at the uint32 boundary", () => {
+  function reqIdOfFirstWrite(socket: Socket & EventEmitter): number {
+    const writeMock = socket.write as ReturnType<typeof vi.fn>;
+    const header = writeMock.mock.calls[0]![0] as Buffer;
+    return header.readUInt32BE(3); // [methodId:2][flags:1][reqId:4]
+  }
+
+  it("wraps to a valid non-zero id instead of throwing RangeError", async () => {
+    const { mod, socket } = setupReadyModule();
+    const writeMock = socket.write as ReturnType<typeof vi.fn>;
+
+    // Drive the counter to the last valid uint32 value.
+    (mod as unknown as { _nextRequestId: number })._nextRequestId = 0xffffffff;
+
+    // First send consumes 0xffffffff (still valid on both buggy and fixed code).
+    const p1 = mod.send("foo", {});
+    const s1 = p1.then(
+      () => "ok",
+      (e) => e,
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(writeMock).toHaveBeenCalled();
+    expect(reqIdOfFirstWrite(socket)).toBe(0xffffffff);
+
+    writeMock.mockClear();
+
+    // Second send: buggy code computes 0x100000000 and writeUInt32BE throws,
+    // so NOTHING is written. Fixed code wraps to 1 (skipping reserved 0).
+    const p2 = mod.send("foo", {});
+    const s2 = p2.then(
+      () => "ok",
+      (e) => e,
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(writeMock).toHaveBeenCalled();
+    expect(reqIdOfFirstWrite(socket)).toBe(1);
+
+    // Cleanup: detach rejects the still-pending sends so nothing leaks.
+    mod._detach();
+    await Promise.all([s1, s2]);
+  });
+});
