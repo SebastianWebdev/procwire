@@ -58,6 +58,9 @@ const RESTART_WAIT_DELAY_MS = 1000;
 /** Timeout for graceful shutdown before force kill (ms) */
 const FORCE_KILL_TIMEOUT_MS = 5000;
 
+/** Timeout for connecting to the child's data-plane pipe before giving up (ms) */
+const DATA_CHANNEL_CONNECT_TIMEOUT_MS = 10000;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SPAWN ERROR
 // ═══════════════════════════════════════════════════════════════════════════
@@ -476,14 +479,42 @@ export class ModuleManager extends EventEmitter {
    * Connect to data channel using Bun.connect().
    * Creates socket handlers that delegate to Module methods.
    */
-  private connectDataChannel(module: Module, pipePath: string): Promise<BunSocket> {
+  private connectDataChannel(
+    module: Module,
+    pipePath: string,
+    timeoutMs: number = DATA_CHANNEL_CONNECT_TIMEOUT_MS,
+  ): Promise<BunSocket> {
     return new Promise((resolve, reject) => {
+      // Without a timeout, a child that advertises a pipe it never accepts on
+      // would hang the spawn forever (and leak the child). Bound the wait and
+      // guard against settling twice.
+      let settled = false;
+      let connected: BunSocket | null = null;
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        connected?.end();
+        reject(
+          ManagerErrors.dataChannelFailed(
+            `connection to "${pipePath}" timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+
       try {
         // Bun.connect with socket handlers that delegate to Module
         Bun.connect({
           unix: pipePath,
           socket: {
             open(socket: BunSocket) {
+              connected = socket;
+              if (settled) {
+                socket.end();
+                return;
+              }
+              settled = true;
+              clearTimeout(timer);
               resolve(socket);
             },
             data(_socket: BunSocket, data: Buffer) {
@@ -494,6 +525,9 @@ export class ModuleManager extends EventEmitter {
               // During connection, reject the promise
               // After connection, delegate to Module
               module._onSocketError(error);
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
               reject(ManagerErrors.dataChannelFailed(error.message));
             },
             close(_socket: BunSocket) {
@@ -506,6 +540,9 @@ export class ModuleManager extends EventEmitter {
           },
         });
       } catch (error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         reject(
           ManagerErrors.dataChannelFailed(error instanceof Error ? error.message : String(error)),
         );

@@ -220,3 +220,48 @@ describe("Bug C10 (bun-core): shutdown must cancel a pending crash-restart", () 
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C9 (bun-core): connectDataChannel had no timeout. A child that advertises
+// a data-plane pipe it never accepts on would make the connect Promise hang
+// forever, hanging the spawn and leaking the child.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C9 (bun-core): connectDataChannel must time out instead of hanging", () => {
+  it("rejects when the connection never opens", async () => {
+    jest.useFakeTimers();
+    const connectSpy = spyOn(Bun, "connect").mockImplementation(
+      (() => new Promise(() => {})) as never,
+    );
+    try {
+      const manager = new ModuleManager();
+      const fakeModule = {
+        _onSocketData() {},
+        _onSocketError() {},
+        _onSocketClose() {},
+        _onSocketDrain() {},
+      } as unknown as Module;
+
+      let outcome: unknown = "pending";
+      void (
+        manager as unknown as {
+          connectDataChannel(m: Module, p: string, t?: number): Promise<unknown>;
+        }
+      )
+        .connectDataChannel(fakeModule, "/tmp/procwire-never", 1000)
+        .then(
+          (v) => (outcome = v),
+          (e) => (outcome = e),
+        );
+
+      jest.advanceTimersByTime(1000);
+      await flush();
+
+      // Fixed: the timeout fired -> rejected. Buggy: no timer -> still "pending".
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/timed out/i);
+    } finally {
+      connectSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+});
