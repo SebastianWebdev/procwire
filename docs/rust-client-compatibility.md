@@ -42,6 +42,7 @@ Data plane     : named pipe / unix socket     — custom BINARY framing
   itself with `$init`, then serves requests/streams.
 
 Lifecycle:
+
 1. Parent spawns the child process.
 2. Child creates the pipe server, **starts listening**, then writes `$init`
    (with the pipe path + method/event schema) to **stdout**.
@@ -69,21 +70,21 @@ Lifecycle:
 
 **Flags** (bitfield, bits 6–7 reserved = 0):
 
-| bit | value | name                | meaning                              |
-|-----|-------|---------------------|--------------------------------------|
-| 0   | 0x01  | DIRECTION_TO_PARENT | 0 = to child, 1 = to parent          |
-| 1   | 0x02  | IS_RESPONSE         | 0 = request/event, 1 = response      |
-| 2   | 0x04  | IS_ERROR            | 1 = error response                   |
-| 3   | 0x08  | IS_STREAM           | 1 = stream chunk                     |
-| 4   | 0x10  | STREAM_END          | 1 = final stream chunk (empty payload)|
-| 5   | 0x20  | IS_ACK              | 1 = ack only (no full result)        |
+| bit | value | name                | meaning                                |
+| --- | ----- | ------------------- | -------------------------------------- |
+| 0   | 0x01  | DIRECTION_TO_PARENT | 0 = to child, 1 = to parent            |
+| 1   | 0x02  | IS_RESPONSE         | 0 = request/event, 1 = response        |
+| 2   | 0x04  | IS_ERROR            | 1 = error response                     |
+| 3   | 0x08  | IS_STREAM           | 1 = stream chunk                       |
+| 4   | 0x10  | STREAM_END          | 1 = final stream chunk (empty payload) |
+| 5   | 0x20  | IS_ACK              | 1 = ack only (no full result)          |
 
 **Constants:** `ABORT_METHOD_ID = 0xFFFF`, `DEFAULT_MAX_PAYLOAD_SIZE = 1 GiB`,
 `ABSOLUTE_MAX_PAYLOAD_SIZE = 2 GiB − 1`.
 
 > None of the framing, flags, codecs (raw / msgpack / arrow), or `ABORT_METHOD_ID`
 > changed in this work. If the Rust client already speaks this, no change needed
-> here — but **§4.4** adds a *receive-side size guard* you should confirm exists.
+> here — but **§4.4** adds a _receive-side size guard_ you should confirm exists.
 
 ---
 
@@ -94,6 +95,7 @@ Lifecycle:
 `packages/core/src/manager.ts` (heartbeat + `$shutdown`).
 
 Rules:
+
 - Each message is **one line** = a JSON object terminated by `\n`.
 - **child → parent** goes on the child's **stdout**; **parent → child** on the
   child's **stdin**.
@@ -102,13 +104,13 @@ Rules:
 
 ### Message catalogue
 
-| Method        | Direction      | When                          | Status in this work |
-|---------------|----------------|-------------------------------|---------------------|
-| `$init`       | child → parent | once, after pipe is listening | unchanged           |
-| `$error`      | child → parent | handshake/init failure (opt.) | unchanged           |
-| `$shutdown`   | parent → child | graceful stop request         | **child must now act on it (§4.2)** |
-| `$ping`       | parent → child | heartbeat tick (opt-in)       | **NEW (§4.1)**      |
-| `$pong`       | child → parent | reply to `$ping`              | **NEW (§4.1)**      |
+| Method      | Direction      | When                          | Status in this work                 |
+| ----------- | -------------- | ----------------------------- | ----------------------------------- |
+| `$init`     | child → parent | once, after pipe is listening | unchanged                           |
+| `$error`    | child → parent | handshake/init failure (opt.) | unchanged                           |
+| `$shutdown` | parent → child | graceful stop request         | **child must now act on it (§4.2)** |
+| `$ping`     | parent → child | heartbeat tick (opt-in)       | **NEW (§4.1)**                      |
+| `$pong`     | child → parent | reply to `$ping`              | **NEW (§4.1)**                      |
 
 Exact shapes (copy these byte-for-byte):
 
@@ -137,6 +139,7 @@ Exact shapes (copy these byte-for-byte):
 ## 4. Change checklist (do these)
 
 ### 4.1 — `$ping` / `$pong` heartbeat — **REQUIRED**
+
 **What changed:** the parent gained an **opt-in liveness heartbeat** (`D1`). When
 an app configures `spawnPolicy({ heartbeat: { intervalMs, timeoutMs } })`, the
 parent, every `intervalMs`, writes `$ping` to the child's **stdin** and expects a
@@ -148,6 +151,7 @@ parent **treats the child as dead and kills it** (then restarts per policy).
 it on demand, but the Rust client must support it to be safe with such parents.
 
 **Action:**
+
 - In the control-plane stdin reader, handle `method === "$ping"` by writing
   `{"jsonrpc":"2.0","method":"$pong"}\n` to stdout. Promptly, on every ping.
 - No state needed; it's a stateless reflex. The parent tracks timing.
@@ -158,13 +162,15 @@ child stays alive indefinitely under load and idle.
 `packages/core/src/manager.ts` (`startHeartbeat`/`startPongReader`/`handlePong`).
 
 ### 4.2 — Graceful `$shutdown` — **RECOMMENDED**
+
 **What changed:** the child now **acts on `$shutdown`** (parent → child stdin) by
 shutting itself down cleanly (close the pipe server + connection, stop, exit),
 instead of ignoring it and being **force-killed after a 5 s grace period**
 (`FORCE_KILL_TIMEOUT_MS = 5000`). On Node we also `process.stdin.unref()` so that
-*reading the control plane does not by itself keep the process alive*.
+_reading the control plane does not by itself keep the process alive_.
 
 **Action for Rust:**
+
 - Handle `method === "$shutdown"` → close the pipe server + any data connection,
   flush, and **exit the process promptly**.
 - Ensure your stdin-reader loop **does not block process exit**: the pipe server
@@ -180,7 +186,9 @@ keeps fast, clean teardown.
 `shutdown()`), `packages/core/src/manager.ts` `shutdownModule`.
 
 ### 4.3 — Send-side backpressure on streams/responses — **RECOMMENDED (correctness)**
+
 **What changed:** `D2` hardened flow control. Two sides:
+
 - **Parent receive-side (new):** when a stream consumer falls behind, the parent
   **pauses the data socket** once its receive queue passes a high-water mark
   (256 chunks) and resumes below the low-water mark (64). This is transparent at
@@ -205,6 +213,7 @@ the Rust child's RSS stays bounded (it stalls on writes), no OOM.
 marks), `packages/protocol/src/drain-waiter.ts`.
 
 ### 4.4 — Bound incoming frame size — **REQUIRED (robustness/security)**
+
 **What changed:** `C4b` — the child validates the **declared `payloadLength`**
 against a configurable `maxPayloadSize` (`Client` option). On an oversized/invalid
 frame it **does not allocate** the payload; it drops the connection
@@ -217,7 +226,7 @@ frame it **does not allocate** the payload; it drops the connection
 rather than `Vec::with_capacity(huge)`. Make the limit configurable.
 
 **Why:** `payloadLength` is attacker/peer-controlled (up to ~4 GiB). Unbounded
-allocation is a DoS/OOM vector. This is the one *receive-side* robustness change
+allocation is a DoS/OOM vector. This is the one _receive-side_ robustness change
 the Rust client must mirror.
 **Acceptance:** feed a header claiming a 3 GiB payload → connection is closed, no
 giant allocation, process survives.
@@ -226,10 +235,12 @@ giant allocation, process survives.
 `maxPayloadSize`, `socket.destroy()` on throw).
 
 ### 4.5 — `requestId` is a wrapping `uint32`, `0` reserved — **CHECK**
+
 **What changed:** `C6` — the request-id allocator wraps within the `uint32` range
 and **skips `0`** (`0` is reserved). Sequence: `…, 0xFFFFFFFF, 1, 2, …` (never 0).
 
 **Action for Rust:**
+
 - As a **responder** (child): treat `requestId` as an opaque `u32` and **echo it
   back unchanged** in the response/stream/error frames. Don't assume it's small,
   monotonic, or non-wrapping.
@@ -242,13 +253,14 @@ id; ids never collide with the reserved `0`.
 `packages/core/test/regression.test.ts` (Bug C6).
 
 ### 4.6 — Remote error payloads — **OPTIONAL (you may now send structured errors)**
+
 **What changed:** `M1` — the parent now derives a useful message from a **structured
 error payload** (an object with a string `message`) instead of producing
 `"[object Object]"`, and it preserves the original payload on `error.data`. A
 plain string still works.
 
 **Action for Rust:** none required (a serialized **string** message is still
-correct). *Optionally*, you may now send an error as a structured object
+correct). _Optionally_, you may now send an error as a structured object
 `{ "message": "...", "code": ..., ... }`; the parent will surface `.message` and
 keep the whole object on `error.data`. Error frames carry the
 `IS_RESPONSE | IS_ERROR | DIRECTION_TO_PARENT` flags; the payload is encoded with
@@ -259,7 +271,9 @@ child send: `packages/client/src/request-context.ts` `error()`,
 `packages/client/src/client.ts` `_sendErrorResponse`.
 
 ### 4.7 — Connection/disconnect robustness — **RECOMMENDED**
+
 Several child-side hardening fixes; mirror the behaviours, not the code:
+
 - **`C4a`** — the pipe **server accepts a single connection** (the parent). A
   second/extra inbound connection must be **rejected/closed**, not allowed to
   replace or corrupt the active one.
@@ -270,13 +284,14 @@ Several child-side hardening fixes; mirror the behaviours, not the code:
   tear the connection down cleanly.
 - **`C9` (parent-side, implication for child):** the parent now applies a
   **timeout when connecting** to the child's pipe. ⇒ the Rust child **must be
-  listening on the pipe *before* it emits `$init`** (it already should). Don't
+  listening on the pipe _before_ it emits `$init`** (it already should). Don't
   announce `$init` and then start listening.
 
 **Reference:** `packages/client/src/client.ts`; `packages/client/test/regression.test.ts`
 (Bugs C3/C4a/C5/C4b); `packages/core/src/manager.ts` (C9 `connectDataChannel`).
 
 ### 4.8 — Default request timeout — **INFO (parent behaviour)**
+
 **What changed:** `C2/C1` — the **parent** now bounds every `send()` with a default
 request timeout (30 s) unless overridden (`requestTimeout(0)` disables it).
 
@@ -297,6 +312,7 @@ Use this repo's Node parent as the reference peer. Build core/client first
 but spawn the Rust binary as the module executable).
 
 Checklist:
+
 1. **Handshake:** Rust child spawns → sends `$init` → parent reaches `ready`;
    a basic `result`/`ack`/`stream` round-trips for raw + msgpack codecs.
 2. **Heartbeat (§4.1):** register the module with
@@ -333,13 +349,13 @@ exact expected behaviour: `packages/client/test/regression.test.ts`,
 
 ## 7. Priority summary
 
-| # | Item | Priority | Type |
-|---|------|----------|------|
-| 4.1 | Answer `$ping` with `$pong` | **REQUIRED** | control-plane (new) |
-| 4.4 | Bound incoming `payloadLength` | **REQUIRED** | data-plane (robustness) |
-| 4.2 | Act on `$shutdown`, don't block exit | RECOMMENDED | control-plane |
-| 4.3 | Honour send-side write backpressure | RECOMMENDED | data-plane (correctness) |
-| 4.7 | Single connection / disconnect cleanup / no crash on socket error | RECOMMENDED | behaviour |
-| 4.5 | `requestId` opaque `u32`, wraps, skip `0` | CHECK | data-plane |
-| 4.6 | Optionally send structured error objects | OPTIONAL | data-plane |
-| 4.8 | Default request timeout (only if Rust is caller) | INFO | behaviour |
+| #   | Item                                                              | Priority     | Type                     |
+| --- | ----------------------------------------------------------------- | ------------ | ------------------------ |
+| 4.1 | Answer `$ping` with `$pong`                                       | **REQUIRED** | control-plane (new)      |
+| 4.4 | Bound incoming `payloadLength`                                    | **REQUIRED** | data-plane (robustness)  |
+| 4.2 | Act on `$shutdown`, don't block exit                              | RECOMMENDED  | control-plane            |
+| 4.3 | Honour send-side write backpressure                               | RECOMMENDED  | data-plane (correctness) |
+| 4.7 | Single connection / disconnect cleanup / no crash on socket error | RECOMMENDED  | behaviour                |
+| 4.5 | `requestId` opaque `u32`, wraps, skip `0`                         | CHECK        | data-plane               |
+| 4.6 | Optionally send structured error objects                          | OPTIONAL     | data-plane               |
+| 4.8 | Default request timeout (only if Rust is caller)                  | INFO         | behaviour                |
