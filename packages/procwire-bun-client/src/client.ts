@@ -325,7 +325,7 @@ export class Client extends EventEmitter {
               }
             },
             error: (_socket: BunSocket, err: Error) => {
-              this.emit("error", err);
+              this._onSocketError(err);
             },
             close: (_socket: BunSocket) => {
               this._drainWaiter?.clear();
@@ -344,6 +344,19 @@ export class Client extends EventEmitter {
         reject(error);
       }
     });
+  }
+
+  /**
+   * @internal Handle a socket error.
+   *
+   * EventEmitter throws synchronously when "error" is emitted with no listener,
+   * which would crash the whole child process. Only emit when someone is
+   * listening; the subsequent "close" still drives disconnect handling.
+   */
+  private _onSocketError(err: Error): void {
+    if (this.listenerCount("error") > 0) {
+      this.emit("error", err);
+    }
   }
 
   private _sendInit(pipePath: string): void {
