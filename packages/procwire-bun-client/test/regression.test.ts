@@ -172,16 +172,27 @@ describe("Feature D1 (bun-client): responds to heartbeat ping with pong", () => 
     }
   });
 
-  it("ignores non-ping and malformed control lines", () => {
+  it("ignores unknown and malformed control lines", () => {
     const client = new Client();
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
     try {
-      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$shutdown" }));
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$unknown" }));
       handleControl(client, "not json");
 
       expect(logSpy).not.toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();
+    }
+  });
+
+  it("shuts down gracefully on $shutdown", () => {
+    const client = new Client();
+    const shutdownSpy = spyOn(client, "shutdown").mockResolvedValue(undefined);
+    try {
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$shutdown" }));
+      expect(shutdownSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      shutdownSpy.mockRestore();
     }
   });
 });

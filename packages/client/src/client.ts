@@ -266,8 +266,12 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
     this._sendInit(pipePath);
 
     // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
+    // unref() so reading stdin doesn't by itself keep the child alive: the pipe
+    // server keeps the event loop running during normal operation, and once it
+    // closes (e.g. on $shutdown) the child can exit instead of being force-killed.
     this._controlReader = createInterface({ input: process.stdin });
     this._controlReader.on("line", (line) => this._handleControlLine(line));
+    process.stdin.unref();
   }
 
   /**
@@ -319,7 +323,8 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   /**
    * @internal Handle one line from the parent's control plane (stdin).
    *
-   * Currently answers heartbeat pings; unknown/non-JSON lines are ignored.
+   * Answers heartbeat pings and shuts down gracefully on request; unknown /
+   * non-JSON lines are ignored.
    */
   private _handleControlLine(line: string): void {
     if (!line.startsWith("{")) return;
@@ -327,6 +332,10 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       const msg = JSON.parse(line) as { method?: string };
       if (msg.method === "$ping") {
         this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      } else if (msg.method === "$shutdown") {
+        // Parent asked us to stop: shut down cleanly so it doesn't have to
+        // force-kill us after its grace period.
+        void this.shutdown();
       }
     } catch {
       // Ignore non-JSON / malformed control lines.

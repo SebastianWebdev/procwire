@@ -258,6 +258,10 @@ export class Client extends EventEmitter {
       const msg = JSON.parse(line) as { method?: string };
       if (msg.method === "$ping") {
         this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      } else if (msg.method === "$shutdown") {
+        // Parent asked us to stop: shut down cleanly so it doesn't have to
+        // force-kill us after its grace period.
+        void this.shutdown();
       }
     } catch {
       // Ignore non-JSON / malformed control lines.
