@@ -351,7 +351,13 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     });
 
     socket.on("error", (err: Error) => {
-      this.emit(ModuleEvents.ERROR, err);
+      // EventEmitter throws synchronously when "error" is emitted with no
+      // listener, which would crash the whole parent process. Only emit when
+      // someone is listening; an unobserved socket error is still surfaced via
+      // the subsequent "close" -> "disconnected" transition below.
+      if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+        this.emit(ModuleEvents.ERROR, err);
+      }
     });
 
     socket.on("close", () => {
