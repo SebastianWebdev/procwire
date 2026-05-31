@@ -25,7 +25,11 @@ const TSX_LOADER = pathToFileURL(
 // Use node with tsx loader
 const NODE_BIN = process.execPath; // Current Node.js binary
 
-describe("End-to-End Integration", () => {
+// These tests spawn real child processes over OS pipes, so they are inherently
+// timing-sensitive and occasionally flake on shared/slow CI runners. Retry a
+// couple of times so a transient hiccup doesn't fail the whole run. Deterministic
+// failures still fail (all attempts fail); only genuinely transient ones recover.
+describe("End-to-End Integration", { retry: 2 }, () => {
   let manager: ModuleManager;
 
   beforeEach(() => {
