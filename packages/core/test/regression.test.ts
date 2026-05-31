@@ -25,6 +25,8 @@ function createMockSocket(): Socket & EventEmitter {
     setNoDelay: vi.fn(),
     cork: vi.fn(),
     uncork: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
   }) as unknown as Socket & EventEmitter;
   return mockSocket;
 }
@@ -341,5 +343,76 @@ describe("Bug C2/C1: a default request timeout bounds hanging/leaking requests",
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug D2: the stream() consumer queue was unbounded. If the child produces
+// chunks faster than the consumer reads them, the queue grows without limit
+// (OOM). Apply socket-level backpressure: pause the socket when the queue
+// exceeds a high-water mark and resume it once the consumer drains it.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug D2: stream backpressure pauses/resumes the socket", () => {
+  function setupStreamModule(): { mod: Module; socket: Socket & EventEmitter } {
+    const mod = new Module("worker")
+      .executable("node", ["index.js"])
+      .method("st", { response: "stream", codec: msgpackCodec });
+    mod._setState("ready");
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+    const socket = createMockSocket();
+    mod._attachDataChannel(socket);
+    return { mod, socket };
+  }
+
+  function streamChunkFrame(value: unknown): Buffer {
+    return buildFrame(
+      { methodId: 1, flags: Flags.IS_RESPONSE | Flags.IS_STREAM, requestId: 1 },
+      msgpackCodec.serialize(value),
+    );
+  }
+
+  it("pauses the socket when the consumer lags and resumes after draining", async () => {
+    const { mod, socket } = setupStreamModule();
+    const pauseMock = socket.pause as ReturnType<typeof vi.fn>;
+    const resumeMock = socket.resume as ReturnType<typeof vi.fn>;
+
+    const gen = mod.stream("st", {});
+    // Kick off the generator; it parks after sending the request frame.
+    const firstPull = gen.next();
+    await vi.waitFor(() => expect(socket.write).toHaveBeenCalled());
+    // Flush microtasks so the generator reaches its parked await.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Producer outpaces consumer: emit far more chunks than the high-water mark.
+    // Only the first resolves the parked pull; the rest accumulate in the queue.
+    for (let i = 0; i < 600; i++) {
+      socket.emit("data", streamChunkFrame({ i }));
+    }
+    await Promise.resolve();
+
+    // Fixed: the queue exceeded the high-water mark -> the socket was paused.
+    expect(pauseMock).toHaveBeenCalled();
+
+    // End the stream and fully drain it; the queue empties -> socket resumes.
+    socket.emit(
+      "data",
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.STREAM_END,
+          requestId: 1,
+        },
+        Buffer.alloc(0),
+      ),
+    );
+    await firstPull;
+    let done = false;
+    while (!done) {
+      const r = await gen.next();
+      done = Boolean(r.done);
+    }
+
+    expect(resumeMock).toHaveBeenCalled();
   });
 });

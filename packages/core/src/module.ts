@@ -90,6 +90,17 @@ interface PendingStream {
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Stream consumer-queue backpressure thresholds (in buffered chunks).
+ *
+ * When a stream's buffered queue grows past the high-water mark, the socket is
+ * paused so the child stops producing (TCP backpressure). It is resumed once
+ * the consumer drains the queue back below the low-water mark. This bounds
+ * memory use when the consumer is slower than the producer.
+ */
+const STREAM_BACKPRESSURE_HIGH_WATER_MARK = 256;
+const STREAM_BACKPRESSURE_LOW_WATER_MARK = 64;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CLASS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -151,6 +162,10 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   // OPT-04: Backpressure tracking
   private _draining = false;
   private _drainWaiter: DrainWaiter | null = null;
+
+  // Receive-side backpressure: number of streams currently requesting a socket
+  // pause. The socket is paused while this is > 0 (see _pause/_resumeForBackpressure).
+  private _socketPauseCount = 0;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -446,6 +461,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
 
     // Reset backpressure state
     this._draining = false;
+    this._socketPauseCount = 0;
     this._drainWaiter?.clear();
     this._drainWaiter = null;
   }
@@ -628,15 +644,13 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
 
     const requestId = this._allocateRequestId();
 
-    // ⚠️ TODO: Implement Backpressure
-    // Current implementation uses unbounded in-memory queue.
-    // If child sends data faster than consumer processes it,
-    // this queue will grow indefinitely and cause OOM.
-    // For production use with large streams, implement credit-based backpressure.
+    // Receive-side backpressure: if the consumer falls behind, the queue is
+    // bounded by pausing the socket (see _pause/_resumeSocketForBackpressure).
     const queue: unknown[] = [];
     let resolve: ((result: IteratorResult<unknown>) => void) | null = null;
     let finished = false;
     let error: Error | null = null;
+    let backpressured = false;
 
     // Register stream
     this._pendingStreams.set(requestId, {
@@ -646,6 +660,11 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
           resolve = null;
         } else {
           queue.push(chunk);
+          // Consumer is behind: pause the socket once we cross the high-water mark.
+          if (!backpressured && queue.length >= STREAM_BACKPRESSURE_HIGH_WATER_MARK) {
+            backpressured = true;
+            this._pauseSocketForBackpressure();
+          }
         }
       },
       end: () => {
@@ -685,6 +704,11 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
         // First drain the queue (important: check queue BEFORE finished flag)
         if (queue.length > 0) {
           yield queue.shift()!;
+          // Consumer caught up: resume the socket once we drop below low-water.
+          if (backpressured && queue.length <= STREAM_BACKPRESSURE_LOW_WATER_MARK) {
+            backpressured = false;
+            this._resumeSocketForBackpressure();
+          }
           continue;
         }
 
@@ -702,6 +726,11 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     } finally {
       this._pendingStreams.delete(requestId);
       abortCleanup?.();
+      // Release any backpressure this stream was holding on the shared socket.
+      if (backpressured) {
+        backpressured = false;
+        this._resumeSocketForBackpressure();
+      }
     }
   }
 
@@ -828,6 +857,31 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     const id = this._nextRequestId;
     this._nextRequestId = id >= 0xffffffff ? 1 : id + 1;
     return id;
+  }
+
+  /**
+   * Pause the socket on behalf of a lagging stream consumer.
+   *
+   * The socket is shared by all streams/requests on this module, so pauses are
+   * ref-counted: the socket is paused on the first request and only resumed
+   * once every requester has released (see _resumeSocketForBackpressure).
+   */
+  private _pauseSocketForBackpressure(): void {
+    this._socketPauseCount++;
+    if (this._socketPauseCount === 1) {
+      this._socket?.pause();
+    }
+  }
+
+  /**
+   * Release a backpressure pause; resume the socket when none remain.
+   */
+  private _resumeSocketForBackpressure(): void {
+    if (this._socketPauseCount === 0) return;
+    this._socketPauseCount--;
+    if (this._socketPauseCount === 0) {
+      this._socket?.resume();
+    }
   }
 
   /**
