@@ -70,6 +70,8 @@ interface PendingRequest {
   responseCodec: Codec;
   /** Expected response type: "ack" or "result" */
   expectedResponse: "ack" | "result";
+  /** Removes the AbortSignal listener, if one was registered. */
+  abortCleanup?: () => void;
 }
 
 interface PendingStream {
@@ -507,24 +509,25 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
 
     const requestId = this._allocateRequestId();
 
-    // Abort handling
-    if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          // The abort is best-effort
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort - connection may be closed
-          });
-          const pending = this._pendingRequests.get(requestId);
-          if (pending) {
-            pending.reject(new DOMException("Aborted", "AbortError"));
-            this._cleanupRequest(requestId);
-          }
-        },
-        { once: true },
-      );
+    // Abort handling. Keep a reference to the listener so it can be removed
+    // when the request settles normally - otherwise a reused long-lived signal
+    // accumulates listeners.
+    let abortCleanup: (() => void) | undefined;
+    const signal = options?.signal;
+    if (signal && methodConfig.cancellable) {
+      const onAbort = (): void => {
+        // Note: best-effort; we don't await in an event handler.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort - connection may be closed
+        });
+        const pending = this._pendingRequests.get(requestId);
+        if (pending) {
+          pending.reject(new DOMException("Aborted", "AbortError"));
+          this._cleanupRequest(requestId);
+        }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Wait for response - MUST register BEFORE sending to avoid race condition
@@ -544,6 +547,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
         timeout: timer,
         responseCodec: methodConfig.responseCodec,
         expectedResponse: schemaMethod.response as "ack" | "result",
+        abortCleanup,
       });
     });
 
@@ -631,20 +635,21 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       responseCodec: methodConfig.responseCodec,
     });
 
-    // Abort handling
-    if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort
-          });
-          error = new DOMException("Aborted", "AbortError");
-          if (resolve) resolve({ value: undefined, done: true });
-        },
-        { once: true },
-      );
+    // Abort handling. Keep a reference so the listener can be removed when the
+    // stream finishes (see the finally block) instead of leaking on the signal.
+    let abortCleanup: (() => void) | undefined;
+    const signal = options?.signal;
+    if (signal && methodConfig.cancellable) {
+      const onAbort = (): void => {
+        // Note: best-effort; we don't await in an event handler.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort
+        });
+        error = new DOMException("Aborted", "AbortError");
+        if (resolve) resolve({ value: undefined, done: true });
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Send request (with backpressure support)
@@ -672,6 +677,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       if (error) throw error;
     } finally {
       this._pendingStreams.delete(requestId);
+      abortCleanup?.();
     }
   }
 
@@ -873,6 +879,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _cleanupRequest(requestId: number): void {
     const pending = this._pendingRequests.get(requestId);
     if (pending?.timeout) clearTimeout(pending.timeout);
+    pending?.abortCleanup?.();
     this._pendingRequests.delete(requestId);
   }
 

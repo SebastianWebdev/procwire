@@ -10,6 +10,7 @@ import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import { Module } from "../src/module.js";
 import { msgpackCodec } from "@procwire/codecs";
+import { buildFrame, Flags } from "@procwire/protocol";
 
 /**
  * Mock socket usable as a net.Socket in tests.
@@ -28,10 +29,17 @@ function createMockSocket(): Socket & EventEmitter {
   return mockSocket;
 }
 
-function setupReadyModule(): { mod: Module; socket: Socket & EventEmitter } {
+function setupReadyModule(opts: { cancellable?: boolean } = {}): {
+  mod: Module;
+  socket: Socket & EventEmitter;
+} {
   const mod = new Module("worker")
     .executable("node", ["index.js"])
-    .method("foo", { response: "result", codec: msgpackCodec });
+    .method("foo", {
+      response: "result",
+      codec: msgpackCodec,
+      cancellable: opts.cancellable ?? false,
+    });
 
   mod._setState("ready");
   mod._attachSchema({
@@ -157,5 +165,64 @@ describe("Bug C6: requestId must wrap at the uint32 boundary", () => {
     // Cleanup: detach rejects the still-pending sends so nothing leaks.
     mod._detach();
     await Promise.all([s1, s2]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C7: the AbortSignal "abort" listener is added with { once: true } but is
+// only removed if the signal actually fires. When a request settles normally
+// the listener stays attached, so a reused long-lived signal accumulates
+// listeners (leak + MaxListenersExceededWarning).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C7: abort listener must be removed when a request settles normally", () => {
+  it("removes the abort listener from the signal after send() completes", async () => {
+    const { mod, socket } = setupReadyModule({ cancellable: true });
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    const sendPromise = mod.send("foo", {}, { signal: controller.signal });
+    await vi.waitFor(() => expect(socket.write).toHaveBeenCalled());
+
+    // Full response -> request completes normally; abort never fires.
+    const frame = buildFrame(
+      { methodId: 1, flags: Flags.IS_RESPONSE, requestId: 1 },
+      msgpackCodec.serialize({ ok: true }),
+    );
+    socket.emit("data", frame);
+    await sendPromise;
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("removes the abort listener from the signal after a stream ends", async () => {
+    const mod = new Module("worker")
+      .executable("node", ["index.js"])
+      .method("st", { response: "stream", cancellable: true, codec: msgpackCodec });
+    mod._setState("ready");
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+    const socket = createMockSocket();
+    mod._attachDataChannel(socket);
+
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    const gen = mod.stream("st", {}, { signal: controller.signal });
+    const consume = (async () => {
+      for await (const _ of gen) {
+        // drain
+      }
+    })();
+
+    await vi.waitFor(() => expect(socket.write).toHaveBeenCalled());
+
+    // STREAM_END finishes the stream normally; abort never fires.
+    const endFrame = buildFrame(
+      { methodId: 1, flags: Flags.IS_STREAM | Flags.STREAM_END, requestId: 1 },
+      Buffer.alloc(0),
+    );
+    socket.emit("data", endFrame);
+    await consume;
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
