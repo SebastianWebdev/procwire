@@ -175,4 +175,4 @@ console.log("✓ Child signaled pipe path via stdout (control plane)");
 console.log("✓ Parent connected to named pipe (data plane)");
 console.log("✓ Bidirectional communication works");
 console.log("✓ Child cleanup on parent disconnect");
-console.log("\nThis architecture is compatible with Procwire v2!");
+console.log("\nThis architecture is compatible with Procwire!");

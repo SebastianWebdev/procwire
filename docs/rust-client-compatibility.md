@@ -1,4 +1,4 @@
-# Procwire v2 — Rust Client Compatibility Guide
+# Procwire — Rust Client Compatibility Guide
 
 > **Audience:** the coding agent maintaining the **Rust** procwire client (separate repo).
 > **Purpose:** everything you need to check and change so the Rust client stays
@@ -114,7 +114,7 @@ Exact shapes (copy these byte-for-byte):
 
 ```jsonc
 // child → parent, once, after the pipe server is listening
-{"jsonrpc":"2.0","method":"$init","params":{"pipe":"<pipe-path>","schema":{ /* methods+events */ },"version":"2.0.0"}}
+{"jsonrpc":"2.0","method":"$init","params":{"pipe":"<pipe-path>","schema":{ /* methods+events */ },"version":"1.0.0"}}
 
 // parent → child, heartbeat tick   (NEW)
 {"jsonrpc":"2.0","method":"$ping"}
@@ -130,7 +130,7 @@ Exact shapes (copy these byte-for-byte):
 ```
 
 > The schema object inside `$init` did **not** change; keep whatever the Rust
-> client already sends. `version` stays `"2.0.0"`.
+> client already sends. `version` is `"1.0.0"`.
 
 ---
 
@@ -322,7 +322,7 @@ exact expected behaviour: `packages/client/test/regression.test.ts`,
 ## 6. Things that did **NOT** change (no Rust action)
 
 - Header layout, endianness, flag bits, `ABORT_METHOD_ID`, codec formats
-  (raw / msgpack / arrow), `$init` schema shape, `version` `"2.0.0"`.
+  (raw / msgpack / arrow), `$init` schema shape, `version` `"1.0.0"`.
 - **`P1`/`P2`** (header buffer pooling/copy) and other internal Node/Bun
   perf/lifecycle fixes (`C7`, `C8`, `C10`) — implementation details with **no
   wire or behavioural contract change**.

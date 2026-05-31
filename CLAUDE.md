@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
 
-**STATUS: v2.0 refactoring in progress** - The library is being refactored to use a binary protocol for the data plane.
+The data plane uses a binary protocol (zero JSON); the control plane uses JSON-RPC over stdio.
 
 ### Packages
 
@@ -22,7 +22,7 @@ This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communicat
 - `@procwire-bun/client` - Child-side for Bun.js
 - `packages/bench` - Benchmarks (not published to npm)
 
-## Architecture (v2.0)
+## Architecture
 
 ### Dual-Channel Architecture
 

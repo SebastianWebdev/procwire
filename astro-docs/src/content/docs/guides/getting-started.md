@@ -5,12 +5,12 @@ sidebar:
   order: 0
 ---
 
-## Current Status
+## Features
 
-Procwire v2.0 is under active development with significant API changes:
+Procwire provides:
 
-- **New binary protocol** for data plane (replaces JSON-RPC)
-- **Builder pattern** for type-safe API
+- **Binary protocol** for the data plane (JSON-RPC only on the control plane)
+- **Builder pattern** for a type-safe API
 - **Response types**: none, ack, result, stream
 - **Cancellation** with AbortController support
 - **Target performance**: >1 GB/s for large payloads
@@ -18,7 +18,7 @@ Procwire v2.0 is under active development with significant API changes:
 ## Installation
 
 ```bash
-# Core packages (when v2.0 is released)
+# Core packages
 pnpm add @procwire/core @procwire/client
 
 # Optional: codecs are included, but can install separately
