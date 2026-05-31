@@ -541,9 +541,12 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // RING+SYNC: No await in sync function, buffer used immediately
+    // Copy the pooled header before writing: write() does not synchronously
+    // consume the buffer, so under backpressure the 16-slot ring could reuse
+    // and overwrite this header while it is still queued (consistent with
+    // _sendFrame / RequestContextImpl._sendResponse).
     this._socket?.cork();
-    this._socket?.write(headerBuf);
+    this._socket?.write(Buffer.from(headerBuf));
     this._socket?.write(payload);
     this._socket?.uncork();
   }

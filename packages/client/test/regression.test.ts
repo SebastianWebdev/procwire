@@ -166,3 +166,40 @@ describe("Bug C4a: a second connection must be rejected, not overwrite state", (
     expect(sockB.destroy).toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug P2: _sendErrorResponse wrote the pooled header buffer by reference (no
+// Buffer.from copy, unlike the other send paths). The header ring buffer has 16
+// slots, so after 16 more sends the slot is reused and encodeHeaderInto
+// overwrites a header that may still be queued in the socket's write buffer
+// under backpressure -> a corrupted frame is sent to the parent.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug P2: error responses must not reuse a queued pooled header", () => {
+  it("does not overwrite an already-written error header when the ring wraps", () => {
+    const client = new Client().handle("dummy", vi.fn());
+    const internals = client as unknown as ClientInternals;
+    internals._methodNameToId.set("dummy", 1);
+    internals._methodIdToName.set(1, "dummy");
+
+    const socket = createMockSocket();
+    internals._handleConnection(socket as unknown as Socket);
+    const writeMock = socket.write as ReturnType<typeof vi.fn>;
+
+    // Unknown method id (500) -> _sendErrorResponse for requestId 1.
+    const unknownFrame = (requestId: number): Buffer =>
+      buildFrame({ methodId: 500, flags: 0, requestId }, msgpackCodec.serialize("x"));
+
+    socket.emit("data", unknownFrame(1));
+    const firstHeader = writeMock.mock.calls[0]![0] as Buffer; // header of request 1
+    expect(firstHeader.readUInt32BE(3)).toBe(1);
+
+    // 16 more error responses cycle the 16-slot ring back to the first slot.
+    for (let r = 2; r <= 17; r++) {
+      socket.emit("data", unknownFrame(r));
+    }
+
+    // Buggy: firstHeader is the pooled slot, now overwritten by request 17.
+    // Fixed: firstHeader is a private copy, still request 1.
+    expect(firstHeader.readUInt32BE(3)).toBe(1);
+  });
+});
