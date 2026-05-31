@@ -6,6 +6,8 @@
  */
 import { describe, it, expect, spyOn, jest } from "bun:test";
 import { Module, ModuleErrors, ModuleManager } from "../src/index.js";
+import { buildFrame, Flags } from "@procwire/protocol";
+import { msgpackCodec } from "@procwire/codecs";
 
 interface ModuleInternals {
   _onSocketError(err: Error): void;
@@ -263,5 +265,70 @@ describe("Bug C9 (bun-core): connectDataChannel must time out instead of hanging
       connectSpy.mockRestore();
       jest.useRealTimers();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug D2 (bun-core): the stream() consumer queue was unbounded (OOM). Apply
+// socket-level backpressure: pause the socket when the queue exceeds a
+// high-water mark and resume once the consumer drains it.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug D2 (bun-core): stream backpressure pauses/resumes the socket", () => {
+  it("pauses the socket when the consumer lags and resumes after draining", async () => {
+    const mod = new Module("worker")
+      .executable("bun", ["w.ts"])
+      .method("st", { response: "stream" });
+    mod._setState("ready");
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+
+    let paused = 0;
+    let resumed = 0;
+    mod._attachDataChannel({
+      write: () => true,
+      end: () => {},
+      pause: () => {
+        paused++;
+      },
+      resume: () => {
+        resumed++;
+      },
+    } as never);
+
+    const onData = (mod as unknown as { _onSocketData(d: Buffer): void })._onSocketData.bind(mod);
+    const chunk = (i: number): Buffer =>
+      buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.IS_STREAM, requestId: 1 },
+        msgpackCodec.serialize({ i }),
+      );
+
+    const gen = mod.stream("st", {});
+    const firstPull = gen.next(); // parks after sending the request frame
+    await flush();
+
+    // Producer outpaces consumer: only the first resolves the parked pull, the
+    // rest accumulate in the queue and cross the high-water mark.
+    for (let i = 0; i < 600; i++) onData(chunk(i));
+    await flush();
+    expect(paused).toBeGreaterThan(0);
+
+    // End the stream and drain it fully; the queue empties -> socket resumes.
+    onData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.STREAM_END,
+          requestId: 1,
+        },
+        Buffer.alloc(0),
+      ),
+    );
+    await firstPull;
+    let done = false;
+    while (!done) {
+      const r = await gen.next();
+      done = Boolean(r.done);
+    }
+
+    expect(resumed).toBeGreaterThan(0);
   });
 });
