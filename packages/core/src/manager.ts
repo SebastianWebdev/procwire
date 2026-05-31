@@ -20,7 +20,13 @@ import { createConnection, type Socket } from "node:net";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import type { Module } from "./module.js";
-import type { SpawnPolicy, ModuleSchema, InitMessage, RetryDelayConfig } from "./types.js";
+import type {
+  SpawnPolicy,
+  ModuleSchema,
+  InitMessage,
+  RetryDelayConfig,
+  HeartbeatConfig,
+} from "./types.js";
 import { ManagerErrors } from "./errors.js";
 import { ManagerEvents } from "./events.js";
 
@@ -38,6 +44,7 @@ const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
   restartOnCrash: false,
   restartLimit: { maxRestarts: 5, windowMs: 60_000 },
   socketBufferSize: undefined as unknown as number, // undefined = use OS default
+  heartbeat: null, // disabled by default
 };
 
 /** Delay for detecting immediate spawn errors (ms) */
@@ -109,6 +116,9 @@ export class ModuleManager extends EventEmitter {
   // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
   // the isShuttingDown window, which is reset when shutdown() returns).
   private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Control-plane heartbeat state (only populated when a module enables it).
+  private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly lastPongAt = new Map<string, number>();
   private isShuttingDown = false;
 
   /**
@@ -284,6 +294,11 @@ export class ModuleManager extends EventEmitter {
     // 5. Ready!
     module._setState("ready");
     this.emit(ManagerEvents.READY, module.name);
+
+    // 6. Start liveness heartbeat if configured.
+    if (policy.heartbeat) {
+      this.startHeartbeat(module, policy.heartbeat);
+    }
   }
 
   /**
@@ -374,6 +389,12 @@ export class ModuleManager extends EventEmitter {
               rl.close();
               reject(ManagerErrors.moduleError(module.name, msg.params?.message || "Unknown"));
             }
+          }
+
+          // Heartbeat reply from the child (arrives after $init). The reader is
+          // kept open for the control plane, so handle it here.
+          if (msg.method === "$pong") {
+            this.handlePong(module.name);
           }
         } catch {
           // Ignore non-JSON lines
@@ -470,6 +491,9 @@ export class ModuleManager extends EventEmitter {
    * Handle child process exit.
    */
   private handleProcessExit(module: Module, code: number | null, signal: string | null): void {
+    // The process is gone: stop pinging it.
+    this.stopHeartbeat(module.name);
+
     // Ignore if shutting down
     if (this.isShuttingDown) {
       module._detach();
@@ -577,6 +601,65 @@ export class ModuleManager extends EventEmitter {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // PRIVATE: Heartbeat (liveness)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Start the control-plane heartbeat for a ready module.
+   *
+   * Every `intervalMs` we send a `$ping` over the child's stdin and check that
+   * a `$pong` has been seen within `timeoutMs`; otherwise the child is treated
+   * as dead (killed -> the normal crash/restart path runs).
+   */
+  private startHeartbeat(module: Module, config: HeartbeatConfig): void {
+    const { name } = module;
+    this.stopHeartbeat(name); // never run two timers for one module
+    this.lastPongAt.set(name, Date.now());
+
+    const timer = setInterval(() => {
+      if (Date.now() - (this.lastPongAt.get(name) ?? 0) >= config.timeoutMs) {
+        this.onHeartbeatTimeout(module, config.timeoutMs);
+        return;
+      }
+      const proc = module.process;
+      if (proc?.stdin?.writable) {
+        proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+      }
+    }, config.intervalMs);
+
+    this.heartbeatTimers.set(name, timer);
+  }
+
+  /** Record a `$pong` from the child, keeping it marked alive. */
+  private handlePong(name: string): void {
+    if (this.heartbeatTimers.has(name)) {
+      this.lastPongAt.set(name, Date.now());
+    }
+  }
+
+  /** The child missed too many heartbeats: kill it so the crash path runs. */
+  private onHeartbeatTimeout(module: Module, timeoutMs: number): void {
+    this.stopHeartbeat(module.name);
+    this.emit(
+      ManagerEvents.ERROR,
+      module.name,
+      ManagerErrors.heartbeatTimeout(module.name, timeoutMs),
+    );
+    // SIGKILL a hung child; its "exit" drives handleProcessExit -> restart.
+    module.process?.kill("SIGKILL");
+  }
+
+  /** Stop and clear heartbeat state for a module. */
+  private stopHeartbeat(name: string): void {
+    const timer = this.heartbeatTimers.get(name);
+    if (timer !== undefined) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(name);
+    }
+    this.lastPongAt.delete(name);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PRIVATE: Shutdown
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -587,8 +670,10 @@ export class ModuleManager extends EventEmitter {
     const module = this.modules.get(name);
     if (!module) return;
 
-    // Cancel any pending crash-restart so the module isn't resurrected.
+    // Cancel any pending crash-restart so the module isn't resurrected, and
+    // stop the liveness heartbeat.
     this.cancelRestart(name);
+    this.stopHeartbeat(name);
 
     const proc = module.process;
     if (!proc) {
@@ -642,6 +727,8 @@ export class ModuleManager extends EventEmitter {
    * Cleanup module after failed spawn.
    */
   private cleanupModule(module: Module): void {
+    this.stopHeartbeat(module.name);
+
     const proc = module.process;
     if (proc && !proc.killed) {
       proc.kill("SIGKILL");
@@ -667,6 +754,7 @@ export class ModuleManager extends EventEmitter {
       restartOnCrash: policy.restartOnCrash ?? DEFAULT_SPAWN_POLICY.restartOnCrash,
       restartLimit: policy.restartLimit ?? DEFAULT_SPAWN_POLICY.restartLimit,
       socketBufferSize: policy.socketBufferSize ?? DEFAULT_SPAWN_POLICY.socketBufferSize,
+      heartbeat: policy.heartbeat ?? DEFAULT_SPAWN_POLICY.heartbeat,
     };
   }
 

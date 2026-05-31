@@ -510,3 +510,72 @@ describe("Bug M1: remote error must preserve a useful message", () => {
     expect((rejection as Error).message).toBe("plain failure");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Feature D1: control-plane heartbeat. When enabled, the parent pings the child
+// and, if no pong arrives within the timeout, treats it as dead (kills it so
+// the normal crash/restart path runs). Detects a hung-but-not-exited child.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Feature D1 (core): heartbeat detects an unresponsive child", () => {
+  function setup(): {
+    manager: ModuleManager;
+    mod: Module;
+    proc: {
+      stdin: { writable: boolean; write: ReturnType<typeof vi.fn> };
+      kill: ReturnType<typeof vi.fn>;
+      killed: boolean;
+    };
+  } {
+    const manager = new ModuleManager();
+    manager.on("module:error", () => {}); // swallow heartbeat-timeout error
+    const mod = new Module("worker")
+      .executable("node", ["x.js"])
+      .method("foo", { codec: msgpackCodec });
+    manager.register(mod);
+    const proc = { stdin: { writable: true, write: vi.fn() }, kill: vi.fn(), killed: false };
+    mod._attachProcess(proc as never);
+    mod._setState("ready");
+    return { manager, mod, proc };
+  }
+
+  type HeartbeatApi = {
+    startHeartbeat(m: Module, c: { intervalMs: number; timeoutMs: number }): void;
+    handlePong(name: string): void;
+  };
+
+  it("kills the process after the timeout when no pong arrives", () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, mod, proc } = setup();
+      (manager as unknown as HeartbeatApi).startHeartbeat(mod, {
+        intervalMs: 1000,
+        timeoutMs: 3000,
+      });
+
+      vi.advanceTimersByTime(3500);
+
+      expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the process alive while pongs keep arriving", () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, mod, proc } = setup();
+      const api = manager as unknown as HeartbeatApi;
+      api.startHeartbeat(mod, { intervalMs: 1000, timeoutMs: 3000 });
+
+      for (let i = 0; i < 6; i++) {
+        vi.advanceTimersByTime(1000);
+        api.handlePong("worker");
+      }
+
+      expect(proc.kill).not.toHaveBeenCalled();
+      expect(proc.stdin.write).toHaveBeenCalled(); // pings were sent
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -153,4 +153,8 @@ export const ManagerErrors = {
 
   /** Too many restarts */
   tooManyRestarts: () => new ProcwireError("Too many restarts, giving up"),
+
+  /** Heartbeat timed out - child unresponsive */
+  heartbeatTimeout: (name: string, timeoutMs: number) =>
+    new ProcwireError(`Module "${name}" missed heartbeat (no response within ${timeoutMs}ms)`),
 } as const;

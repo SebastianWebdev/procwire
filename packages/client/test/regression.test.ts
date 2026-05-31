@@ -242,3 +242,39 @@ describe("Bug C4b: client must honor maxPayloadSize", () => {
     expect(socket.destroy).not.toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Feature D1 (client): the child answers control-plane heartbeat pings so the
+// parent can detect a hung child. A $ping must produce a $pong on stdout.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Feature D1 (client): responds to heartbeat ping with pong", () => {
+  function handleControl(client: Client, line: string): void {
+    (client as unknown as { _handleControlLine(line: string): void })._handleControlLine(line);
+  }
+
+  it("writes a $pong when it receives a $ping", () => {
+    const client = new Client();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toMatchObject({ method: "$pong" });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("ignores non-ping and malformed control lines", () => {
+    const client = new Client();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$shutdown" }));
+      handleControl(client, "not json");
+
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});

@@ -14,6 +14,7 @@
 
 import { EventEmitter } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
+import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import {
   FrameBuffer,
   type Frame,
@@ -95,6 +96,7 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   private _server: Server | null = null;
   private _socket: Socket | null = null;
   private _frameBuffer: FrameBuffer | null = null;
+  private _controlReader: ReadlineInterface | null = null;
 
   private _methodNameToId = new Map<string, number>();
   private _methodIdToName = new Map<number, string>();
@@ -262,6 +264,10 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
 
     // Send $init to parent (via stdout, JSON-RPC control plane)
     this._sendInit(pipePath);
+
+    // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
+    this._controlReader = createInterface({ input: process.stdin });
+    this._controlReader.on("line", (line) => this._handleControlLine(line));
   }
 
   /**
@@ -302,10 +308,34 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
    * Graceful shutdown.
    */
   async shutdown(): Promise<void> {
+    this._controlReader?.close();
+    this._controlReader = null;
     this._socket?.destroy();
     this._server?.close();
     this._socket = null;
     this._server = null;
+  }
+
+  /**
+   * @internal Handle one line from the parent's control plane (stdin).
+   *
+   * Currently answers heartbeat pings; unknown/non-JSON lines are ignored.
+   */
+  private _handleControlLine(line: string): void {
+    if (!line.startsWith("{")) return;
+    try {
+      const msg = JSON.parse(line) as { method?: string };
+      if (msg.method === "$ping") {
+        this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      }
+    } catch {
+      // Ignore non-JSON / malformed control lines.
+    }
+  }
+
+  /** Write a JSON-RPC control message to the parent over stdout. */
+  private _sendControl(message: unknown): void {
+    console.log(JSON.stringify(message));
   }
 
   /**
