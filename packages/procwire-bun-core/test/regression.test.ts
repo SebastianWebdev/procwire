@@ -4,7 +4,7 @@
  * Each `describe` targets ONE bug: written to FAIL against the buggy code and
  * PASS once the fix is applied. These mirror the @procwire/core fixes.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, spyOn } from "bun:test";
 import { Module, ModuleErrors } from "../src/index.js";
 
 interface ModuleInternals {
@@ -78,5 +78,34 @@ describe("Bug M1 (bun-core): remote error must preserve a useful message", () =>
 
   it("passes a plain string message through unchanged", () => {
     expect(ModuleErrors.remoteError("plain failure").message).toBe("plain failure");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C7 (bun-core): the AbortSignal "abort" listener was added with
+// { once: true } but only removed if the signal actually fired. When a request
+// settles normally the listener stayed attached, so a reused long-lived signal
+// accumulated listeners (leak + MaxListenersExceededWarning).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C7 (bun-core): abort listener must be removed when a request settles", () => {
+  it("removes the abort listener from the signal when the request is cleaned up", () => {
+    const mod = new Module("worker")
+      .executable("bun", ["w.ts"])
+      .method("foo", { cancellable: true });
+    mod._setState("ready");
+    mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
+    mod._attachDataChannel({ write: () => true, end: () => {} } as never);
+
+    const controller = new AbortController();
+    const removeSpy = spyOn(controller.signal, "removeEventListener");
+
+    const p = mod.send("foo", {}, { signal: controller.signal });
+    void p.catch(() => {});
+
+    // The pending request stores an abortCleanup; cleaning it up (as a normal
+    // response would) must remove the abort listener from the signal.
+    (mod as unknown as { _cleanupRequest(id: number): void })._cleanupRequest(1);
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
