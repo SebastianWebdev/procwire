@@ -118,6 +118,14 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _frameBuffer: FrameBuffer | null = null;
   private _childSchema: ModuleSchema | null = null;
 
+  // Bound socket listeners, kept so they can be removed in _detach() to avoid
+  // leaks and late-event crashes across reconnect/restart cycles.
+  private _socketHandlers: {
+    data: (chunk: Buffer) => void;
+    error: (err: Error) => void;
+    close: () => void;
+  } | null = null;
+
   // Request tracking
   private _nextRequestId = 1;
   private _pendingRequests = new Map<number, PendingRequest>();
@@ -342,30 +350,37 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
     );
 
-    // Setup frame handling
-    socket.on("data", (chunk: Buffer) => {
-      const frames = this._frameBuffer!.push(chunk);
-      for (const frame of frames) {
-        this._handleFrame(frame);
-      }
-    });
+    // Setup frame handling. Handlers are stored so _detach() can remove them.
+    const handlers = {
+      data: (chunk: Buffer): void => {
+        // Guard: a late "data" event can fire after _detach() niled the buffer.
+        if (!this._frameBuffer) return;
+        const frames = this._frameBuffer.push(chunk);
+        for (const frame of frames) {
+          this._handleFrame(frame);
+        }
+      },
+      error: (err: Error): void => {
+        // EventEmitter throws synchronously when "error" is emitted with no
+        // listener, which would crash the whole parent process. Only emit when
+        // someone is listening; an unobserved socket error is still surfaced
+        // via the subsequent "close" -> "disconnected" transition below.
+        if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+          this.emit(ModuleEvents.ERROR, err);
+        }
+      },
+      close: (): void => {
+        if (this._state === "ready") {
+          this._setState("disconnected");
+          this.emit(ModuleEvents.DISCONNECTED);
+        }
+      },
+    };
 
-    socket.on("error", (err: Error) => {
-      // EventEmitter throws synchronously when "error" is emitted with no
-      // listener, which would crash the whole parent process. Only emit when
-      // someone is listening; an unobserved socket error is still surfaced via
-      // the subsequent "close" -> "disconnected" transition below.
-      if (this.listenerCount(ModuleEvents.ERROR) > 0) {
-        this.emit(ModuleEvents.ERROR, err);
-      }
-    });
-
-    socket.on("close", () => {
-      if (this._state === "ready") {
-        this._setState("disconnected");
-        this.emit(ModuleEvents.DISCONNECTED);
-      }
-    });
+    this._socketHandlers = handlers;
+    socket.on("data", handlers.data);
+    socket.on("error", handlers.error);
+    socket.on("close", handlers.close);
   }
 
   /**
@@ -385,7 +400,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     }
     this._pendingStreams.clear();
 
-    // Clear connection state
+    // Clear connection state. Remove our listeners BEFORE destroy() so a late
+    // "data"/"error"/"close" event cannot fire against torn-down state, and so
+    // the closures don't leak on the old socket across restart cycles.
+    if (this._socket && this._socketHandlers) {
+      this._socket.off("data", this._socketHandlers.data);
+      this._socket.off("error", this._socketHandlers.error);
+      this._socket.off("close", this._socketHandlers.close);
+    }
+    this._socketHandlers = null;
     this._socket?.destroy();
     this._socket = null;
     this._frameBuffer?.clear();

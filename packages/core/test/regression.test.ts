@@ -75,3 +75,38 @@ describe("Bug C5: unobserved socket error must not crash the process", () => {
     expect(onError).toHaveBeenCalledWith(err);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C8: _detach() destroys the socket but leaves its "data"/"error"/"close"
+// listeners attached. destroy() does not synchronously remove listeners, so a
+// buffered "data" event arriving after detach runs `this._frameBuffer!.push()`
+// when _frameBuffer is already null -> TypeError. On restart cycles the
+// closures also leak on the old socket.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C8: _detach must remove socket listeners and survive late events", () => {
+  it("does not throw when a 'data' event arrives after detach", () => {
+    const { mod, socket } = setupReadyModule();
+
+    mod._detach();
+
+    // Buggy behavior: the still-attached "data" handler calls
+    // this._frameBuffer!.push(chunk) with _frameBuffer === null -> TypeError.
+    expect(() => socket.emit("data", Buffer.alloc(11))).not.toThrow();
+  });
+
+  it("removes all socket listeners on detach (no leak across reconnects)", () => {
+    const { mod, socket } = setupReadyModule();
+
+    // The module attaches data/error/close; DrainWaiter also attaches a close
+    // listener, so close starts >= 1.
+    expect(socket.listenerCount("data")).toBe(1);
+    expect(socket.listenerCount("error")).toBe(1);
+    expect(socket.listenerCount("close")).toBeGreaterThanOrEqual(1);
+
+    mod._detach();
+
+    expect(socket.listenerCount("data")).toBe(0);
+    expect(socket.listenerCount("error")).toBe(0);
+    expect(socket.listenerCount("close")).toBe(0);
+  });
+});
