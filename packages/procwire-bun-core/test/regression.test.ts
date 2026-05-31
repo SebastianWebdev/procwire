@@ -5,7 +5,7 @@
  * PASS once the fix is applied. These mirror the @procwire/core fixes.
  */
 import { describe, it, expect } from "bun:test";
-import { Module } from "../src/index.js";
+import { Module, ModuleErrors } from "../src/index.js";
 
 interface ModuleInternals {
   _onSocketError(err: Error): void;
@@ -55,5 +55,28 @@ describe("Bug C6 (bun-core): requestId must wrap at the uint32 boundary", () => 
     expect(internals._allocateRequestId()).toBe(0xffffffff); // last valid uint32
     expect(internals._allocateRequestId()).toBe(1); // wrapped, skipping reserved 0
     expect(internals._allocateRequestId()).toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug M1 (bun-core): remoteError used String(errorData), so an object error
+// payload collapsed to "[object Object]". Derive a useful message and preserve
+// the original payload on the error.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug M1 (bun-core): remote error must preserve a useful message", () => {
+  it("uses the object's message field instead of String(obj)", () => {
+    const err = ModuleErrors.remoteError({ message: "boom", code: 42 });
+    expect(err.message).toBe("boom");
+    expect((err as { data?: unknown }).data).toEqual({ message: "boom", code: 42 });
+  });
+
+  it("falls back to JSON for an object without a message field", () => {
+    const err = ModuleErrors.remoteError({ code: "E_OOPS" });
+    expect(err.message).not.toBe("[object Object]");
+    expect(err.message).toContain("E_OOPS");
+  });
+
+  it("passes a plain string message through unchanged", () => {
+    expect(ModuleErrors.remoteError("plain failure").message).toBe("plain failure");
   });
 });
