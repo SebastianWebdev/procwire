@@ -82,6 +82,14 @@ interface PendingStream {
   responseCodec: Codec;
 }
 
+/**
+ * Default per-request timeout (ms) applied to result/ack methods when neither
+ * the child schema nor the method config specify one. Prevents send() from
+ * hanging forever. Override per-method (`timeout`) or per-module
+ * (`.requestTimeout()`); a value of 0 disables the timeout.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CLASS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -112,6 +120,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _events = new Map<string, EventConfig>();
   private _spawnPolicy: SpawnPolicy = {};
   private _maxPayloadSize?: number;
+  private _defaultRequestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
 
   // Connection state (set by ModuleManager via _attach methods)
   private _state: ModuleState = "created";
@@ -275,6 +284,18 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
    */
   maxPayloadSize(size: number): this {
     this._maxPayloadSize = size;
+    return this;
+  }
+
+  /**
+   * Set the default per-request timeout (ms) for this module.
+   *
+   * Applied to result/ack methods when neither the child schema nor the method
+   * config specify a timeout. Pass 0 to disable the default for this module.
+   * A per-method `timeout` still takes precedence.
+   */
+  requestTimeout(ms: number): this {
+    this._defaultRequestTimeout = ms;
     return this;
   }
 
@@ -533,13 +554,16 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
     const responsePromise = new Promise<unknown>((resolve, reject) => {
-      const timeout = schemaMethod.timeout ?? methodConfig.timeout;
-      const timer = timeout
-        ? setTimeout(() => {
-            this._cleanupRequest(requestId);
-            reject(ModuleErrors.timeout(method));
-          }, timeout)
-        : null;
+      // Precedence: child schema -> method config -> module default.
+      // A resolved value of 0 (or negative) disables the timeout.
+      const timeout = schemaMethod.timeout ?? methodConfig.timeout ?? this._defaultRequestTimeout;
+      const timer =
+        timeout > 0
+          ? setTimeout(() => {
+              this._cleanupRequest(requestId);
+              reject(ModuleErrors.timeout(method));
+            }, timeout)
+          : null;
 
       this._pendingRequests.set(requestId, {
         resolve: resolve as (value: unknown) => void,

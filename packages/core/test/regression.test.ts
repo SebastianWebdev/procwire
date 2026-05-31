@@ -33,13 +33,11 @@ function setupReadyModule(opts: { cancellable?: boolean } = {}): {
   mod: Module;
   socket: Socket & EventEmitter;
 } {
-  const mod = new Module("worker")
-    .executable("node", ["index.js"])
-    .method("foo", {
-      response: "result",
-      codec: msgpackCodec,
-      cancellable: opts.cancellable ?? false,
-    });
+  const mod = new Module("worker").executable("node", ["index.js"]).method("foo", {
+    response: "result",
+    codec: msgpackCodec,
+    cancellable: opts.cancellable ?? false,
+  });
 
   mod._setState("ready");
   mod._attachSchema({
@@ -224,5 +222,124 @@ describe("Bug C7: abort listener must be removed when a request settles normally
     await consume;
 
     expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C2/C1: send() to a method with no configured timeout waited forever, and
+// an ACK frame on a "result" method (which is intentionally ignored) left the
+// pending request in the map forever. A default request timeout bounds both:
+// the request rejects instead of hanging/leaking. The default is overridable
+// per-method and per-module, and timeout: 0 disables it.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C2/C1: a default request timeout bounds hanging/leaking requests", () => {
+  it("rejects with a timeout when the method has no explicit timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { mod } = setupReadyModule();
+      let outcome: unknown = "pending";
+      const p = mod.send("foo", {});
+      p.then(
+        (v) => (outcome = ["resolved", v]),
+        (e) => (outcome = e),
+      );
+
+      // Flush the _sendFrame microtasks; should still be pending before timeout.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(outcome).toBe("pending");
+
+      // Default 30s timeout elapses.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toMatch(/timeout|timed out/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not leak a pending request when a 'result' method only gets an ACK", async () => {
+    vi.useFakeTimers();
+    try {
+      const { mod, socket } = setupReadyModule(); // foo: response "result", no timeout
+      const internals = mod as unknown as { _pendingRequests: Map<number, unknown> };
+
+      let outcome: unknown = "pending";
+      const p = mod.send("foo", {});
+      p.then(
+        (v) => (outcome = ["resolved", v]),
+        (e) => (outcome = e),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Child sends ONLY an ACK; a "result" method ignores it and keeps waiting.
+      const ackFrame = buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.IS_ACK, requestId: 1 },
+        msgpackCodec.serialize({ ack: true }),
+      );
+      socket.emit("data", ackFrame);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(internals._pendingRequests.size).toBe(1); // still pending after ACK
+
+      // Without a default timeout this would leak forever. It now times out.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(outcome).toBeInstanceOf(Error);
+      expect(internals._pendingRequests.size).toBe(0); // cleaned up
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats timeout: 0 as disabling the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method("foo", { response: "result", codec: msgpackCodec, timeout: 0 });
+      mod._setState("ready");
+      mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
+      mod._attachDataChannel(createMockSocket());
+
+      let outcome: unknown = "pending";
+      const p = mod.send("foo", {});
+      p.then(
+        (v) => (outcome = ["resolved", v]),
+        (e) => (outcome = e),
+      );
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(outcome).toBe("pending"); // never times out
+
+      mod._detach(); // cleanup rejects the pending send
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("honors a per-module default set via .requestTimeout()", async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .method("foo", { response: "result", codec: msgpackCodec })
+        .requestTimeout(50);
+      mod._setState("ready");
+      mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
+      mod._attachDataChannel(createMockSocket());
+
+      let outcome: unknown = "pending";
+      const p = mod.send("foo", {});
+      p.then(
+        (v) => (outcome = ["resolved", v]),
+        (e) => (outcome = e),
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(outcome).toBe("pending");
+      await vi.advanceTimersByTimeAsync(50);
+      expect(outcome).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
