@@ -335,6 +335,14 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
    * @internal Wire up a freshly accepted connection.
    */
   private _handleConnection(socket: Socket): void {
+    // Single-parent model: the parent connects exactly once. Reject any extra
+    // or stray connection rather than overwriting (and corrupting) the active
+    // connection's in-flight state.
+    if (this._socket) {
+      socket.destroy();
+      return;
+    }
+
     this._socket = socket;
     this._drainWaiter = new DrainWaiter(socket);
     this._frameBuffer = new FrameBuffer();

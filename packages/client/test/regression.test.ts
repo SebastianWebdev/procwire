@@ -140,3 +140,29 @@ describe("Bug C5 (client): unobserved socket error must not crash the child", ()
     expect(onError).toHaveBeenCalledWith(err);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C4a: createServer's callback unconditionally overwrote _socket /
+// _frameBuffer / _drainWaiter on every connection. A second or stray connection
+// (or a reconnect) corrupted the in-flight state of the active connection. The
+// model is single-parent, so extra connections must be rejected.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C4a: a second connection must be rejected, not overwrite state", () => {
+  it("keeps the first socket and destroys the second connection", () => {
+    const client = new Client().handle("foo", vi.fn());
+    const internals = client as unknown as ClientInternals;
+    internals._methodNameToId.set("foo", 1);
+    internals._methodIdToName.set(1, "foo");
+
+    const sockA = createMockSocket();
+    internals._handleConnection(sockA as unknown as Socket);
+    expect(internals._socket).toBe(sockA as unknown as Socket);
+
+    const sockB = createMockSocket();
+    internals._handleConnection(sockB as unknown as Socket);
+
+    // Fixed: A stays active, B is destroyed. Buggy: _socket overwritten to B.
+    expect(internals._socket).toBe(sockA as unknown as Socket);
+    expect(sockB.destroy).toHaveBeenCalled();
+  });
+});
