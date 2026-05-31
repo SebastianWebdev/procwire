@@ -14,13 +14,13 @@
 
 import { EventEmitter } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
+import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import {
   FrameBuffer,
   type Frame,
   Flags,
   encodeHeaderInto,
   HEADER_SIZE,
-  HEADER_POOL_SIZE,
   ABORT_METHOD_ID,
   DrainWaiter,
 } from "@procwire/protocol";
@@ -88,12 +88,14 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   declare readonly __schema: S;
 
   private _defaultCodec: Codec;
+  private readonly _maxPayloadSize?: number;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
 
   private _server: Server | null = null;
   private _socket: Socket | null = null;
   private _frameBuffer: FrameBuffer | null = null;
+  private _controlReader: ReadlineInterface | null = null;
 
   private _methodNameToId = new Map<string, number>();
   private _methodIdToName = new Map<number, string>();
@@ -103,18 +105,15 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   private _activeContexts = new Map<number, RequestContextImpl>();
   private _started = false;
 
-  // Ring buffer for headers (OPT-02: allocation-free sends)
-  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
-    Buffer.allocUnsafe(HEADER_SIZE),
-  );
-  private _headerPoolIndex = 0;
-
   // OPT-04: Backpressure tracking via singleton DrainWaiter
   private _drainWaiter: DrainWaiter | null = null;
 
   constructor(options?: ClientOptions) {
     super();
     this._defaultCodec = options?.defaultCodec ?? msgpackCodec;
+    if (options?.maxPayloadSize !== undefined) {
+      this._maxPayloadSize = options.maxPayloadSize;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -258,6 +257,14 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
 
     // Send $init to parent (via stdout, JSON-RPC control plane)
     this._sendInit(pipePath);
+
+    // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
+    // unref() so reading stdin doesn't by itself keep the child alive: the pipe
+    // server keeps the event loop running during normal operation, and once it
+    // closes (e.g. on $shutdown) the child can exit instead of being force-killed.
+    this._controlReader = createInterface({ input: process.stdin });
+    this._controlReader.on("line", (line) => this._handleControlLine(line));
+    process.stdin.unref();
   }
 
   /**
@@ -298,10 +305,39 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
    * Graceful shutdown.
    */
   async shutdown(): Promise<void> {
+    this._controlReader?.close();
+    this._controlReader = null;
     this._socket?.destroy();
     this._server?.close();
     this._socket = null;
     this._server = null;
+  }
+
+  /**
+   * @internal Handle one line from the parent's control plane (stdin).
+   *
+   * Answers heartbeat pings and shuts down gracefully on request; unknown /
+   * non-JSON lines are ignored.
+   */
+  private _handleControlLine(line: string): void {
+    if (!line.startsWith("{")) return;
+    try {
+      const msg = JSON.parse(line) as { method?: string };
+      if (msg.method === "$ping") {
+        this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      } else if (msg.method === "$shutdown") {
+        // Parent asked us to stop: shut down cleanly so it doesn't have to
+        // force-kill us after its grace period.
+        void this.shutdown();
+      }
+    } catch {
+      // Ignore non-JSON / malformed control lines.
+    }
+  }
+
+  /** Write a JSON-RPC control message to the parent over stdout. */
+  private _sendControl(message: unknown): void {
+    console.log(JSON.stringify(message));
   }
 
   /**
@@ -324,28 +360,93 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
 
   private _createPipeServer(pipePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this._server = createServer((socket) => {
-        this._socket = socket;
-        this._drainWaiter = new DrainWaiter(socket);
-        this._frameBuffer = new FrameBuffer();
-
-        socket.on("data", (chunk: Buffer) => {
-          const frames = this._frameBuffer!.push(chunk);
-          for (const frame of frames) {
-            this._handleFrame(frame);
-          }
-        });
-
-        socket.on("error", (err) => this.emit("error", err));
-        socket.on("close", () => {
-          this._drainWaiter?.clear();
-          this.emit("disconnected");
-        });
-      });
+      this._server = createServer((socket) => this._handleConnection(socket));
 
       this._server.on("error", reject);
       this._server.listen(pipePath, () => resolve());
     });
+  }
+
+  /**
+   * @internal Wire up a freshly accepted connection.
+   */
+  private _handleConnection(socket: Socket): void {
+    // Single-parent model: the parent connects exactly once. Reject any extra
+    // or stray connection rather than overwriting (and corrupting) the active
+    // connection's in-flight state.
+    if (this._socket) {
+      socket.destroy();
+      return;
+    }
+
+    this._socket = socket;
+    this._drainWaiter = new DrainWaiter(socket);
+    this._frameBuffer = new FrameBuffer(
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
+    );
+
+    socket.on("data", (chunk: Buffer) => {
+      // Guard: a late "data" event can fire after _handleDisconnect() niled it.
+      if (!this._frameBuffer) return;
+      let frames;
+      try {
+        frames = this._frameBuffer.push(chunk);
+      } catch (err) {
+        // Oversized/invalid frame (e.g. payload exceeds maxPayloadSize). Drop the
+        // connection instead of letting the throw crash the child process.
+        if (this.listenerCount("error") > 0) {
+          this.emit("error", err as Error);
+        }
+        socket.destroy();
+        return;
+      }
+      for (const frame of frames) {
+        this._handleFrame(frame);
+      }
+    });
+
+    socket.on("error", (err) => {
+      // EventEmitter throws synchronously when "error" is emitted with no
+      // listener, which would crash the whole child process. Only emit when
+      // someone is listening; "close" -> _handleDisconnect() still runs.
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err);
+      }
+    });
+    socket.on("close", () => this._handleDisconnect());
+  }
+
+  /**
+   * @internal Tear down all per-connection state when the socket drops.
+   *
+   * In-flight requests are abandoned by the parent on disconnect, so we abort
+   * their contexts, fire their onAbort callbacks (user cleanup: close cursors,
+   * kill queries), and drop all references so nothing leaks.
+   */
+  private _handleDisconnect(): void {
+    this._drainWaiter?.clear();
+
+    // Abort in-flight requests and fire their cancellation callbacks.
+    for (const ctx of this._activeContexts.values()) {
+      ctx._markAborted();
+    }
+    for (const callbacks of this._abortCallbacks.values()) {
+      for (const cb of callbacks) {
+        try {
+          cb();
+        } catch {
+          /* ignore - user cleanup errors must not block teardown */
+        }
+      }
+    }
+    this._activeContexts.clear();
+    this._abortCallbacks.clear();
+
+    this._socket = null;
+    this._frameBuffer = null;
+    this._drainWaiter = null;
+
+    this.emit("disconnected");
   }
 
   private _sendInit(pipePath: string): void {
@@ -373,7 +474,7 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       params: {
         pipe: pipePath,
         schema,
-        version: "2.0.0",
+        version: "1.0.0",
       },
     };
 
@@ -489,7 +590,8 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // RING+SYNC: No await in sync function, buffer used immediately
+    // headerBuf is freshly allocated and owned by this call, so it can be
+    // written without an extra copy.
     this._socket?.cork();
     this._socket?.write(headerBuf);
     this._socket?.write(payload);
@@ -500,10 +602,13 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   // PRIVATE: Frame Sending
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Allocate a fresh header buffer for a single send. (A ring pool used to back
+   * this, but every send copies the header before writing anyway, so the pool
+   * saved nothing; allocating directly lets us write without an extra copy.)
+   */
   private _acquireHeaderBuffer(): Buffer {
-    const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
-    return buffer;
+    return Buffer.allocUnsafe(HEADER_SIZE);
   }
 
   /**
@@ -532,11 +637,10 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy because Named Pipes on Windows
-    // may not synchronously copy buffer data.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket.cork();
-    this._socket.write(Buffer.from(headerBuf));
+    this._socket.write(headerBuf);
     const canContinue = this._socket.write(payload);
     this._socket.uncork();
 

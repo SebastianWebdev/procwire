@@ -43,6 +43,12 @@ export interface EventDefinition {
 export interface ClientOptions {
   /** Default codec for methods and events */
   defaultCodec?: Codec;
+  /**
+   * Maximum accepted inbound payload size in bytes. A frame declaring a larger
+   * payload is rejected and the connection is dropped (guards against a hostile
+   * or buggy parent exhausting memory). Defaults to the FrameBuffer default.
+   */
+  maxPayloadSize?: number;
 }
 
 /**

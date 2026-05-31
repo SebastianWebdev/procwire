@@ -45,7 +45,7 @@ npm whoami
 npm access ls-packages
 ```
 
-You should see `@procwire/transport`, `@procwire/codec-msgpack`, `@procwire/codec-protobuf`, and `@procwire/codec-arrow` with `read-write` access.
+You should see `@procwire/core`, `@procwire/codecs`, `@procwire/client`, and `@procwire/protocol` with `read-write` access.
 
 ### Setting Up Trusted Publisher
 
@@ -65,10 +65,10 @@ OIDC Trusted Publishing eliminates the need for long-lived npm tokens. Each pack
 
 Repeat this for each package:
 
-- `@procwire/transport`
-- `@procwire/codec-msgpack`
-- `@procwire/codec-protobuf`
-- `@procwire/codec-arrow`
+- `@procwire/core`
+- `@procwire/codecs`
+- `@procwire/client`
+- `@procwire/protocol`
 
 ### Package Configuration
 
@@ -76,11 +76,11 @@ Each package's `package.json` must include a `repository` field that exactly mat
 
 ```json
 {
-  "name": "@procwire/transport",
+  "name": "@procwire/core",
   "repository": {
     "type": "git",
     "url": "https://github.com/SebastianWebdev/procwire.git",
-    "directory": "packages/transport"
+    "directory": "packages/core"
   }
 }
 ```
@@ -105,12 +105,12 @@ This interactive prompt will ask:
 
 ```
 🦋  Which packages would you like to include?
-◉ @procwire/transport
-◯ @procwire/codec-msgpack
-◯ @procwire/codec-protobuf
-◯ @procwire/codec-arrow
+◉ @procwire/core
+◯ @procwire/codecs
+◯ @procwire/client
+◯ @procwire/protocol
 
-🦋  What kind of change is this for @procwire/transport?
+🦋  What kind of change is this for @procwire/core?
 ◉ minor - New features
 
 🦋  Please enter a summary for this change:
@@ -121,7 +121,7 @@ This creates a file in `.changeset/` with a random name like `.changeset/happy-p
 
 ```md
 ---
-"@procwire/transport": minor
+"@procwire/core": minor
 ---
 
 Add Unix socket transport support
@@ -186,8 +186,8 @@ This publishes all packages with new versions to npm.
 **Verify the publish:**
 
 ```bash
-npm view @procwire/transport version
-npm view @procwire/codec-msgpack version
+npm view @procwire/core version
+npm view @procwire/codecs version
 ```
 
 ## Automated Release (CI)
@@ -317,10 +317,10 @@ If a publish fails partway through:
 
 ```bash
 # Check which packages were published
-npm view @procwire/transport version
-npm view @procwire/codec-msgpack version
-npm view @procwire/codec-protobuf version
-npm view @procwire/codec-arrow version
+npm view @procwire/core version
+npm view @procwire/codecs version
+npm view @procwire/client version
+npm view @procwire/protocol version
 
 # Re-run publish (changesets will skip already-published versions)
 pnpm release
@@ -341,7 +341,7 @@ If you must fix:
 
 ```bash
 # Option A: Deprecate the bad version
-npm deprecate @procwire/transport@1.2.3 "Deprecated due to critical bug, use 1.2.4 instead"
+npm deprecate @procwire/core@1.2.3 "Deprecated due to critical bug, use 1.2.4 instead"
 
 # Option B: Publish a patch version
 pnpm changeset # Create patch changeset
@@ -378,9 +378,9 @@ pnpm release
 
 ### After Publishing
 
-- ✅ **Verify on npm** - Check https://www.npmjs.com/package/@procwire/transport
+- ✅ **Verify on npm** - Check https://www.npmjs.com/package/@procwire/core
 - ✅ **Check provenance** - Look for the "Provenance" badge on the npm package page
-- ✅ **Test installation** - Run `npm install @procwire/transport` in a test project
+- ✅ **Test installation** - Run `npm install @procwire/core` in a test project
 - ✅ **Check GitHub Releases** - Verify git tags are pushed and GitHub Releases are created
 - ✅ **Update documentation** - If needed, update docs for new features
 
@@ -402,7 +402,7 @@ pnpm release
 
 ### "Package not found" when installing
 
-**Problem:** `npm install @procwire/transport` fails with 404
+**Problem:** `npm install @procwire/core` fails with 404
 
 **Possible causes:**
 
@@ -443,7 +443,7 @@ pnpm release
 
 ### Workspace protocol (`workspace:*`) in published package
 
-**Problem:** Published package has `"@procwire/transport": "workspace:*"` in dependencies
+**Problem:** Published package has `"@procwire/core": "workspace:*"` in dependencies
 
 **Solution:** This should be automatically converted by Changesets. Ensure:
 

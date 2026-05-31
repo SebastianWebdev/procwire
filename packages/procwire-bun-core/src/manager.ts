@@ -19,7 +19,13 @@
 
 import { EventEmitter } from "node:events";
 import type { Module } from "./module.js";
-import type { SpawnPolicy, ModuleSchema, InitMessage, RetryDelayConfig } from "./types.js";
+import type {
+  SpawnPolicy,
+  ModuleSchema,
+  InitMessage,
+  RetryDelayConfig,
+  HeartbeatConfig,
+} from "./types.js";
 import { ManagerErrors } from "./errors.js";
 import { ManagerEvents } from "./events.js";
 
@@ -47,6 +53,7 @@ const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
   restartOnCrash: false,
   restartLimit: { maxRestarts: 5, windowMs: 60_000 },
   socketBufferSize: undefined as unknown as number, // undefined = use OS default
+  heartbeat: null, // disabled by default
 };
 
 /** Delay for detecting immediate spawn errors (ms) */
@@ -57,6 +64,9 @@ const RESTART_WAIT_DELAY_MS = 1000;
 
 /** Timeout for graceful shutdown before force kill (ms) */
 const FORCE_KILL_TIMEOUT_MS = 5000;
+
+/** Timeout for connecting to the child's data-plane pipe before giving up (ms) */
+const DATA_CHANNEL_CONNECT_TIMEOUT_MS = 10000;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SPAWN ERROR
@@ -113,6 +123,16 @@ export class ModuleManager extends EventEmitter {
   private readonly modules = new Map<string, Module>();
   private readonly restartTimestamps = new Map<string, number[]>();
   private readonly stdoutAbortControllers = new Map<string, AbortController>();
+  // Pending crash-restart timers, kept so they can be cancelled on shutdown to
+  // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
+  // the isShuttingDown window, which is reset when shutdown() returns).
+  private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Control-plane heartbeat state (only populated when a module enables it).
+  private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
+  // Timestamp of an outstanding (unanswered) $ping per module; cleared on $pong.
+  // Lets us measure the timeout from an actual ping rather than from startup.
+  private readonly heartbeatPingAt = new Map<string, number>();
+  private readonly heartbeatReaders = new Map<string, AbortController>();
   private isShuttingDown = false;
 
   /**
@@ -302,6 +322,11 @@ export class ModuleManager extends EventEmitter {
     // 5. Ready!
     module._setState("ready");
     this.emit(ManagerEvents.READY, module.name);
+
+    // 6. Start liveness heartbeat if configured.
+    if (policy.heartbeat) {
+      this.startHeartbeat(module, policy.heartbeat);
+    }
   }
 
   /**
@@ -472,14 +497,42 @@ export class ModuleManager extends EventEmitter {
    * Connect to data channel using Bun.connect().
    * Creates socket handlers that delegate to Module methods.
    */
-  private connectDataChannel(module: Module, pipePath: string): Promise<BunSocket> {
+  private connectDataChannel(
+    module: Module,
+    pipePath: string,
+    timeoutMs: number = DATA_CHANNEL_CONNECT_TIMEOUT_MS,
+  ): Promise<BunSocket> {
     return new Promise((resolve, reject) => {
+      // Without a timeout, a child that advertises a pipe it never accepts on
+      // would hang the spawn forever (and leak the child). Bound the wait and
+      // guard against settling twice.
+      let settled = false;
+      let connected: BunSocket | null = null;
+
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        connected?.end();
+        reject(
+          ManagerErrors.dataChannelFailed(
+            `connection to "${pipePath}" timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+
       try {
         // Bun.connect with socket handlers that delegate to Module
         Bun.connect({
           unix: pipePath,
           socket: {
             open(socket: BunSocket) {
+              connected = socket;
+              if (settled) {
+                socket.end();
+                return;
+              }
+              settled = true;
+              clearTimeout(timer);
               resolve(socket);
             },
             data(_socket: BunSocket, data: Buffer) {
@@ -490,6 +543,9 @@ export class ModuleManager extends EventEmitter {
               // During connection, reject the promise
               // After connection, delegate to Module
               module._onSocketError(error);
+              if (settled) return;
+              settled = true;
+              clearTimeout(timer);
               reject(ManagerErrors.dataChannelFailed(error.message));
             },
             close(_socket: BunSocket) {
@@ -502,6 +558,9 @@ export class ModuleManager extends EventEmitter {
           },
         });
       } catch (error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         reject(
           ManagerErrors.dataChannelFailed(error instanceof Error ? error.message : String(error)),
         );
@@ -517,6 +576,9 @@ export class ModuleManager extends EventEmitter {
    * Handle child process exit.
    */
   private handleProcessExit(module: Module, code: number | null, signal: string | null): void {
+    // The process is gone: stop pinging it.
+    this.stopHeartbeat(module.name);
+
     // Ignore if shutting down
     if (this.isShuttingDown) {
       module._detach();
@@ -590,12 +652,171 @@ export class ModuleManager extends EventEmitter {
   /**
    * Restart a module.
    */
-  private async restartModule(module: Module): Promise<void> {
-    // Wait a bit before restart
-    await this.sleep(RESTART_WAIT_DELAY_MS);
+  private restartModule(module: Module): Promise<void> {
+    // Wait a bit before restart, using a tracked timer so shutdown() can cancel it.
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.restartTimers.delete(module.name);
 
-    // Re-spawn with retry logic
-    await this.spawnModule(module.name);
+        // Bail if the module was shut down (or closed) during the delay; the
+        // isShuttingDown flag is reset once shutdown() returns, so the module
+        // state is the reliable signal here.
+        if (this.isShuttingDown || module.state === "closed") {
+          resolve();
+          return;
+        }
+
+        // Re-spawn with retry logic.
+        this.spawnModule(module.name).then(resolve, reject);
+      }, RESTART_WAIT_DELAY_MS);
+
+      this.restartTimers.set(module.name, timer);
+    });
+  }
+
+  /**
+   * Cancel a pending crash-restart timer, if any.
+   */
+  private cancelRestart(name: string): void {
+    const timer = this.restartTimers.get(name);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.restartTimers.delete(name);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRIVATE: Heartbeat (liveness)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Start the control-plane heartbeat for a ready module.
+   *
+   * Every `intervalMs` we send a `$ping` over the child's stdin and check that
+   * a `$pong` has been seen within `timeoutMs`; otherwise the child is treated
+   * as dead (killed -> the normal crash/restart path runs).
+   */
+  private startHeartbeat(module: Module, config: HeartbeatConfig): void {
+    const { name } = module;
+    this.stopHeartbeat(name); // never run two timers for one module
+    this.startPongReader(module);
+
+    // Send the first ping immediately so the timeout is always measured from an
+    // actual ping rather than from when the module became ready.
+    this._sendHeartbeatPing(module);
+
+    const timer = setInterval(() => {
+      const pingAt = this.heartbeatPingAt.get(name);
+      if (pingAt !== undefined) {
+        // A ping is still unanswered: time out only relative to that ping, and
+        // don't stack another ping (it would reset the deadline so a dead child
+        // would never be detected).
+        if (Date.now() - pingAt >= config.timeoutMs) {
+          this.onHeartbeatTimeout(module, config.timeoutMs);
+        }
+        return;
+      }
+      // Previous ping was answered: send the next one.
+      this._sendHeartbeatPing(module);
+    }, config.intervalMs);
+
+    this.heartbeatTimers.set(name, timer);
+  }
+
+  /** Write a `$ping` to the child and mark it outstanding (awaiting `$pong`). */
+  private _sendHeartbeatPing(module: Module): void {
+    const stdin = module.process?.stdin as
+      | { write: (data: string) => number; flush?: () => void }
+      | undefined;
+    if (stdin) {
+      stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+      stdin.flush?.();
+      this.heartbeatPingAt.set(module.name, Date.now());
+    }
+  }
+
+  /**
+   * Read the child's stdout (released by the handshake) for `$pong` replies.
+   */
+  private startPongReader(module: Module): void {
+    const stdout = module.process?.stdout as ReadableStream<Uint8Array> | undefined;
+    if (!stdout) return;
+
+    let reader: ReturnType<ReadableStream<Uint8Array>["getReader"]>;
+    try {
+      reader = stdout.getReader();
+    } catch {
+      return; // lock unavailable (e.g. handshake still holds it)
+    }
+
+    const controller = new AbortController();
+    this.heartbeatReaders.set(module.name, controller);
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const loop = async (): Promise<void> => {
+      try {
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value);
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("{")) continue;
+            try {
+              const msg = JSON.parse(line) as { method?: string };
+              if (msg.method === "$pong") this.handlePong(module.name);
+            } catch {
+              // Ignore non-JSON / malformed control lines.
+            }
+          }
+        }
+      } catch {
+        // Reader cancelled or stream closed.
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {
+          // already released
+        }
+      }
+    };
+    void loop();
+  }
+
+  /** Record a `$pong`: the outstanding ping was answered. */
+  private handlePong(name: string): void {
+    if (this.heartbeatTimers.has(name)) {
+      this.heartbeatPingAt.delete(name);
+    }
+  }
+
+  /** The child missed too many heartbeats: kill it so the crash path runs. */
+  private onHeartbeatTimeout(module: Module, timeoutMs: number): void {
+    this.stopHeartbeat(module.name);
+    this.emit(
+      ManagerEvents.ERROR,
+      module.name,
+      ManagerErrors.heartbeatTimeout(module.name, timeoutMs),
+    );
+    // Kill a hung child; its exit drives handleProcessExit -> restart.
+    module.process?.kill();
+  }
+
+  /** Stop and clear heartbeat state for a module. */
+  private stopHeartbeat(name: string): void {
+    const timer = this.heartbeatTimers.get(name);
+    if (timer !== undefined) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(name);
+    }
+    const reader = this.heartbeatReaders.get(name);
+    if (reader) {
+      reader.abort();
+      this.heartbeatReaders.delete(name);
+    }
+    this.heartbeatPingAt.delete(name);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -608,6 +829,11 @@ export class ModuleManager extends EventEmitter {
   private async shutdownModule(name: string): Promise<void> {
     const module = this.modules.get(name);
     if (!module) return;
+
+    // Cancel any pending crash-restart so the module isn't resurrected, and
+    // stop the liveness heartbeat.
+    this.cancelRestart(name);
+    this.stopHeartbeat(name);
 
     const proc = module.process;
     if (!proc) {
@@ -678,6 +904,8 @@ export class ModuleManager extends EventEmitter {
    * Cleanup module after failed spawn.
    */
   private cleanupModule(module: Module): void {
+    this.stopHeartbeat(module.name);
+
     const proc = module.process;
     if (proc && proc.exitCode === null) {
       proc.kill();
@@ -703,6 +931,7 @@ export class ModuleManager extends EventEmitter {
       restartOnCrash: policy.restartOnCrash ?? DEFAULT_SPAWN_POLICY.restartOnCrash,
       restartLimit: policy.restartLimit ?? DEFAULT_SPAWN_POLICY.restartLimit,
       socketBufferSize: policy.socketBufferSize ?? DEFAULT_SPAWN_POLICY.socketBufferSize,
+      heartbeat: policy.heartbeat ?? DEFAULT_SPAWN_POLICY.heartbeat,
     };
   }
 

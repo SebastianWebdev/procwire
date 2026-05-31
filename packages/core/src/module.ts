@@ -23,7 +23,6 @@ import {
   hasFlag,
   Flags,
   HEADER_SIZE,
-  HEADER_POOL_SIZE,
   ABORT_METHOD_ID,
   encodeHeaderInto,
   DrainWaiter,
@@ -70,6 +69,8 @@ interface PendingRequest {
   responseCodec: Codec;
   /** Expected response type: "ack" or "result" */
   expectedResponse: "ack" | "result";
+  /** Removes the AbortSignal listener, if one was registered. */
+  abortCleanup?: (() => void) | undefined;
 }
 
 interface PendingStream {
@@ -79,6 +80,25 @@ interface PendingStream {
   /** Codec for deserializing response chunks (child→parent direction) */
   responseCodec: Codec;
 }
+
+/**
+ * Default per-request timeout (ms) applied to result/ack methods when neither
+ * the child schema nor the method config specify one. Prevents send() from
+ * hanging forever. Override per-method (`timeout`) or per-module
+ * (`.requestTimeout()`); a value of 0 disables the timeout.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Stream consumer-queue backpressure thresholds (in buffered chunks).
+ *
+ * When a stream's buffered queue grows past the high-water mark, the socket is
+ * paused so the child stops producing (TCP backpressure). It is resumed once
+ * the consumer drains the queue back below the low-water mark. This bounds
+ * memory use when the consumer is slower than the producer.
+ */
+const STREAM_BACKPRESSURE_HIGH_WATER_MARK = 256;
+const STREAM_BACKPRESSURE_LOW_WATER_MARK = 64;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CLASS
@@ -110,6 +130,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _events = new Map<string, EventConfig>();
   private _spawnPolicy: SpawnPolicy = {};
   private _maxPayloadSize?: number;
+  private _defaultRequestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
 
   // Connection state (set by ModuleManager via _attach methods)
   private _state: ModuleState = "created";
@@ -118,20 +139,26 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _frameBuffer: FrameBuffer | null = null;
   private _childSchema: ModuleSchema | null = null;
 
+  // Bound socket listeners, kept so they can be removed in _detach() to avoid
+  // leaks and late-event crashes across reconnect/restart cycles.
+  private _socketHandlers: {
+    data: (chunk: Buffer) => void;
+    error: (err: Error) => void;
+    close: () => void;
+  } | null = null;
+
   // Request tracking
   private _nextRequestId = 1;
   private _pendingRequests = new Map<number, PendingRequest>();
   private _pendingStreams = new Map<number, PendingStream>();
 
-  // OPT-02: Header ring buffer for allocation-free sends
-  private readonly _headerPool = Array.from({ length: HEADER_POOL_SIZE }, () =>
-    Buffer.allocUnsafe(HEADER_SIZE),
-  );
-  private _headerPoolIndex = 0;
-
   // OPT-04: Backpressure tracking
   private _draining = false;
   private _drainWaiter: DrainWaiter | null = null;
+
+  // Receive-side backpressure: number of streams currently requesting a socket
+  // pause. The socket is paused while this is > 0 (see _pause/_resumeForBackpressure).
+  private _socketPauseCount = 0;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -268,6 +295,18 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     return this;
   }
 
+  /**
+   * Set the default per-request timeout (ms) for this module.
+   *
+   * Applied to result/ack methods when neither the child schema nor the method
+   * config specify a timeout. Pass 0 to disable the default for this module.
+   * A per-method `timeout` still takes precedence.
+   */
+  requestTimeout(ms: number): this {
+    this._defaultRequestTimeout = ms;
+    return this;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // GETTERS (for ModuleManager)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -342,24 +381,37 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
     );
 
-    // Setup frame handling
-    socket.on("data", (chunk: Buffer) => {
-      const frames = this._frameBuffer!.push(chunk);
-      for (const frame of frames) {
-        this._handleFrame(frame);
-      }
-    });
+    // Setup frame handling. Handlers are stored so _detach() can remove them.
+    const handlers = {
+      data: (chunk: Buffer): void => {
+        // Guard: a late "data" event can fire after _detach() niled the buffer.
+        if (!this._frameBuffer) return;
+        const frames = this._frameBuffer.push(chunk);
+        for (const frame of frames) {
+          this._handleFrame(frame);
+        }
+      },
+      error: (err: Error): void => {
+        // EventEmitter throws synchronously when "error" is emitted with no
+        // listener, which would crash the whole parent process. Only emit when
+        // someone is listening; an unobserved socket error is still surfaced
+        // via the subsequent "close" -> "disconnected" transition below.
+        if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+          this.emit(ModuleEvents.ERROR, err);
+        }
+      },
+      close: (): void => {
+        if (this._state === "ready") {
+          this._setState("disconnected");
+          this.emit(ModuleEvents.DISCONNECTED);
+        }
+      },
+    };
 
-    socket.on("error", (err: Error) => {
-      this.emit(ModuleEvents.ERROR, err);
-    });
-
-    socket.on("close", () => {
-      if (this._state === "ready") {
-        this._setState("disconnected");
-        this.emit(ModuleEvents.DISCONNECTED);
-      }
-    });
+    this._socketHandlers = handlers;
+    socket.on("data", handlers.data);
+    socket.on("error", handlers.error);
+    socket.on("close", handlers.close);
   }
 
   /**
@@ -379,7 +431,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     }
     this._pendingStreams.clear();
 
-    // Clear connection state
+    // Clear connection state. Remove our listeners BEFORE destroy() so a late
+    // "data"/"error"/"close" event cannot fire against torn-down state, and so
+    // the closures don't leak on the old socket across restart cycles.
+    if (this._socket && this._socketHandlers) {
+      this._socket.off("data", this._socketHandlers.data);
+      this._socket.off("error", this._socketHandlers.error);
+      this._socket.off("close", this._socketHandlers.close);
+    }
+    this._socketHandlers = null;
     this._socket?.destroy();
     this._socket = null;
     this._frameBuffer?.clear();
@@ -394,6 +454,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
 
     // Reset backpressure state
     this._draining = false;
+    this._socketPauseCount = 0;
     this._drainWaiter?.clear();
     this._drainWaiter = null;
   }
@@ -476,38 +537,42 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       return undefined;
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
-    // Abort handling
-    if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          // The abort is best-effort
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort - connection may be closed
-          });
-          const pending = this._pendingRequests.get(requestId);
-          if (pending) {
-            pending.reject(new DOMException("Aborted", "AbortError"));
-            this._cleanupRequest(requestId);
-          }
-        },
-        { once: true },
-      );
+    // Abort handling. Keep a reference to the listener so it can be removed
+    // when the request settles normally - otherwise a reused long-lived signal
+    // accumulates listeners.
+    let abortCleanup: (() => void) | undefined;
+    const signal = options?.signal;
+    if (signal && methodConfig.cancellable) {
+      const onAbort = (): void => {
+        // Note: best-effort; we don't await in an event handler.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort - connection may be closed
+        });
+        const pending = this._pendingRequests.get(requestId);
+        if (pending) {
+          pending.reject(new DOMException("Aborted", "AbortError"));
+          this._cleanupRequest(requestId);
+        }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
     const responsePromise = new Promise<unknown>((resolve, reject) => {
-      const timeout = schemaMethod.timeout ?? methodConfig.timeout;
-      const timer = timeout
-        ? setTimeout(() => {
-            this._cleanupRequest(requestId);
-            reject(ModuleErrors.timeout(method));
-          }, timeout)
-        : null;
+      // Precedence: child schema -> method config -> module default.
+      // A resolved value of 0 (or negative) disables the timeout.
+      const timeout = schemaMethod.timeout ?? methodConfig.timeout ?? this._defaultRequestTimeout;
+      const timer =
+        timeout > 0
+          ? setTimeout(() => {
+              this._cleanupRequest(requestId);
+              reject(ModuleErrors.timeout(method));
+            }, timeout)
+          : null;
 
       this._pendingRequests.set(requestId, {
         resolve: resolve as (value: unknown) => void,
@@ -515,6 +580,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
         timeout: timer,
         responseCodec: methodConfig.responseCodec,
         expectedResponse: schemaMethod.response as "ack" | "result",
+        abortCleanup,
       });
     });
 
@@ -569,17 +635,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       throw ModuleErrors.methodNotStream(method, schemaMethod.response);
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
-    // ⚠️ TODO: Implement Backpressure
-    // Current implementation uses unbounded in-memory queue.
-    // If child sends data faster than consumer processes it,
-    // this queue will grow indefinitely and cause OOM.
-    // For production use with large streams, implement credit-based backpressure.
+    // Receive-side backpressure: if the consumer falls behind, the queue is
+    // bounded by pausing the socket (see _pause/_resumeSocketForBackpressure).
     const queue: unknown[] = [];
     let resolve: ((result: IteratorResult<unknown>) => void) | null = null;
     let finished = false;
     let error: Error | null = null;
+    let backpressured = false;
 
     // Register stream
     this._pendingStreams.set(requestId, {
@@ -589,6 +653,11 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
           resolve = null;
         } else {
           queue.push(chunk);
+          // Consumer is behind: pause the socket once we cross the high-water mark.
+          if (!backpressured && queue.length >= STREAM_BACKPRESSURE_HIGH_WATER_MARK) {
+            backpressured = true;
+            this._pauseSocketForBackpressure();
+          }
         }
       },
       end: () => {
@@ -602,20 +671,21 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       responseCodec: methodConfig.responseCodec,
     });
 
-    // Abort handling
-    if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort
-          });
-          error = new DOMException("Aborted", "AbortError");
-          if (resolve) resolve({ value: undefined, done: true });
-        },
-        { once: true },
-      );
+    // Abort handling. Keep a reference so the listener can be removed when the
+    // stream finishes (see the finally block) instead of leaking on the signal.
+    let abortCleanup: (() => void) | undefined;
+    const signal = options?.signal;
+    if (signal && methodConfig.cancellable) {
+      const onAbort = (): void => {
+        // Note: best-effort; we don't await in an event handler.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort
+        });
+        error = new DOMException("Aborted", "AbortError");
+        if (resolve) resolve({ value: undefined, done: true });
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Send request (with backpressure support)
@@ -627,6 +697,11 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
         // First drain the queue (important: check queue BEFORE finished flag)
         if (queue.length > 0) {
           yield queue.shift()!;
+          // Consumer caught up: resume the socket once we drop below low-water.
+          if (backpressured && queue.length <= STREAM_BACKPRESSURE_LOW_WATER_MARK) {
+            backpressured = false;
+            this._resumeSocketForBackpressure();
+          }
           continue;
         }
 
@@ -643,6 +718,12 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       if (error) throw error;
     } finally {
       this._pendingStreams.delete(requestId);
+      abortCleanup?.();
+      // Release any backpressure this stream was holding on the shared socket.
+      if (backpressured) {
+        backpressured = false;
+        this._resumeSocketForBackpressure();
+      }
     }
   }
 
@@ -759,13 +840,53 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   }
 
   /**
-   * Acquire a header buffer from the ring buffer pool.
-   * OPT-02: Allocation-free sends - reuse pre-allocated buffers.
+   * Allocate the next correlation id.
+   *
+   * requestId is a uint32 on the wire. The counter wraps within [1, 0xFFFFFFFF]
+   * and skips 0, which is reserved for fire-and-forget requests and events.
+   * Without wrapping, writeUInt32BE would throw RangeError after 2^32 requests.
+   */
+  private _allocateRequestId(): number {
+    const id = this._nextRequestId;
+    this._nextRequestId = id >= 0xffffffff ? 1 : id + 1;
+    return id;
+  }
+
+  /**
+   * Pause the socket on behalf of a lagging stream consumer.
+   *
+   * The socket is shared by all streams/requests on this module, so pauses are
+   * ref-counted: the socket is paused on the first request and only resumed
+   * once every requester has released (see _resumeSocketForBackpressure).
+   */
+  private _pauseSocketForBackpressure(): void {
+    this._socketPauseCount++;
+    if (this._socketPauseCount === 1) {
+      this._socket?.pause();
+    }
+  }
+
+  /**
+   * Release a backpressure pause; resume the socket when none remain.
+   */
+  private _resumeSocketForBackpressure(): void {
+    if (this._socketPauseCount === 0) return;
+    this._socketPauseCount--;
+    if (this._socketPauseCount === 0) {
+      this._socket?.resume();
+    }
+  }
+
+  /**
+   * Allocate a fresh header buffer for a single send.
+   *
+   * A pre-allocated ring pool used to back this, but every send has to copy the
+   * header before writing anyway (write() doesn't synchronously consume it), so
+   * the pool allocated a copy per send regardless. Allocating directly is the
+   * same cost and lets us write the buffer without an extra copy.
    */
   private _acquireHeaderBuffer(): Buffer {
-    const buffer = this._headerPool[this._headerPoolIndex]!;
-    this._headerPoolIndex = (this._headerPoolIndex + 1) % HEADER_POOL_SIZE;
-    return buffer;
+    return Buffer.allocUnsafe(HEADER_SIZE);
   }
 
   /**
@@ -790,11 +911,10 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy because Named Pipes on Windows
-    // may not synchronously copy buffer data.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket!.cork();
-    this._socket!.write(Buffer.from(headerBuf));
+    this._socket!.write(headerBuf);
     const canContinue = this._socket!.write(payload);
     this._socket!.uncork();
 
@@ -815,10 +935,10 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       payloadLength: 0,
     });
 
-    // Write BEFORE await to prevent deadlock.
-    // Buffer.from() creates a copy for Named Pipes compatibility.
+    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
+    // and owned by this call, so it can be written without an extra copy.
     this._socket!.cork();
-    this._socket!.write(Buffer.from(headerBuf));
+    this._socket!.write(headerBuf);
     const canContinue = this._socket!.write(Buffer.alloc(0));
     this._socket!.uncork();
 
@@ -831,6 +951,7 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
   private _cleanupRequest(requestId: number): void {
     const pending = this._pendingRequests.get(requestId);
     if (pending?.timeout) clearTimeout(pending.timeout);
+    pending?.abortCleanup?.();
     this._pendingRequests.delete(requestId);
   }
 

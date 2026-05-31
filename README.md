@@ -1,248 +1,139 @@
-# @procwire/\* Monorepo
+# Procwire
 
-Modular, type-safe IPC (Inter-Process Communication) building blocks for Node.js with **zero runtime dependencies**.
+High-performance, type-safe IPC (Inter-Process Communication) for Node.js and Bun, with **zero runtime dependencies** in the core packages.
 
-Build production-grade communication between Node.js processes with full control over every layer.
+Procwire connects a parent process to child worker processes over a **dual-channel** transport:
+
+- **Control plane** — child stdio, JSON-RPC 2.0. Handshake, heartbeat, lifecycle.
+- **Data plane** — named pipe / Unix domain socket, a compact **binary protocol** (11-byte header). User data, high throughput (target >1 GB/s).
+
+JSON-RPC stays on the small, infrequent control messages; user data never pays the JSON tax.
 
 ## Packages
 
-### Core Transport
+| Package                                                  | Role                                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **[@procwire/protocol](packages/protocol)**              | Wire format, framing, flags (11-byte header), `FrameBuffer`                   |
+| **[@procwire/codecs](packages/codecs)**                  | `rawCodec`, `msgpackCodec`, `arrowCodec`                                      |
+| **[@procwire/core](packages/core)**                      | Parent side: `ModuleManager`, `Module` (spawn, lifecycle, restart, heartbeat) |
+| **[@procwire/client](packages/client)**                  | Child side: `Client`, `RequestContext`                                        |
+| **[@procwire/bun-core](packages/procwire-bun-core)**     | Parent side for the Bun runtime                                               |
+| **[@procwire/bun-client](packages/procwire-bun-client)** | Child side for the Bun runtime                                                |
 
-- **[@procwire/transport](transport/)** - Core IPC library (zero runtime dependencies)
-  - Multiple transports: stdio, named pipes, unix sockets
-  - Pluggable framing: line-delimited, length-prefixed
-  - Built-in serialization: JSON, raw binary
-  - Protocols: JSON-RPC 2.0, custom
-  - ProcessManager with restart policies
-  - Full TypeScript support
-
-### Optional Codecs
-
-- **[@procwire/codec-msgpack](codec-msgpack/)** - MessagePack serialization (20-50% smaller than JSON)
-- **[@procwire/codec-protobuf](codec-protobuf/)** - Protocol Buffers (schema validation, cross-language)
-- **[@procwire/codec-arrow](codec-arrow/)** - Apache Arrow (columnar data, analytics)
+The Node and Bun implementations are identical on the wire.
 
 ## Quick Start
 
-```bash
-npm install @procwire/transport
-```
+**Child** (the worker — `@procwire/client`):
 
 ```typescript
-import { createStdioChannel } from "@procwire/transport";
+import { Client } from "@procwire/client";
+import { msgpackCodec } from "@procwire/codecs";
 
-// Parent process
-const channel = await createStdioChannel("node", {
-  args: ["worker.js"],
-});
+const client = new Client()
+  .handle(
+    "process",
+    async (data, ctx) => {
+      ctx.respond(await doWork(data));
+    },
+    { codec: msgpackCodec },
+  )
+  .event("progress");
 
-const result = await channel.request("calculate", { expr: "2+2" });
-console.log(result); // 4
-
-await channel.close();
+await client.start();
+client.emitEvent("progress", { percent: 50 });
 ```
 
-See [transport README](transport/README.md) for complete documentation and API reference.
+**Parent** (spawns and talks to the worker — `@procwire/core`):
 
-## Package Naming
+```typescript
+import { Module, ModuleManager } from "@procwire/core";
+import { msgpackCodec } from "@procwire/codecs";
 
-This repo uses scoped packages by default: `@procwire/*`.
+const worker = new Module("worker")
+  .executable("node", ["worker.js"])
+  .method("process", { codec: msgpackCodec })
+  .event("progress");
 
-If you need unscoped packages instead, use the `procwire-*` naming scheme:
+const manager = new ModuleManager();
+manager.register(worker);
+await manager.spawn("worker");
 
-- `@procwire/transport` → `procwire-transport`
-- `@procwire/codec-msgpack` → `procwire-codec-msgpack`
-- `@procwire/codec-protobuf` → `procwire-codec-protobuf`
-- `@procwire/codec-arrow` → `procwire-codec-arrow`
+const result = await worker.send("process", data);
+worker.onEvent("progress", (p) => console.log(`${p.percent}%`));
 
-Then update your imports similarly (e.g. `@procwire/transport` → `procwire-transport`). Deep imports follow the same rule.
-
-## Examples
-
-Complete, runnable examples in [examples/](examples/):
-
-- **[basic-stdio](examples/basic-stdio/)** - Simple parent/child with JSON-RPC over stdio
-- **[dual-channel](examples/dual-channel/)** - Control + data channels with MessagePack
-- **[rust-worker](examples/rust-worker/)** - Cross-language IPC with Rust worker
-
-### Running Examples
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run basic example
-pnpm --filter ./examples/basic-stdio dev
-
-# Run dual-channel example
-pnpm --filter ./examples/dual-channel dev
-
-# Rust worker (requires Cargo)
-cd examples/rust-worker/rust && cargo build --release && cd ../..
-pnpm --filter ./examples/rust-worker dev
+await manager.shutdown();
 ```
+
+Each package's README has the full API. On Bun, use `@procwire/bun-core` / `@procwire/bun-client` — same API.
 
 ## Features
 
-- **Zero dependencies** - Core package has no runtime dependencies
-- **Modular** - Replace any layer (transport, framing, serialization, protocol)
-- **Type-safe** - Full TypeScript support with generics
-- **Cross-platform** - Windows (Named Pipes), macOS/Linux (Unix Sockets)
-- **Performant** - Efficient binary protocols (MessagePack, Protobuf, Arrow)
-- **Production-ready** - ProcessManager with restart policies, error handling
+- **Binary data plane** — zero JSON for user data; target >1 GB/s for large payloads.
+- **Response types** — `result`, `stream`, `ack`, `none`.
+- **Lifecycle** — spawn, restart policies with backoff, graceful shutdown, opt-in heartbeat/liveness.
+- **Backpressure** — bounded memory under slow consumers.
+- **Cancellation** — `AbortController` support.
+- **Type-safe** — builder pattern with generics; the parent defines the schema.
+- **Cross-platform** — Named Pipes on Windows, Unix Domain Sockets on Linux/macOS.
+- **Zero runtime dependencies** in the core packages.
 
 ## Architecture
 
 ```
-Application Layer (Your Code)
-         ↓
-Process Management (ProcessManager)
-         ↓
-Channel Layer (RequestChannel)
-         ↓
-Protocol Layer (JSON-RPC, custom)
-         ↓
-Serialization Layer (JSON, MessagePack, Protobuf, Arrow)
-         ↓
-Framing Layer (line-delimited, length-prefixed)
-         ↓
-Transport Layer (stdio, pipes, sockets)
+Control Plane (stdio)      - JSON-RPC 2.0  - Handshake, heartbeat, lifecycle
+Data Plane (named pipe)    - Binary        - User data, high throughput
 ```
 
-Each layer is independent and replaceable. See [architecture documentation](docs/procwire-transport-architecture.md) for details.
+Binary frame (data plane):
+
+```
++----------+-------+----------+----------+----------------------+
+| Method ID| Flags | Req ID   | Length   | Payload              |
+| 2 bytes  | 1 byte| 4 bytes  | 4 bytes  | N bytes              |
++----------+-------+----------+----------+----------------------+
+```
+
+The `astro-docs/` site (Astro Starlight) holds the architecture notes and guides.
 
 ## Development
 
-### Requirements
-
-- Node.js `>=18` (recommended: 20+)
-- pnpm via Corepack
-
-### Setup
+Requirements: **Node.js >= 22**, pnpm via Corepack.
 
 ```bash
 corepack enable
 pnpm install
-pnpm ci
+pnpm ci          # lint + typecheck + test + build
 ```
 
-### Common Commands
+Common commands:
 
 ```bash
-# Lint
-pnpm lint
-
-# Type check
-pnpm typecheck
-
-# Run tests
-pnpm test
-
-# Build all packages
-pnpm build
-
-# Format code
-pnpm format
-
-# Clean build artifacts
-pnpm clean
-
-# Full CI pipeline
-pnpm ci
-```
-
-### Working with Examples
-
-```bash
-# Build examples
-pnpm --filter "./examples/**" build
-
-# Run specific example
-pnpm --filter ./examples/basic-stdio dev
-
-# Clean examples
-pnpm --filter "./examples/**" clean
+pnpm lint        # ESLint
+pnpm typecheck   # TypeScript
+pnpm test        # Vitest
+pnpm build       # Build all packages
+pnpm format      # Prettier
+pnpm clean       # Remove build artifacts
 ```
 
 ## Publishing
 
-This project uses [Changesets](https://github.com/changesets/changesets) for version management.
-
-### Manual Release
+Versioning uses [Changesets](https://github.com/changesets/changesets):
 
 ```bash
-# 1. Create a changeset
-pnpm changeset
-
-# 2. Bump versions and update changelogs
-pnpm version-packages
-
-# 3. Build and test
-pnpm ci
-
-# 4. Publish to npm
-pnpm release
+pnpm changeset          # describe a change (interactive)
+pnpm version-packages   # bump versions + changelogs
+pnpm release            # build + publish to npm
 ```
 
-### Automated Release (CI)
-
-CI release automation is configured in [.github/workflows/release.yml](.github/workflows/release.yml).
-
-Push to `main` with changesets to trigger automated release.
-
-## Documentation
-
-- **[Transport README](transport/README.md)** - Complete API reference
-- **[Architecture Docs](docs/procwire-transport-architecture.md)** - Detailed design documentation
-- **[Examples](examples/)** - Runnable code examples
-
-### Codec Documentation
-
-- [MessagePack Codec](codec-msgpack/README.md)
-- [Protobuf Codec](codec-protobuf/README.md)
-- [Arrow Codec](codec-arrow/README.md)
-
-## Use Cases
-
-- **Microservices**: High-performance process-to-process communication
-- **Worker Pools**: Distribute CPU-intensive tasks across processes
-- **Plugin Systems**: Isolate plugins in separate processes
-- **Cross-Language**: Node.js ↔ Rust/Go/Python workers
-- **Data Processing**: Stream large datasets between processes
-- **Hot Reload**: Restart workers without downtime
-
-## Performance
-
-Compared to HTTP/REST for local IPC:
-
-- **10-100x lower latency** (no TCP/HTTP overhead)
-- **Higher throughput** (efficient binary protocols)
-- **Lower memory** (shared memory via pipes)
-
-MessagePack vs JSON:
-
-- **20-50% smaller** payloads
-- **2-5x faster** encoding/decoding
-
-See [examples/](examples/) for benchmarks.
+CI release automation lives in [.github/workflows/release.yml](.github/workflows/release.yml); pushing to `main` with changesets triggers a release. See [docs/RELEASING.md](docs/RELEASING.md) for the full process.
 
 ## Platform Support
 
-- **Node.js**: >=18
-- **Operating Systems**:
-  - Linux (Unix Domain Sockets)
-  - macOS (Unix Domain Sockets)
-  - Windows (Named Pipes)
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Open an issue to discuss major changes
-2. Follow existing code style (ESLint + Prettier)
-3. Add tests for new features
-4. Update documentation
+- **Runtimes:** Node.js >= 22, Bun (via the `@procwire/bun-*` packages).
+- **OS:** Linux & macOS (Unix Domain Sockets), Windows (Named Pipes).
 
 ## License
 
-MIT - See [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).

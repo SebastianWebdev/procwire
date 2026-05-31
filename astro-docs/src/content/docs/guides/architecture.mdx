@@ -1,24 +1,24 @@
 ---
 title: Architecture
-description: Architecture documentation for Procwire v2.0
+description: Procwire architecture — dual-channel IPC with a binary data plane
 ---
 
 # Architecture
 
-Architecture documentation is being updated for Procwire v2.0.
+Procwire is a dual-channel parent↔child IPC library.
 
-## What's Changing in v2.0
+## Dual-Channel Architecture
 
-Procwire v2.0 introduces a new binary protocol for the data plane, replacing JSON-RPC with a high-performance wire format.
+Procwire uses a binary protocol for the data plane and JSON-RPC for the control plane — a high-performance wire format where it matters, and a simple text protocol where it doesn't.
 
 | Channel       | Transport                | Protocol                    | Use Case                        |
 | ------------- | ------------------------ | --------------------------- | ------------------------------- |
 | Control Plane | stdio                    | JSON-RPC 2.0                | Handshake, heartbeat, lifecycle |
 | Data Plane    | Named Pipe / Unix Socket | **Binary (11-byte header)** | User data, high throughput      |
 
-### Why the Change?
+### Why a binary data plane?
 
-JSON-RPC on the data channel caused severe performance issues:
+JSON-RPC on the data channel would cause severe performance issues:
 
 - **5x larger payload** (JSON text vs binary)
 - **~500ms serialization overhead** per 1MB of data
@@ -33,4 +33,4 @@ JSON-RPC on the data channel caused severe performance issues:
 +----------+-------+----------+----------+----------------------+
 ```
 
-Full documentation will be available when v2.0 is released.
+More detailed architecture documentation is on the way.

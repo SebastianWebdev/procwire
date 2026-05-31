@@ -62,6 +62,8 @@ interface PendingRequest {
   responseCodec: Codec;
   /** Expected response type: "ack" or "result" */
   expectedResponse: "ack" | "result";
+  /** Removes the AbortSignal listener, if one was registered. */
+  abortCleanup?: (() => void) | undefined;
 }
 
 interface PendingStream {
@@ -93,6 +95,26 @@ interface PendingStream {
  * worker.onEvent('progress', console.log);
  * ```
  */
+
+/**
+ * Default per-request timeout (ms) for result/ack methods when neither the
+ * child schema nor the method config specify one. Prevents send() from hanging
+ * forever. Override per-method (`timeout`) or per-module (`.requestTimeout()`);
+ * a value of 0 disables the timeout.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Stream consumer-queue backpressure thresholds (in buffered chunks).
+ *
+ * When a stream's buffered queue grows past the high-water mark, the socket is
+ * paused so the child stops producing; it resumes once the consumer drains the
+ * queue back below the low-water mark. This bounds memory when the consumer is
+ * slower than the producer.
+ */
+const STREAM_BACKPRESSURE_HIGH_WATER_MARK = 256;
+const STREAM_BACKPRESSURE_LOW_WATER_MARK = 64;
+
 export class Module extends EventEmitter {
   readonly name: string;
 
@@ -102,6 +124,7 @@ export class Module extends EventEmitter {
   private _events = new Map<string, EventConfig>();
   private _spawnPolicy: SpawnPolicy = {};
   private _maxPayloadSize?: number;
+  private _defaultRequestTimeout: number = DEFAULT_REQUEST_TIMEOUT_MS;
 
   // Connection state (set by ModuleManager via _attach methods)
   private _state: ModuleState = "created";
@@ -123,6 +146,10 @@ export class Module extends EventEmitter {
 
   // OPT-04: Backpressure tracking for Bun sockets
   private _drainWaiter: BunDrainWaiter | null = null;
+
+  // Receive-side backpressure: number of streams currently requesting a socket
+  // pause. The socket is paused while this is > 0.
+  private _socketPauseCount = 0;
 
   // Lookups (populated from child schema)
   private _methodNameToId = new Map<string, number>();
@@ -225,6 +252,18 @@ export class Module extends EventEmitter {
     return this;
   }
 
+  /**
+   * Set the default per-request timeout (ms) for this module.
+   *
+   * Applied to result/ack methods when neither the child schema nor the method
+   * config specify a timeout. Pass 0 to disable the default for this module.
+   * A per-method `timeout` still takes precedence.
+   */
+  requestTimeout(ms: number): this {
+    this._defaultRequestTimeout = ms;
+    return this;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // GETTERS (for ModuleManager)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -318,7 +357,51 @@ export class Module extends EventEmitter {
    * @internal Called by socket error handler from ModuleManager.
    */
   _onSocketError(err: Error): void {
-    this.emit(ModuleEvents.ERROR, err);
+    // EventEmitter throws synchronously when "error" is emitted with no
+    // listener, which would crash the whole parent process. Only emit when
+    // someone is listening; an unobserved socket error is still surfaced via
+    // the subsequent close -> "disconnected" transition.
+    if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+      this.emit(ModuleEvents.ERROR, err);
+    }
+  }
+
+  /**
+   * Allocate the next request id, wrapping within the uint32 wire range.
+   *
+   * requestId is encoded as a uint32; a plain counter would overflow after
+   * 2^32 requests and make encoding throw. Wrap back to 1 (0 is reserved for
+   * fire-and-forget / events).
+   */
+  private _allocateRequestId(): number {
+    const id = this._nextRequestId;
+    this._nextRequestId = id >= 0xffffffff ? 1 : id + 1;
+    return id;
+  }
+
+  /**
+   * Pause the socket on behalf of a lagging stream consumer.
+   *
+   * The socket is shared by all streams/requests on this module, so pauses are
+   * ref-counted: paused on the first request, resumed only once every requester
+   * has released (see _resumeSocketForBackpressure).
+   */
+  private _pauseSocketForBackpressure(): void {
+    this._socketPauseCount++;
+    if (this._socketPauseCount === 1) {
+      this._socket?.pause();
+    }
+  }
+
+  /**
+   * Release a backpressure pause; resume the socket when none remain.
+   */
+  private _resumeSocketForBackpressure(): void {
+    if (this._socketPauseCount === 0) return;
+    this._socketPauseCount--;
+    if (this._socketPauseCount === 0) {
+      this._socket?.resume();
+    }
   }
 
   /**
@@ -369,6 +452,7 @@ export class Module extends EventEmitter {
     this._childSchema = null;
 
     // Clear backpressure state
+    this._socketPauseCount = 0;
     this._drainWaiter?.clear();
     this._drainWaiter = null;
   }
@@ -445,38 +529,42 @@ export class Module extends EventEmitter {
       return undefined as TResponse;
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
-    // Abort handling
+    // Abort handling. Keep a reference so the listener can be removed when the
+    // request settles normally (in _cleanupRequest) instead of leaking on the
+    // signal until it eventually fires.
+    let abortCleanup: (() => void) | undefined;
     if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          // The abort is best-effort
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort - connection may be closed
-          });
-          const pending = this._pendingRequests.get(requestId);
-          if (pending) {
-            pending.reject(new DOMException("Aborted", "AbortError"));
-            this._cleanupRequest(requestId);
-          }
-        },
-        { once: true },
-      );
+      const signal = options.signal;
+      const onAbort = (): void => {
+        // Note: We don't await here as it's in event handler; abort is best-effort.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort - connection may be closed
+        });
+        const pending = this._pendingRequests.get(requestId);
+        if (pending) {
+          pending.reject(new DOMException("Aborted", "AbortError"));
+          this._cleanupRequest(requestId);
+        }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
     const responsePromise = new Promise<TResponse>((resolve, reject) => {
-      const timeout = schemaMethod.timeout ?? methodConfig.timeout;
-      const timer = timeout
-        ? setTimeout(() => {
-            this._cleanupRequest(requestId);
-            reject(ModuleErrors.timeout(method));
-          }, timeout)
-        : null;
+      // Precedence: child schema -> method config -> module default.
+      // A resolved value of 0 (or negative) disables the timeout.
+      const timeout = schemaMethod.timeout ?? methodConfig.timeout ?? this._defaultRequestTimeout;
+      const timer =
+        timeout > 0
+          ? setTimeout(() => {
+              this._cleanupRequest(requestId);
+              reject(ModuleErrors.timeout(method));
+            }, timeout)
+          : null;
 
       this._pendingRequests.set(requestId, {
         resolve: resolve as (value: unknown) => void,
@@ -484,6 +572,7 @@ export class Module extends EventEmitter {
         timeout: timer,
         responseCodec: methodConfig.responseCodec,
         expectedResponse: schemaMethod.response as "ack" | "result",
+        abortCleanup,
       });
     });
 
@@ -528,17 +617,15 @@ export class Module extends EventEmitter {
       throw ModuleErrors.methodNotStream(method, schemaMethod.response);
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
-    // ⚠️ TODO: Implement Backpressure
-    // Current implementation uses unbounded in-memory queue.
-    // If child sends data faster than consumer processes it,
-    // this queue will grow indefinitely and cause OOM.
-    // For production use with large streams, implement credit-based backpressure.
+    // Receive-side backpressure: if the consumer falls behind, the queue is
+    // bounded by pausing the socket (see _pause/_resumeSocketForBackpressure).
     const queue: TChunk[] = [];
     let resolve: ((result: IteratorResult<TChunk>) => void) | null = null;
     let finished = false;
     let error: Error | null = null;
+    let backpressured = false;
 
     // Register stream
     this._pendingStreams.set(requestId, {
@@ -548,6 +635,11 @@ export class Module extends EventEmitter {
           resolve = null;
         } else {
           queue.push(chunk as TChunk);
+          // Consumer is behind: pause the socket once past the high-water mark.
+          if (!backpressured && queue.length >= STREAM_BACKPRESSURE_HIGH_WATER_MARK) {
+            backpressured = true;
+            this._pauseSocketForBackpressure();
+          }
         }
       },
       end: () => {
@@ -561,20 +653,21 @@ export class Module extends EventEmitter {
       responseCodec: methodConfig.responseCodec,
     });
 
-    // Abort handling
+    // Abort handling. Keep a reference so the listener can be removed when the
+    // stream finishes (see the finally block) instead of leaking on the signal.
+    let abortCleanup: (() => void) | undefined;
     if (options?.signal && methodConfig.cancellable) {
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          // Note: We don't await here as it's in event handler
-          this._sendAbort(requestId).catch(() => {
-            // Ignore errors during abort
-          });
-          error = new DOMException("Aborted", "AbortError");
-          if (resolve) resolve({ value: undefined as TChunk, done: true });
-        },
-        { once: true },
-      );
+      const signal = options.signal;
+      const onAbort = (): void => {
+        // Note: We don't await here as it's in event handler.
+        this._sendAbort(requestId).catch(() => {
+          // Ignore errors during abort
+        });
+        error = new DOMException("Aborted", "AbortError");
+        if (resolve) resolve({ value: undefined as TChunk, done: true });
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      abortCleanup = (): void => signal.removeEventListener("abort", onAbort);
     }
 
     // Send request (with backpressure support)
@@ -586,6 +679,11 @@ export class Module extends EventEmitter {
         // First drain the queue (important: check queue BEFORE finished flag)
         if (queue.length > 0) {
           yield queue.shift()!;
+          // Consumer caught up: resume the socket once below the low-water mark.
+          if (backpressured && queue.length <= STREAM_BACKPRESSURE_LOW_WATER_MARK) {
+            backpressured = false;
+            this._resumeSocketForBackpressure();
+          }
           continue;
         }
 
@@ -602,6 +700,12 @@ export class Module extends EventEmitter {
       if (error) throw error;
     } finally {
       this._pendingStreams.delete(requestId);
+      abortCleanup?.();
+      // Release any backpressure this stream was holding on the shared socket.
+      if (backpressured) {
+        backpressured = false;
+        this._resumeSocketForBackpressure();
+      }
     }
   }
 
@@ -778,6 +882,7 @@ export class Module extends EventEmitter {
   private _cleanupRequest(requestId: number): void {
     const pending = this._pendingRequests.get(requestId);
     if (pending?.timeout) clearTimeout(pending.timeout);
+    pending?.abortCleanup?.();
     this._pendingRequests.delete(requestId);
   }
 

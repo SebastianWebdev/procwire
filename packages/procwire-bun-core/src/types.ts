@@ -76,6 +76,20 @@ export interface RestartLimitConfig {
 }
 
 /**
+ * Control-plane heartbeat (liveness) configuration.
+ *
+ * When enabled, the parent periodically pings the child over the control plane
+ * and treats it as dead (triggering the crash/restart path) if no pong is seen
+ * within `timeoutMs`. Detects a hung child that hasn't exited.
+ */
+export interface HeartbeatConfig {
+  /** How often to ping the child (ms). */
+  intervalMs: number;
+  /** Treat the child as dead if no pong arrives within this window (ms). */
+  timeoutMs: number;
+}
+
+/**
  * Spawn and restart policy.
  */
 export interface SpawnPolicy {
@@ -93,6 +107,12 @@ export interface SpawnPolicy {
 
   /** Restart limit */
   restartLimit?: RestartLimitConfig;
+
+  /**
+   * Control-plane heartbeat for liveness detection. Disabled by default.
+   * @example { intervalMs: 5000, timeoutMs: 15000 }
+   */
+  heartbeat?: HeartbeatConfig | null;
 
   /**
    * Socket buffer size in bytes for data channel.

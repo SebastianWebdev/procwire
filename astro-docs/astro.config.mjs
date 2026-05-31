@@ -58,7 +58,7 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: "Procwire",
           description:
-            "Documentation for Procwire v2 - high-performance binary IPC for Node.js (Protocol, Core, Client, Codecs).",
+            "Documentation for Procwire - high-performance binary IPC for Node.js (Protocol, Core, Client, Codecs).",
           details: `
 Key Architectural Concepts:
 - Procwire uses dual-channel architecture: Control Plane (JSON-RPC via stdio) + Data Plane (binary protocol via named pipes).

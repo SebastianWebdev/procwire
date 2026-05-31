@@ -60,12 +60,14 @@ type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
  */
 export class Client extends EventEmitter {
   private _defaultCodec: Codec;
+  private readonly _maxPayloadSize?: number;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
 
   private _server: BunServer | null = null;
   private _socket: BunSocket | null = null;
   private _frameBuffer: FrameBuffer | null = null;
+  private _controlReaderStopped = false;
 
   private _methodNameToId = new Map<string, number>();
   private _methodIdToName = new Map<number, string>();
@@ -87,6 +89,9 @@ export class Client extends EventEmitter {
   constructor(options?: ClientOptions) {
     super();
     this._defaultCodec = options?.defaultCodec ?? msgpackCodec;
+    if (options?.maxPayloadSize !== undefined) {
+      this._maxPayloadSize = options.maxPayloadSize;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -216,6 +221,56 @@ export class Client extends EventEmitter {
 
     // Send $init to parent (via stdout, JSON-RPC control plane)
     this._sendInit(pipePath);
+
+    // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
+    void this._startControlReader();
+  }
+
+  /**
+   * @internal Read the parent's control plane (stdin) line by line.
+   */
+  private async _startControlReader(): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for await (const chunk of Bun.stdin.stream()) {
+        if (this._controlReaderStopped) break;
+        buffer += decoder.decode(chunk as Uint8Array);
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          this._handleControlLine(line);
+        }
+      }
+    } catch {
+      // stdin closed / unreadable - nothing more to do.
+    }
+  }
+
+  /**
+   * @internal Handle one line from the parent's control plane (stdin).
+   *
+   * Currently answers heartbeat pings; unknown/non-JSON lines are ignored.
+   */
+  private _handleControlLine(line: string): void {
+    if (!line.startsWith("{")) return;
+    try {
+      const msg = JSON.parse(line) as { method?: string };
+      if (msg.method === "$ping") {
+        this._sendControl({ jsonrpc: "2.0", method: "$pong" });
+      } else if (msg.method === "$shutdown") {
+        // Parent asked us to stop: shut down cleanly so it doesn't have to
+        // force-kill us after its grace period.
+        void this.shutdown();
+      }
+    } catch {
+      // Ignore non-JSON / malformed control lines.
+    }
+  }
+
+  /** Write a JSON-RPC control message to the parent over stdout. */
+  private _sendControl(message: unknown): void {
+    console.log(JSON.stringify(message));
   }
 
   /**
@@ -251,6 +306,7 @@ export class Client extends EventEmitter {
    * Graceful shutdown.
    */
   async shutdown(): Promise<void> {
+    this._controlReaderStopped = true;
     this._socket?.end();
     this._server?.stop(true);
     this._drainWaiter?.clear();
@@ -311,25 +367,16 @@ export class Client extends EventEmitter {
           unix: pipePath,
           socket: {
             open: (socket: BunSocket) => {
-              // Parent connected
-              this._socket = socket;
-              this._drainWaiter = new BunDrainWaiter();
-              this._frameBuffer = new FrameBuffer();
+              this._onConnectionOpen(socket);
             },
-            data: (_socket: BunSocket, data: Buffer) => {
-              // Handle incoming data
-              if (!this._frameBuffer) return;
-              const frames = this._frameBuffer.push(data);
-              for (const frame of frames) {
-                this._handleFrame(frame);
-              }
+            data: (socket: BunSocket, data: Buffer) => {
+              this._onSocketData(socket, data);
             },
             error: (_socket: BunSocket, err: Error) => {
-              this.emit("error", err);
+              this._onSocketError(err);
             },
             close: (_socket: BunSocket) => {
-              this._drainWaiter?.clear();
-              this.emit("disconnected");
+              this._onConnectionClose();
             },
             drain: (_socket: BunSocket) => {
               // Backpressure released
@@ -344,6 +391,94 @@ export class Client extends EventEmitter {
         reject(error);
       }
     });
+  }
+
+  /**
+   * @internal Handle a new parent connection.
+   *
+   * Single-parent model: the parent connects exactly once. Reject any extra or
+   * stray connection rather than overwriting (and corrupting) the active
+   * connection's in-flight state.
+   */
+  private _onConnectionOpen(socket: BunSocket): void {
+    if (this._socket) {
+      socket.end();
+      return;
+    }
+    this._socket = socket;
+    this._drainWaiter = new BunDrainWaiter();
+    this._frameBuffer = new FrameBuffer(
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
+    );
+  }
+
+  /**
+   * @internal Process inbound bytes into frames.
+   *
+   * Wrapped in try/catch so an oversized/invalid frame (e.g. a payload above
+   * maxPayloadSize) drops the connection instead of throwing out of the socket
+   * data handler and crashing the child.
+   */
+  private _onSocketData(socket: BunSocket, data: Buffer): void {
+    if (!this._frameBuffer) return;
+    let frames;
+    try {
+      frames = this._frameBuffer.push(data);
+    } catch (err) {
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err as Error);
+      }
+      socket.end();
+      return;
+    }
+    for (const frame of frames) {
+      this._handleFrame(frame);
+    }
+  }
+
+  /**
+   * @internal Tear down per-connection state when the parent disconnects.
+   *
+   * In-flight requests are abandoned by the parent on disconnect, so we abort
+   * their contexts, fire their onAbort callbacks (user cleanup: close cursors,
+   * kill queries), drop all references so nothing leaks, and emit "disconnected".
+   */
+  private _onConnectionClose(): void {
+    this._drainWaiter?.clear();
+
+    for (const ctx of this._activeContexts.values()) {
+      ctx._markAborted();
+    }
+    for (const callbacks of this._abortCallbacks.values()) {
+      for (const cb of callbacks) {
+        try {
+          cb();
+        } catch {
+          /* ignore - user cleanup errors must not block teardown */
+        }
+      }
+    }
+    this._activeContexts.clear();
+    this._abortCallbacks.clear();
+
+    this._socket = null;
+    this._frameBuffer = null;
+    this._drainWaiter = null;
+
+    this.emit("disconnected");
+  }
+
+  /**
+   * @internal Handle a socket error.
+   *
+   * EventEmitter throws synchronously when "error" is emitted with no listener,
+   * which would crash the whole child process. Only emit when someone is
+   * listening; the subsequent "close" still drives disconnect handling.
+   */
+  private _onSocketError(err: Error): void {
+    if (this.listenerCount("error") > 0) {
+      this.emit("error", err);
+    }
   }
 
   private _sendInit(pipePath: string): void {
@@ -371,7 +506,7 @@ export class Client extends EventEmitter {
       params: {
         pipe: pipePath,
         schema,
-        version: "2.0.0",
+        version: "1.0.0",
       },
     };
 

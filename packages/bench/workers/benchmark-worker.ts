@@ -137,6 +137,34 @@ const client = new Client()
       await ctx.ack();
     },
     { response: "ack", codec: arrowCodec },
+  )
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BACKPRESSURE FLOOD (D2 receive-side test)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Emits a large number of chunks as fast as send-side backpressure allows.
+  // A slow consumer on the parent lets the receive queue grow; with D2 the
+  // socket is paused past the high-water mark, bounding parent memory.
+  .handle(
+    "stream_flood",
+    async (_data, ctx) => {
+      const chunkSize = Number(process.env.FLOOD_CHUNK_SIZE ?? 32 * 1024);
+      const chunks = Number(process.env.FLOOD_CHUNKS ?? 3000);
+      // FLOOD_NOWAIT: a misbehaving producer that ignores send-side backpressure
+      // (does not await drain). This is the case D2's receive-side flow control
+      // protects against - without it the consumer's queue grows unbounded.
+      const noWait = process.env.FLOOD_NOWAIT === "1";
+      const buf = Buffer.allocUnsafe(chunkSize);
+      for (let i = 0; i < chunks; i++) {
+        if (noWait) {
+          void ctx.chunk(buf);
+        } else {
+          await ctx.chunk(buf);
+        }
+      }
+      await ctx.end();
+    },
+    { response: "stream", codec: rawCodec },
   );
 
 await client.start();

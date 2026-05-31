@@ -12,9 +12,15 @@
  * Base error class for all Procwire errors.
  */
 export class ProcwireError extends Error {
-  constructor(message: string) {
+  /** The original error payload from the child, when one was provided. */
+  readonly data?: unknown;
+
+  constructor(message: string, data?: unknown) {
     super(message);
     this.name = "ProcwireError";
+    if (data !== undefined) {
+      this.data = data;
+    }
   }
 }
 
@@ -70,8 +76,33 @@ export const ModuleErrors = {
   unknownEvent: (eventName: string) => new ProcwireError(`Unknown event: ${eventName}`),
 
   /** Remote error from child */
-  remoteError: (errorData: unknown) => new ProcwireError(String(errorData)),
+  remoteError: (errorData: unknown) => new ProcwireError(extractErrorMessage(errorData), errorData),
 } as const;
+
+/**
+ * Derive a human-readable message from a remote error payload.
+ *
+ * The child usually sends a string, but a structured object (e.g. with a
+ * `message` field) must not collapse to "[object Object]" via String().
+ */
+function extractErrorMessage(errorData: unknown): string {
+  if (typeof errorData === "string") {
+    return errorData;
+  }
+  if (
+    errorData !== null &&
+    typeof errorData === "object" &&
+    "message" in errorData &&
+    typeof (errorData as { message: unknown }).message === "string"
+  ) {
+    return (errorData as { message: string }).message;
+  }
+  try {
+    return JSON.stringify(errorData) ?? String(errorData);
+  } catch {
+    return String(errorData);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MANAGER ERRORS
@@ -122,4 +153,8 @@ export const ManagerErrors = {
 
   /** Too many restarts */
   tooManyRestarts: () => new ProcwireError("Too many restarts, giving up"),
+
+  /** Heartbeat timed out - child unresponsive */
+  heartbeatTimeout: (name: string, timeoutMs: number) =>
+    new ProcwireError(`Module "${name}" missed heartbeat (no response within ${timeoutMs}ms)`),
 } as const;
