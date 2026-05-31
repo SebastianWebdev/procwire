@@ -203,3 +203,42 @@ describe("Bug P2: error responses must not reuse a queued pooled header", () => 
     expect(firstHeader.readUInt32BE(3)).toBe(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C4b: the Client ignored the maxPayloadSize option - it always created a
+// FrameBuffer with the default (1GB) limit, so a hostile/buggy parent could
+// declare a huge payload and exhaust memory. The option must be honored, and an
+// oversized frame must drop the connection instead of crashing the child.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C4b: client must honor maxPayloadSize", () => {
+  it("drops the connection on a frame exceeding maxPayloadSize (no crash)", () => {
+    const client = new Client({ maxPayloadSize: 100 });
+    const internals = client as unknown as ClientInternals;
+
+    const socket = createMockSocket();
+    internals._handleConnection(socket as unknown as Socket);
+
+    // A frame declaring a 200-byte payload exceeds the 100-byte limit.
+    const oversized = buildFrame({ methodId: 999, flags: 0, requestId: 1 }, Buffer.alloc(200));
+
+    // Fixed: FrameBuffer throws -> caught -> socket destroyed (no crash).
+    // Buggy: option ignored -> default 1GB limit -> frame accepted, no destroy.
+    expect(() => socket.emit("data", oversized)).not.toThrow();
+    expect(socket.destroy).toHaveBeenCalled();
+  });
+
+  it("accepts a frame within maxPayloadSize", () => {
+    const client = new Client({ maxPayloadSize: 1000 });
+    const internals = client as unknown as ClientInternals;
+
+    const socket = createMockSocket();
+    internals._handleConnection(socket as unknown as Socket);
+
+    const ok = buildFrame(
+      { methodId: 999, flags: 0, requestId: 1 },
+      msgpackCodec.serialize({ x: 1 }),
+    );
+    expect(() => socket.emit("data", ok)).not.toThrow();
+    expect(socket.destroy).not.toHaveBeenCalled();
+  });
+});

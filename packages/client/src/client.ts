@@ -88,6 +88,7 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   declare readonly __schema: S;
 
   private _defaultCodec: Codec;
+  private readonly _maxPayloadSize?: number;
   private _methods = new Map<string, { def: MethodDefinition; handler: MethodHandler }>();
   private _events = new Map<string, EventDefinition>();
 
@@ -115,6 +116,9 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
   constructor(options?: ClientOptions) {
     super();
     this._defaultCodec = options?.defaultCodec ?? msgpackCodec;
+    if (options?.maxPayloadSize !== undefined) {
+      this._maxPayloadSize = options.maxPayloadSize;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -345,12 +349,25 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
 
     this._socket = socket;
     this._drainWaiter = new DrainWaiter(socket);
-    this._frameBuffer = new FrameBuffer();
+    this._frameBuffer = new FrameBuffer(
+      this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
+    );
 
     socket.on("data", (chunk: Buffer) => {
       // Guard: a late "data" event can fire after _handleDisconnect() niled it.
       if (!this._frameBuffer) return;
-      const frames = this._frameBuffer.push(chunk);
+      let frames;
+      try {
+        frames = this._frameBuffer.push(chunk);
+      } catch (err) {
+        // Oversized/invalid frame (e.g. payload exceeds maxPayloadSize). Drop the
+        // connection instead of letting the throw crash the child process.
+        if (this.listenerCount("error") > 0) {
+          this.emit("error", err as Error);
+        }
+        socket.destroy();
+        return;
+      }
       for (const frame of frames) {
         this._handleFrame(frame);
       }
