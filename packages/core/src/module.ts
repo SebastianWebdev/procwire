@@ -71,7 +71,7 @@ interface PendingRequest {
   /** Expected response type: "ack" or "result" */
   expectedResponse: "ack" | "result";
   /** Removes the AbortSignal listener, if one was registered. */
-  abortCleanup?: () => void;
+  abortCleanup?: (() => void) | undefined;
 }
 
 interface PendingStream {
