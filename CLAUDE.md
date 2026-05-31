@@ -18,8 +18,8 @@ The data plane uses a binary protocol (zero JSON); the control plane uses JSON-R
 - `@procwire/codecs` - rawCodec, msgpackCodec, arrowCodec
 - `@procwire/core` - Parent-side: ModuleManager, Module
 - `@procwire/client` - Child-side: Client, RequestContext
-- `@procwire-bun/core` - Parent-side for Bun.js
-- `@procwire-bun/client` - Child-side for Bun.js
+- `@procwire/bun-core` - Parent-side for Bun.js
+- `@procwire/bun-client` - Child-side for Bun.js
 - `packages/bench` - Benchmarks (not published to npm)
 
 ## Architecture
@@ -77,8 +77,8 @@ The `pnpm changeset` command requires an interactive CLI which Claude Code canno
 
 ```markdown
 ---
-"@procwire/transport": minor
-"@procwire/codec-msgpack": patch
+"@procwire/core": minor
+"@procwire/codecs": patch
 ---
 
 Description of the changes. Use `minor` for new features, `patch` for bug fixes, `major` for breaking changes.

@@ -30,4 +30,4 @@ pnpm add @procwire/protocol
 
 ## Quick Start
 
-Documentation coming soon. For development progress, see the [GitHub repository](https://github.com/SebastianWebdev/ipc-bridge-core).
+Documentation coming soon. For development progress, see the [GitHub repository](https://github.com/SebastianWebdev/procwire).
