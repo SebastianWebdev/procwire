@@ -328,6 +328,19 @@ export class Module extends EventEmitter {
   }
 
   /**
+   * Allocate the next request id, wrapping within the uint32 wire range.
+   *
+   * requestId is encoded as a uint32; a plain counter would overflow after
+   * 2^32 requests and make encoding throw. Wrap back to 1 (0 is reserved for
+   * fire-and-forget / events).
+   */
+  private _allocateRequestId(): number {
+    const id = this._nextRequestId;
+    this._nextRequestId = id >= 0xffffffff ? 1 : id + 1;
+    return id;
+  }
+
+  /**
    * @internal Called by socket close handler from ModuleManager.
    */
   _onSocketClose(): void {
@@ -451,7 +464,7 @@ export class Module extends EventEmitter {
       return undefined as TResponse;
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
     // Abort handling
     if (options?.signal && methodConfig.cancellable) {
@@ -534,7 +547,7 @@ export class Module extends EventEmitter {
       throw ModuleErrors.methodNotStream(method, schemaMethod.response);
     }
 
-    const requestId = this._nextRequestId++;
+    const requestId = this._allocateRequestId();
 
     // ⚠️ TODO: Implement Backpressure
     // Current implementation uses unbounded in-memory queue.

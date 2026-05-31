@@ -9,6 +9,8 @@ import { Module } from "../src/index.js";
 
 interface ModuleInternals {
   _onSocketError(err: Error): void;
+  _nextRequestId: number;
+  _allocateRequestId(): number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,5 +38,22 @@ describe("Bug C5 (bun-core): unobserved socket error must not crash the process"
     const err = new Error("EPIPE");
     expect(() => (mod as unknown as ModuleInternals)._onSocketError(err)).not.toThrow();
     expect(caught).toBe(err);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C6 (bun-core): requestId is a uint32 on the wire but _nextRequestId++
+// never wrapped. After 2^32 requests the encoder would overflow and every send
+// would break. The id must wrap within the uint32 range and skip 0 (reserved).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C6 (bun-core): requestId must wrap at the uint32 boundary", () => {
+  it("wraps to a non-zero id instead of overflowing past uint32", () => {
+    const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+    const internals = mod as unknown as ModuleInternals;
+
+    internals._nextRequestId = 0xffffffff;
+    expect(internals._allocateRequestId()).toBe(0xffffffff); // last valid uint32
+    expect(internals._allocateRequestId()).toBe(1); // wrapped, skipping reserved 0
+    expect(internals._allocateRequestId()).toBe(2);
   });
 });
