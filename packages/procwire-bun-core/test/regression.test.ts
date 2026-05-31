@@ -5,7 +5,7 @@
  * PASS once the fix is applied. These mirror the @procwire/core fixes.
  */
 import { describe, it, expect, spyOn, jest } from "bun:test";
-import { Module, ModuleErrors } from "../src/index.js";
+import { Module, ModuleErrors, ModuleManager } from "../src/index.js";
 
 interface ModuleInternals {
   _onSocketError(err: Error): void;
@@ -170,6 +170,51 @@ describe("Bug C2 (bun-core): a default request timeout bounds hanging requests",
       jest.advanceTimersByTime(120_000);
       await flush();
       expect(outcome).toBe("pending"); // never times out
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug C10 (bun-core): a crashed module schedules a restart after a delay.
+// shutdown() resets isShuttingDown on return and restart timers were untracked,
+// so a restart firing after shutdown completed would resurrect the module.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug C10 (bun-core): shutdown must cancel a pending crash-restart", () => {
+  it("does not resurrect a module when shutdown races the restart delay", async () => {
+    jest.useFakeTimers();
+    try {
+      const manager = new ModuleManager();
+      manager.on("module:error", () => {}); // swallow crash/error events
+
+      const mod = new Module("worker")
+        .executable("bun", ["x.ts"])
+        .method("foo")
+        .spawnPolicy({ restartOnCrash: true });
+      manager.register(mod);
+      mod._setState("ready");
+
+      const spawnSpy = spyOn(
+        manager as unknown as { spawnModule: (n: string) => Promise<void> },
+        "spawnModule",
+      ).mockImplementation(() => Promise.resolve());
+
+      // Simulate a crash of a ready module -> schedules a restart after a delay.
+      (
+        manager as unknown as {
+          handleProcessExit: (m: Module, c: number | null, s: string | null) => void;
+        }
+      ).handleProcessExit(mod, 1, null);
+
+      // Shut down while the restart is still pending.
+      const shutdownDone = manager.shutdown();
+      jest.advanceTimersByTime(5000);
+      await shutdownDone;
+      await flush();
+
+      // Fixed: the pending restart was cancelled -> no re-spawn.
+      expect(spawnSpy).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }

@@ -113,6 +113,10 @@ export class ModuleManager extends EventEmitter {
   private readonly modules = new Map<string, Module>();
   private readonly restartTimestamps = new Map<string, number[]>();
   private readonly stdoutAbortControllers = new Map<string, AbortController>();
+  // Pending crash-restart timers, kept so they can be cancelled on shutdown to
+  // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
+  // the isShuttingDown window, which is reset when shutdown() returns).
+  private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private isShuttingDown = false;
 
   /**
@@ -590,12 +594,37 @@ export class ModuleManager extends EventEmitter {
   /**
    * Restart a module.
    */
-  private async restartModule(module: Module): Promise<void> {
-    // Wait a bit before restart
-    await this.sleep(RESTART_WAIT_DELAY_MS);
+  private restartModule(module: Module): Promise<void> {
+    // Wait a bit before restart, using a tracked timer so shutdown() can cancel it.
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.restartTimers.delete(module.name);
 
-    // Re-spawn with retry logic
-    await this.spawnModule(module.name);
+        // Bail if the module was shut down (or closed) during the delay; the
+        // isShuttingDown flag is reset once shutdown() returns, so the module
+        // state is the reliable signal here.
+        if (this.isShuttingDown || module.state === "closed") {
+          resolve();
+          return;
+        }
+
+        // Re-spawn with retry logic.
+        this.spawnModule(module.name).then(resolve, reject);
+      }, RESTART_WAIT_DELAY_MS);
+
+      this.restartTimers.set(module.name, timer);
+    });
+  }
+
+  /**
+   * Cancel a pending crash-restart timer, if any.
+   */
+  private cancelRestart(name: string): void {
+    const timer = this.restartTimers.get(name);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.restartTimers.delete(name);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -608,6 +637,9 @@ export class ModuleManager extends EventEmitter {
   private async shutdownModule(name: string): Promise<void> {
     const module = this.modules.get(name);
     if (!module) return;
+
+    // Cancel any pending crash-restart so the module isn't resurrected.
+    this.cancelRestart(name);
 
     const proc = module.process;
     if (!proc) {
