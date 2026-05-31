@@ -324,28 +324,65 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
 
   private _createPipeServer(pipePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this._server = createServer((socket) => {
-        this._socket = socket;
-        this._drainWaiter = new DrainWaiter(socket);
-        this._frameBuffer = new FrameBuffer();
-
-        socket.on("data", (chunk: Buffer) => {
-          const frames = this._frameBuffer!.push(chunk);
-          for (const frame of frames) {
-            this._handleFrame(frame);
-          }
-        });
-
-        socket.on("error", (err) => this.emit("error", err));
-        socket.on("close", () => {
-          this._drainWaiter?.clear();
-          this.emit("disconnected");
-        });
-      });
+      this._server = createServer((socket) => this._handleConnection(socket));
 
       this._server.on("error", reject);
       this._server.listen(pipePath, () => resolve());
     });
+  }
+
+  /**
+   * @internal Wire up a freshly accepted connection.
+   */
+  private _handleConnection(socket: Socket): void {
+    this._socket = socket;
+    this._drainWaiter = new DrainWaiter(socket);
+    this._frameBuffer = new FrameBuffer();
+
+    socket.on("data", (chunk: Buffer) => {
+      // Guard: a late "data" event can fire after _handleDisconnect() niled it.
+      if (!this._frameBuffer) return;
+      const frames = this._frameBuffer.push(chunk);
+      for (const frame of frames) {
+        this._handleFrame(frame);
+      }
+    });
+
+    socket.on("error", (err) => this.emit("error", err));
+    socket.on("close", () => this._handleDisconnect());
+  }
+
+  /**
+   * @internal Tear down all per-connection state when the socket drops.
+   *
+   * In-flight requests are abandoned by the parent on disconnect, so we abort
+   * their contexts, fire their onAbort callbacks (user cleanup: close cursors,
+   * kill queries), and drop all references so nothing leaks.
+   */
+  private _handleDisconnect(): void {
+    this._drainWaiter?.clear();
+
+    // Abort in-flight requests and fire their cancellation callbacks.
+    for (const ctx of this._activeContexts.values()) {
+      ctx._markAborted();
+    }
+    for (const callbacks of this._abortCallbacks.values()) {
+      for (const cb of callbacks) {
+        try {
+          cb();
+        } catch {
+          /* ignore - user cleanup errors must not block teardown */
+        }
+      }
+    }
+    this._activeContexts.clear();
+    this._abortCallbacks.clear();
+
+    this._socket = null;
+    this._frameBuffer = null;
+    this._drainWaiter = null;
+
+    this.emit("disconnected");
   }
 
   private _sendInit(pipePath: string): void {
