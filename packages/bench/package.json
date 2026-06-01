@@ -1,6 +1,6 @@
 {
   "name": "@procwire/bench",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Benchmark suite for Procwire IPC library - real-world performance testing.",
   "keywords": [
     "benchmark",

@@ -1,6 +1,6 @@
 {
   "name": "@procwire/bun-client",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Child-side client for Procwire IPC (Bun.js optimized)",
   "keywords": [
     "ipc",
