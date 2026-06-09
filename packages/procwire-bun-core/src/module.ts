@@ -577,7 +577,15 @@ export class Module extends EventEmitter {
     });
 
     // Send frame AFTER registering pending request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (error) {
+      // The request never hit the wire. Drop the pending entry NOW: otherwise
+      // its timeout timer (or a later _detach) would reject responsePromise,
+      // which no caller observes -> unhandled rejection -> process death.
+      this._cleanupRequest(requestId);
+      throw error;
+    }
 
     return responsePromise;
   }
@@ -671,7 +679,15 @@ export class Module extends EventEmitter {
     }
 
     // Send request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (sendError) {
+      // The request never hit the wire: release the stream entry and the
+      // abort listener registered above, or they leak until _detach.
+      this._pendingStreams.delete(requestId);
+      abortCleanup?.();
+      throw sendError;
+    }
 
     // Yield chunks
     try {
@@ -848,20 +864,18 @@ export class Module extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, so concatenate buffers for atomic write
+    // Bun doesn't have cork/uncork, so concatenate buffers for atomic write.
+    // writeAll honors Bun's numeric write() return: partial writes are
+    // re-sent after drain instead of being silently dropped.
     const combined = Buffer.concat([headerBuf, payload]);
-    const canContinue = this._socket!.write(combined);
-
-    // OPT-04: Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter!.markNeedsDrain();
-      await this._drainWaiter!.waitForDrain();
-    }
+    await this._drainWaiter!.writeAll(this._socket!, combined);
   }
 
   private async _sendAbort(requestId: number): Promise<void> {
-    // OPT-02: Ring buffer for allocation-free headers
-    const headerBuf = this._acquireHeaderBuffer();
+    // Fresh buffer (not the ring pool): writeAll can suspend on drain while
+    // holding a reference, and a pooled slot could be reused by a concurrent
+    // send in the meantime.
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {
       methodId: ABORT_METHOD_ID,
@@ -870,13 +884,7 @@ export class Module extends EventEmitter {
       payloadLength: 0,
     });
 
-    const canContinue = this._socket!.write(headerBuf);
-
-    // Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter!.markNeedsDrain();
-      await this._drainWaiter!.waitForDrain();
-    }
+    await this._drainWaiter!.writeAll(this._socket!, headerBuf);
   }
 
   private _cleanupRequest(requestId: number): void {
