@@ -15,7 +15,9 @@ interface ModuleInternals {
   _allocateRequestId(): number;
 }
 
-const mockSocket = (): never => ({ write: () => true, end: () => {} }) as never;
+// Faithful to Bun semantics: write() returns the number of bytes written.
+const mockSocket = (): never =>
+  ({ write: (d: { length: number }) => d.length, end: () => {} }) as never;
 
 function readyModule(): Module {
   const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
@@ -110,7 +112,7 @@ describe("Bug C7 (bun-core): abort listener must be removed when a request settl
       .method("foo", { cancellable: true });
     mod._setState("ready");
     mod._attachSchema({ methods: { foo: { id: 1, response: "result" } }, events: {} });
-    mod._attachDataChannel({ write: () => true, end: () => {} } as never);
+    mod._attachDataChannel({ write: (d: { length: number }) => d.length, end: () => {} } as never);
 
     const controller = new AbortController();
     const removeSpy = spyOn(controller.signal, "removeEventListener");
@@ -284,7 +286,7 @@ describe("Bug D2 (bun-core): stream backpressure pauses/resumes the socket", () 
     let paused = 0;
     let resumed = 0;
     mod._attachDataChannel({
-      write: () => true,
+      write: (d: { length: number }) => d.length,
       end: () => {},
       pause: () => {
         paused++;
