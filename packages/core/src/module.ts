@@ -585,7 +585,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     });
 
     // Send frame AFTER registering pending request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (error) {
+      // The request never hit the wire. Drop the pending entry NOW: otherwise
+      // its timeout timer (or a later _detach) would reject responsePromise,
+      // which no caller observes -> unhandled rejection -> process death.
+      this._cleanupRequest(requestId);
+      throw error;
+    }
 
     return responsePromise;
   }
@@ -689,7 +697,15 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     }
 
     // Send request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (sendError) {
+      // The request never hit the wire: release the stream entry and the
+      // abort listener registered above, or they leak until _detach.
+      this._pendingStreams.delete(requestId);
+      abortCleanup?.();
+      throw sendError;
+    }
 
     // Yield chunks
     try {

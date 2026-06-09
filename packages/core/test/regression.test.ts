@@ -602,3 +602,135 @@ describe("Feature D1 (core): heartbeat detects an unresponsive child", () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug S1: a failed _sendFrame in send()/stream() must clean up the pending
+// state it registered before the send.
+//
+// send() registers the pending request (with its timeout timer) BEFORE
+// awaiting _sendFrame. When the send itself fails (codec.serialize throws, or
+// the drain wait rejects because the socket closed under backpressure), the
+// caller gets the send error - but the orphaned responsePromise is later
+// rejected by the timeout timer / _detach with NO observer attached. That is
+// an unhandled promise rejection, which kills the parent process by default,
+// even when the caller correctly try/catches send().
+// stream() has the same shape: the _pendingStreams entry and the abort
+// listener leak when the initial send fails.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug S1: failed send must not orphan pending state", () => {
+  const bombCodec = {
+    name: "bomb",
+    serialize: (): Buffer => {
+      throw new Error("serialize boom");
+    },
+    deserialize: (data: Buffer): unknown => data,
+  };
+
+  function setupWithBomb(): { mod: Module; socket: Socket & EventEmitter } {
+    const mod = new Module("worker")
+      .executable("node", ["index.js"])
+      .requestTimeout(50)
+      .method("foo", { response: "result", codec: bombCodec })
+      .method("bar", { response: "stream", codec: bombCodec, cancellable: true });
+
+    mod._setState("ready");
+    mod._attachSchema({
+      methods: {
+        foo: { id: 1, response: "result" },
+        bar: { id: 2, response: "stream" },
+      },
+      events: {},
+    });
+
+    const socket = createMockSocket();
+    mod._attachDataChannel(socket);
+    return { mod, socket };
+  }
+
+  function pendingRequestsOf(mod: Module): Map<number, unknown> {
+    return (mod as unknown as { _pendingRequests: Map<number, unknown> })._pendingRequests;
+  }
+
+  function pendingStreamsOf(mod: Module): Map<number, unknown> {
+    return (mod as unknown as { _pendingStreams: Map<number, unknown> })._pendingStreams;
+  }
+
+  it("send(): serialize failure rejects, clears the pending entry, and leaves no unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const { mod } = setupWithBomb();
+
+      await expect(mod.send("foo", { x: 1 })).rejects.toThrow("serialize boom");
+
+      // The pending entry (and its timeout timer) must be gone immediately.
+      expect(pendingRequestsOf(mod).size).toBe(0);
+
+      // Wait past the 50ms request timeout: a leaked timer would reject the
+      // orphaned responsePromise here and surface as an unhandled rejection.
+      await new Promise((r) => setTimeout(r, 150));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("send(): drain-wait rejection (socket closed under backpressure) also cleans up", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const mod = new Module("worker")
+        .executable("node", ["index.js"])
+        .requestTimeout(50)
+        .method("foo", { response: "result", codec: msgpackCodec });
+
+      mod._setState("ready");
+      mod._attachSchema({
+        methods: { foo: { id: 1, response: "result" } },
+        events: {},
+      });
+
+      const socket = createMockSocket();
+      (socket.write as ReturnType<typeof vi.fn>).mockReturnValue(false); // backpressure
+      // A real socket whose write() returned false reports writableNeedDrain,
+      // which is what makes waitForDrain() actually wait.
+      (socket as unknown as { writableNeedDrain: boolean }).writableNeedDrain = true;
+      mod._attachDataChannel(socket);
+
+      // send() runs synchronously up to the drain wait (write happens first).
+      const sendPromise = mod.send("foo", { x: 1 });
+
+      // Closing the socket rejects the drain waiter -> _sendFrame rejects.
+      socket.emit("close");
+
+      await expect(sendPromise).rejects.toThrow(/closed/i);
+      expect(pendingRequestsOf(mod).size).toBe(0);
+
+      await new Promise((r) => setTimeout(r, 150));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("stream(): serialize failure cleans the stream entry and removes the abort listener", async () => {
+    const { mod } = setupWithBomb();
+
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+
+    const gen = mod.stream("bar", { x: 1 }, { signal: controller.signal });
+    await expect(gen.next()).rejects.toThrow("serialize boom");
+
+    expect(pendingStreamsOf(mod).size).toBe(0);
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
