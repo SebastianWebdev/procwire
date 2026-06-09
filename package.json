@@ -10,6 +10,7 @@
     "test": "pnpm --filter \"!astro-docs\" --if-present run test",
     "lint": "eslint .",
     "format": "prettier -w .",
+    "format:check": "prettier --check .",
     "ci": "pnpm lint && pnpm build && pnpm typecheck && pnpm test",
     "changeset": "changeset",
     "version-packages": "changeset version",
