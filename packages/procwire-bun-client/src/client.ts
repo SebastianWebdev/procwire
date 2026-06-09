@@ -363,6 +363,12 @@ export class Client extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         // Create server using Bun.listen with unix socket
+        // Bun.listen shares ONE handler object across ALL connections, so
+        // every handler must check WHICH socket fired. Without the identity
+        // checks, a stray connection (rejected in _onConnectionOpen) would
+        // tear down or poison the ACTIVE parent session: its close event ran
+        // _onConnectionClose() against the live session, and its data fed the
+        // active FrameBuffer.
         this._server = Bun.listen({
           unix: pipePath,
           socket: {
@@ -372,15 +378,21 @@ export class Client extends EventEmitter {
             data: (socket: BunSocket, data: Buffer) => {
               this._onSocketData(socket, data);
             },
-            error: (_socket: BunSocket, err: Error) => {
-              this._onSocketError(err);
+            error: (socket: BunSocket, err: Error) => {
+              if (socket === this._socket) {
+                this._onSocketError(err);
+              }
             },
-            close: (_socket: BunSocket) => {
-              this._onConnectionClose();
+            close: (socket: BunSocket) => {
+              if (socket === this._socket) {
+                this._onConnectionClose();
+              }
             },
-            drain: (_socket: BunSocket) => {
-              // Backpressure released
-              this._drainWaiter?.onDrain();
+            drain: (socket: BunSocket) => {
+              // Backpressure released (only the active session's waiter)
+              if (socket === this._socket) {
+                this._drainWaiter?.onDrain();
+              }
             },
           },
         });
@@ -420,6 +432,9 @@ export class Client extends EventEmitter {
    * data handler and crashing the child.
    */
   private _onSocketData(socket: BunSocket, data: Buffer): void {
+    // Only the active session may feed the frame buffer: bytes from a stray
+    // (rejected) connection would desync the framing of the live session.
+    if (socket !== this._socket) return;
     if (!this._frameBuffer) return;
     let frames;
     try {
@@ -612,7 +627,7 @@ export class Client extends EventEmitter {
   }
 
   private _sendErrorResponse(requestId: number, methodId: number, message: string): void {
-    if (!this._socket) return;
+    if (!this._socket || !this._drainWaiter) return;
 
     const payload = this._defaultCodec.serialize(message);
     const headerBuf = this._acquireHeaderBuffer();
@@ -624,9 +639,13 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, concatenate for atomic write
+    // Bun doesn't have cork/uncork, concatenate for atomic write.
+    // Fire-and-forget, but still via writeAll so a partial write cannot
+    // truncate the frame and desync the parent's framing.
     const combined = Buffer.concat([headerBuf, payload]);
-    this._socket.write(combined);
+    this._drainWaiter.writeAll(this._socket, combined).catch(() => {
+      /* socket may be closed - the close handler tears the session down */
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -658,14 +677,10 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, concatenate for atomic write
+    // Bun doesn't have cork/uncork, concatenate for atomic write.
+    // writeAll honors Bun's numeric write() return: partial writes are
+    // re-sent after drain instead of being silently dropped.
     const combined = Buffer.concat([headerBuf, payload]);
-    const canContinue = this._socket.write(combined);
-
-    // OPT-04: Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter.markNeedsDrain();
-      await this._drainWaiter.waitForDrain();
-    }
+    await this._drainWaiter.writeAll(this._socket, combined);
   }
 }
