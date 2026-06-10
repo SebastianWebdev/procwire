@@ -11,7 +11,7 @@ import type { Socket } from "node:net";
 import { Module } from "../src/module.js";
 import { ModuleManager } from "../src/manager.js";
 import { msgpackCodec } from "@procwire/codecs";
-import { buildFrame, Flags } from "@procwire/protocol";
+import { buildFrame, encodeHeader, Flags } from "@procwire/protocol";
 
 /**
  * Mock socket usable as a net.Socket in tests.
@@ -532,7 +532,13 @@ describe("Feature D1 (core): heartbeat detects an unresponsive child", () => {
       .executable("node", ["x.js"])
       .method("foo", { codec: msgpackCodec });
     manager.register(mod);
-    const proc = { stdin: { writable: true, write: vi.fn() }, kill: vi.fn(), killed: false };
+    // Real proc.stdin is a Writable (an EventEmitter) - the fake must be too,
+    // since the manager guards it with listenerCount/on (Bug W2 fix).
+    const proc = {
+      stdin: Object.assign(new EventEmitter(), { writable: true, write: vi.fn() }),
+      kill: vi.fn(),
+      killed: false,
+    };
     mod._attachProcess(proc as never);
     mod._setState("ready");
     return { manager, mod, proc };
@@ -732,5 +738,263 @@ describe("Bug S1: failed send must not orphan pending state", () => {
 
     expect(pendingStreamsOf(mod).size).toBe(0);
     expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W1 (core): the parent's data-plane receive path had no try/catch.
+//
+// FrameBuffer.push() throws on an oversized frame (protocol error / attack),
+// and codec deserialization throws on corrupt payloads. Both ran bare inside
+// the socket "data" handler, so one malformed frame from a child became an
+// uncaughtException that killed the parent - the supervisor of ALL modules.
+// The child side already had exactly this hardening (Bug C4b); the parent
+// was left unprotected.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W1 (core): malformed child frames must not crash the parent", () => {
+  it("drops the connection instead of throwing when a frame exceeds maxPayloadSize", () => {
+    const { mod, socket } = setupReadyModule();
+
+    const onError = vi.fn();
+    mod.on("error", onError);
+
+    // 2GB-1 payload length > default 1GB FrameBuffer limit -> push() throws.
+    const oversized = encodeHeader({
+      methodId: 1,
+      flags: 0,
+      requestId: 1,
+      payloadLength: 2 * 1024 * 1024 * 1024 - 1,
+    });
+
+    expect(() => socket.emit("data", oversized)).not.toThrow();
+
+    // The framing state is poisoned -> the connection must be dropped.
+    expect(socket.destroy).toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw when no 'error' listener is attached either", () => {
+    const { socket } = setupReadyModule();
+
+    const oversized = encodeHeader({
+      methodId: 1,
+      flags: 0,
+      requestId: 1,
+      payloadLength: 2 * 1024 * 1024 * 1024 - 1,
+    });
+
+    expect(() => socket.emit("data", oversized)).not.toThrow();
+  });
+
+  it("rejects the pending request instead of crashing when a response payload is corrupt", async () => {
+    const { mod, socket } = setupReadyModule();
+
+    const sendPromise = mod.send("foo", { q: 1 });
+    await Promise.resolve(); // let send() register the pending request
+
+    // 0xc1 is the one byte the msgpack spec reserves as "never used" ->
+    // deserialization throws.
+    const corrupt = buildFrame(
+      { methodId: 1, flags: Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT, requestId: 1 },
+      Buffer.from([0xc1]),
+    );
+
+    expect(() => socket.emit("data", corrupt)).not.toThrow();
+
+    // The caller must get the decode error now, not a 30s timeout.
+    await expect(sendPromise).rejects.toThrow();
+
+    const pendings = (mod as unknown as { _pendingRequests: Map<number, unknown> })
+      ._pendingRequests;
+    expect(pendings.size).toBe(0);
+  });
+
+  it("keeps the connection usable after a corrupt response (framing stays aligned)", async () => {
+    const { mod, socket } = setupReadyModule();
+
+    const send1 = mod.send("foo", { q: 1 });
+    await Promise.resolve();
+    socket.emit(
+      "data",
+      buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT, requestId: 1 },
+        Buffer.from([0xc1]), // corrupt
+      ),
+    );
+    await expect(send1).rejects.toThrow();
+
+    // A well-formed response to the next request still works: per-frame
+    // decode errors must not tear down the (still consistent) connection.
+    const send2 = mod.send("foo", { q: 2 });
+    await Promise.resolve();
+    socket.emit(
+      "data",
+      buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT, requestId: 2 },
+        msgpackCodec.serialize({ ok: true }),
+      ),
+    );
+    await expect(send2).resolves.toEqual({ ok: true });
+    expect(socket.destroy).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W2 (core): writing to a dying child's stdin (heartbeat $ping, shutdown
+// $shutdown) had no error handling. proc.stdin.write() can throw EPIPE
+// synchronously, and the stdin stream can emit "error" with no listener
+// attached - both become uncaughtException in the parent. The heartbeat case
+// is the worst: pinging children that may be dying is its entire purpose.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W2 (core): EPIPE on the child's stdin must not crash the parent", () => {
+  interface HeartbeatApi {
+    startHeartbeat(mod: Module, config: { intervalMs: number; timeoutMs: number }): void;
+    stopHeartbeat(name: string): void;
+  }
+
+  function setupWithStdin(stdin: unknown): { manager: ModuleManager; mod: Module } {
+    const manager = new ModuleManager();
+    const mod = new Module("worker").executable("node", ["w.js"]).method("foo");
+    mod._setState("ready");
+    const proc = { stdin, kill: vi.fn(), killed: false };
+    mod._attachProcess(proc as never);
+    return { manager, mod };
+  }
+
+  it("survives a synchronous EPIPE throw from stdin.write during a heartbeat ping", () => {
+    const stdin = Object.assign(new EventEmitter(), {
+      writable: true,
+      write: vi.fn(() => {
+        throw new Error("write EPIPE");
+      }),
+    });
+    const { manager, mod } = setupWithStdin(stdin);
+    const api = manager as unknown as HeartbeatApi;
+
+    // startHeartbeat sends the initial ping synchronously - the EPIPE throw
+    // must not escape.
+    expect(() => api.startHeartbeat(mod, { intervalMs: 1000, timeoutMs: 5000 })).not.toThrow();
+    api.stopHeartbeat("worker");
+  });
+
+  it("attaches an stdin 'error' listener so an async EPIPE cannot crash the parent", () => {
+    const stdin = Object.assign(new EventEmitter(), {
+      writable: true,
+      write: vi.fn().mockReturnValue(true),
+    });
+    const { manager, mod } = setupWithStdin(stdin);
+    const api = manager as unknown as HeartbeatApi;
+
+    api.startHeartbeat(mod, { intervalMs: 1000, timeoutMs: 5000 });
+
+    // The child died between the writable check and the kernel flush: the
+    // stream emits "error" asynchronously. With no listener, EventEmitter
+    // throws -> uncaughtException in the parent.
+    expect(() => stdin.emit("error", new Error("EPIPE"))).not.toThrow();
+    api.stopHeartbeat("worker");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W4 (core): the shutdown guard was a single GLOBAL boolean. While ANY
+// module's shutdown was in flight (up to the 5s force-kill window), a crash
+// of an UNRELATED module hit the "shutting down" branch: silently detached
+// and closed - no module:error, no restart. Conversely, overlapping
+// shutdowns raced: the first one to finish reset the flag while the second
+// was still awaiting its child's exit, so that exit ran the CRASH path and
+// emitted spurious module:error events. The guard must be per-module.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W4 (core): shutdown of one module must not affect another's crash handling", () => {
+  interface ShutdownApi {
+    handleProcessExit(module: Module, code: number | null, signal: string | null): void;
+  }
+
+  function makeProc(): EventEmitter & {
+    stdin: EventEmitter & { writable: boolean; write: ReturnType<typeof vi.fn> };
+    kill: ReturnType<typeof vi.fn>;
+    killed: boolean;
+  } {
+    return Object.assign(new EventEmitter(), {
+      stdin: Object.assign(new EventEmitter(), { writable: true, write: vi.fn() }),
+      kill: vi.fn(),
+      killed: false,
+    });
+  }
+
+  function setupTwoModules(): {
+    manager: ModuleManager;
+    modA: Module;
+    modB: Module;
+    procA: ReturnType<typeof makeProc>;
+    procB: ReturnType<typeof makeProc>;
+    errors: { name: string; err: Error }[];
+    restarting: string[];
+  } {
+    const manager = new ModuleManager();
+    const errors: { name: string; err: Error }[] = [];
+    const restarting: string[] = [];
+    manager.on("module:error", (name: string, err: Error) => errors.push({ name, err }));
+    manager.on("module:restarting", (name: string) => restarting.push(name));
+
+    const modA = new Module("a")
+      .executable("node", ["a.js"])
+      .method("foo")
+      .spawnPolicy({ restartOnCrash: false });
+    const modB = new Module("b")
+      .executable("node", ["b.js"])
+      .method("foo")
+      .spawnPolicy({ restartOnCrash: false });
+    manager.register(modA);
+    manager.register(modB);
+
+    const procA = makeProc();
+    const procB = makeProc();
+    modA._attachProcess(procA as never);
+    modB._attachProcess(procB as never);
+    modA._setState("ready");
+    modB._setState("ready");
+
+    return { manager, modA, modB, procA, procB, errors, restarting };
+  }
+
+  it("reports a crash of module B while module A is mid-shutdown", async () => {
+    const { manager, modB, procA, errors } = setupTwoModules();
+    const api = manager as unknown as ShutdownApi;
+
+    // A's shutdown is in flight: its child has not exited yet.
+    const shutdownA = manager.shutdown("a");
+
+    // B crashes in that window. The crash MUST be reported, not swallowed.
+    api.handleProcessExit(modB, 1, null);
+
+    expect(errors.some((e) => e.name === "b")).toBe(true);
+    expect(modB.state).toBe("closed"); // restartOnCrash: false -> closed after report
+
+    // Let A's child exit so the shutdown resolves cleanly.
+    procA.emit("exit", 0, null);
+    await shutdownA;
+  });
+
+  it("overlapping shutdowns: a finished shutdown must not expose the other to the crash path", async () => {
+    const { manager, modB, procA, procB, errors, restarting } = setupTwoModules();
+    const api = manager as unknown as ShutdownApi;
+
+    const shutdownA = manager.shutdown("a");
+    const shutdownB = manager.shutdown("b");
+
+    // A's child exits promptly -> A's shutdown completes first.
+    procA.emit("exit", 0, null);
+    await shutdownA;
+
+    // Now B's child exits in response to ITS $shutdown. In production the
+    // spawn-time exit listener runs handleProcessExit for it.
+    api.handleProcessExit(modB, 0, null);
+    procB.emit("exit", 0, null);
+    await shutdownB;
+
+    // B was shutting down - its exit must NOT be treated as a crash.
+    expect(errors.filter((e) => e.name === "b")).toEqual([]);
+    expect(restarting).toEqual([]);
+    expect(modB.state).toBe("closed");
   });
 });

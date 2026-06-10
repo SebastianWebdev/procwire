@@ -386,9 +386,33 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       data: (chunk: Buffer): void => {
         // Guard: a late "data" event can fire after _detach() niled the buffer.
         if (!this._frameBuffer) return;
-        const frames = this._frameBuffer.push(chunk);
+
+        // A framing error (e.g. payload over maxPayloadSize) poisons the
+        // byte stream: drop the connection instead of throwing out of the
+        // socket "data" handler, which would be an uncaughtException in the
+        // parent - the supervisor of every module.
+        let frames;
+        try {
+          frames = this._frameBuffer.push(chunk);
+        } catch (err) {
+          if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+            this.emit(ModuleEvents.ERROR, err as Error);
+          }
+          this._socket?.destroy();
+          return;
+        }
+
         for (const frame of frames) {
-          this._handleFrame(frame);
+          // Per-frame handler errors (e.g. a corrupt payload rejected inside
+          // _handleResponse) must not kill the parent either; the framing is
+          // still aligned, so the connection stays up.
+          try {
+            this._handleFrame(frame);
+          } catch (err) {
+            if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+              this.emit(ModuleEvents.ERROR, err as Error);
+            }
+          }
         }
       },
       error: (err: Error): void => {
@@ -812,11 +836,28 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     }
     // "ack" methods accept both ACK and full response (graceful fallback)
 
+    // A corrupt payload must reject THIS request (the caller gets the decode
+    // error now instead of waiting out the timeout) - and must not escape
+    // into the socket data handler.
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      const errorData = codecDeserialize(pending.responseCodec, frame);
+      let errorData: unknown;
+      try {
+        errorData = codecDeserialize(pending.responseCodec, frame);
+      } catch (decodeError) {
+        pending.reject(decodeError as Error);
+        this._cleanupRequest(frame.header.requestId);
+        return;
+      }
       pending.reject(ModuleErrors.remoteError(errorData));
     } else {
-      const data = codecDeserialize(pending.responseCodec, frame);
+      let data: unknown;
+      try {
+        data = codecDeserialize(pending.responseCodec, frame);
+      } catch (decodeError) {
+        pending.reject(decodeError as Error);
+        this._cleanupRequest(frame.header.requestId);
+        return;
+      }
       pending.resolve(data);
     }
 
@@ -828,7 +869,13 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     if (!stream) return;
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      const errorData = codecDeserialize(stream.responseCodec, frame);
+      let errorData: unknown;
+      try {
+        errorData = codecDeserialize(stream.responseCodec, frame);
+      } catch (decodeError) {
+        stream.error(decodeError as Error);
+        return;
+      }
       stream.error(ModuleErrors.remoteError(errorData));
       return;
     }
@@ -839,8 +886,16 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
       return;
     }
 
-    // Regular chunk - deserialize and push
-    const data = codecDeserialize(stream.responseCodec, frame);
+    // Regular chunk - deserialize and push. A corrupt chunk errors THIS
+    // stream (consumer sees the decode failure) instead of crashing the
+    // parent's receive loop.
+    let data: unknown;
+    try {
+      data = codecDeserialize(stream.responseCodec, frame);
+    } catch (decodeError) {
+      stream.error(decodeError as Error);
+      return;
+    }
     stream.push(data);
   }
 
@@ -851,7 +906,17 @@ export class Module<S extends Schema = EmptySchema> extends EventEmitter {
     const eventConfig = this._events.get(eventName);
     if (!eventConfig) return;
 
-    const data = codecDeserialize(eventConfig.codec, frame);
+    // A corrupt event payload is dropped (surfaced via "error" when someone
+    // listens) - events have no caller to reject.
+    let data: unknown;
+    try {
+      data = codecDeserialize(eventConfig.codec, frame);
+    } catch (decodeError) {
+      if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+        this.emit(ModuleEvents.ERROR, decodeError as Error);
+      }
+      return;
+    }
     this.emit(`event:${eventName}`, data);
   }
 
