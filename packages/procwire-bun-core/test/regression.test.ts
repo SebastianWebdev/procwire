@@ -10,7 +10,8 @@ import { buildFrame, Flags } from "@procwire/protocol";
 import { msgpackCodec } from "@procwire/codecs";
 
 interface ModuleInternals {
-  _onSocketError(err: Error): void;
+  _onSocketError(socket: unknown, err: Error): void;
+  _attachDataChannel?(socket: never): void;
   _nextRequestId: number;
   _allocateRequestId(): number;
 }
@@ -39,9 +40,11 @@ const flush = async (): Promise<void> => {
 describe("Bug C5 (bun-core): unobserved socket error must not crash the process", () => {
   it("does not throw when a socket error fires with no 'error' listener", () => {
     const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+    const socket = mockSocket();
+    mod._attachDataChannel(socket);
 
     expect(() =>
-      (mod as unknown as ModuleInternals)._onSocketError(new Error("ECONNRESET")),
+      (mod as unknown as ModuleInternals)._onSocketError(socket, new Error("ECONNRESET")),
     ).not.toThrow();
   });
 
@@ -54,7 +57,9 @@ describe("Bug C5 (bun-core): unobserved socket error must not crash the process"
     });
 
     const err = new Error("EPIPE");
-    expect(() => (mod as unknown as ModuleInternals)._onSocketError(err)).not.toThrow();
+    const socket = mockSocket();
+    mod._attachDataChannel(socket);
+    expect(() => (mod as unknown as ModuleInternals)._onSocketError(socket, err)).not.toThrow();
     expect(caught).toBe(err);
   });
 });
@@ -285,7 +290,7 @@ describe("Bug D2 (bun-core): stream backpressure pauses/resumes the socket", () 
 
     let paused = 0;
     let resumed = 0;
-    mod._attachDataChannel({
+    const socket = {
       write: (d: { length: number }) => d.length,
       end: () => {},
       pause: () => {
@@ -294,9 +299,13 @@ describe("Bug D2 (bun-core): stream backpressure pauses/resumes the socket", () 
       resume: () => {
         resumed++;
       },
-    } as never);
+    };
+    mod._attachDataChannel(socket as never);
 
-    const onData = (mod as unknown as { _onSocketData(d: Buffer): void })._onSocketData.bind(mod);
+    const boundOnData = (
+      mod as unknown as { _onSocketData(s: unknown, d: Buffer): void }
+    )._onSocketData.bind(mod);
+    const onData = (d: Buffer): void => boundOnData(socket, d);
     const chunk = (i: number): Buffer =>
       buildFrame(
         { methodId: 1, flags: Flags.IS_RESPONSE | Flags.IS_STREAM, requestId: 1 },

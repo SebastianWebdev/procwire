@@ -343,20 +343,48 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket data handler from ModuleManager.
    * Processes incoming data and handles frames.
+   *
+   * The socket argument identifies WHICH connection fired: Bun socket
+   * handlers are fixed at connect time, so a late event from a previous
+   * (crashed/replaced) connection must be ignored instead of poisoning the
+   * fresh session (Node fixed this as Bug C8; Bug W8 is the Bun port).
    */
-  _onSocketData(data: Buffer): void {
+  _onSocketData(socket: BunSocket, data: Buffer): void {
+    if (socket !== this._socket) return; // stale connection
     if (!this._frameBuffer) return;
 
-    const frames = this._frameBuffer.push(data);
+    // A framing error (e.g. payload over maxPayloadSize) poisons the byte
+    // stream: drop the connection instead of throwing out of the socket
+    // data handler, which would kill the parent supervisor (Bug W1b).
+    let frames;
+    try {
+      frames = this._frameBuffer.push(data);
+    } catch (err) {
+      if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+        this.emit(ModuleEvents.ERROR, err as Error);
+      }
+      this._socket?.end();
+      return;
+    }
+
     for (const frame of frames) {
-      this._handleFrame(frame);
+      // Per-frame handler errors must not kill the parent either; the
+      // framing is still aligned, so the connection stays up.
+      try {
+        this._handleFrame(frame);
+      } catch (err) {
+        if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+          this.emit(ModuleEvents.ERROR, err as Error);
+        }
+      }
     }
   }
 
   /**
    * @internal Called by socket error handler from ModuleManager.
    */
-  _onSocketError(err: Error): void {
+  _onSocketError(socket: BunSocket, err: Error): void {
+    if (socket !== this._socket) return; // stale connection
     // EventEmitter throws synchronously when "error" is emitted with no
     // listener, which would crash the whole parent process. Only emit when
     // someone is listening; an unobserved socket error is still surfaced via
@@ -407,7 +435,8 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket close handler from ModuleManager.
    */
-  _onSocketClose(): void {
+  _onSocketClose(socket: BunSocket): void {
+    if (socket !== this._socket) return; // stale connection
     if (this._state === "ready") {
       this._setState("disconnected");
       this.emit(ModuleEvents.DISCONNECTED);
@@ -417,7 +446,8 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket drain handler from ModuleManager.
    */
-  _onSocketDrain(): void {
+  _onSocketDrain(socket: BunSocket): void {
+    if (socket !== this._socket) return; // stale connection
     this._drainWaiter?.onDrain();
   }
 
