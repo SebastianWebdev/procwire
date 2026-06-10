@@ -346,3 +346,110 @@ describe("Bug W2 (bun-client): concurrent writeAll calls must not interleave fra
     expect(frames[1]!.payload.equals(Buffer.alloc(20, 0xbb))).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W7 (bun-client): the control reader used for-await over
+// Bun.stdin.stream(), so the SUSPENDED read kept the event loop alive and
+// the "stopped" flag only took effect when the next chunk arrived - i.e.
+// never, once the parent had said its last word. Every graceful shutdown
+// therefore cost the parent's full force-kill grace period plus a signal.
+// EOF handling was also missing: a dead parent left the child orphaned
+// (Node fixed that as Bug W3).
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W7 (bun-client): the stdin reader must not pin the child's event loop", () => {
+  function makeControlStream(): {
+    stream: ReadableStream<Uint8Array>;
+    push(s: string): void;
+    close(): void;
+    cancelled(): boolean;
+  } {
+    let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+    let wasCancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+      cancel() {
+        wasCancelled = true;
+      },
+    });
+    return {
+      stream,
+      push: (s: string) => ctrl!.enqueue(new TextEncoder().encode(s)),
+      close: () => ctrl!.close(),
+      cancelled: () => wasCancelled,
+    };
+  }
+
+  interface ReaderInternals {
+    _server: { stop(force?: boolean): void } | null;
+    _socket: unknown;
+    _startControlReader(input?: ReadableStream<Uint8Array>): Promise<void>;
+    _sendControl(msg: unknown): void;
+  }
+
+  it("shutdown() cancels the pending stdin read so the loop can exit", async () => {
+    const client = new Client();
+    const internals = client as unknown as ReaderInternals;
+    internals._server = { stop: () => {} };
+
+    const cs = makeControlStream();
+    const readerDone = internals._startControlReader(cs.stream);
+    await new Promise((r) => setTimeout(r, 20));
+
+    await client.shutdown();
+
+    const outcome = await Promise.race([
+      readerDone.then(() => "finished"),
+      new Promise<string>((r) => setTimeout(() => r("hung"), 750)),
+    ]);
+    expect(outcome).toBe("finished");
+    expect(cs.cancelled()).toBe(true);
+  });
+
+  it("EOF on the control stream shuts the child down (orphan prevention)", async () => {
+    const client = new Client();
+    const internals = client as unknown as ReaderInternals;
+    let stopped = 0;
+    internals._server = {
+      stop: () => {
+        stopped++;
+      },
+    };
+
+    const cs = makeControlStream();
+    const readerDone = internals._startControlReader(cs.stream);
+    await new Promise((r) => setTimeout(r, 20));
+
+    cs.close(); // parent died -> stdin EOF
+    await Promise.race([readerDone, new Promise((r) => setTimeout(r, 750))]);
+
+    expect(stopped).toBe(1);
+  });
+
+  it("parses control lines split across chunks (multi-byte safe)", async () => {
+    const client = new Client();
+    const internals = client as unknown as ReaderInternals;
+    internals._server = { stop: () => {} };
+
+    const sent: string[] = [];
+    const origSend = internals._sendControl.bind(client);
+    (client as unknown as { _sendControl(msg: unknown): void })._sendControl = (msg) => {
+      sent.push(JSON.stringify(msg));
+    };
+
+    const cs = makeControlStream();
+    const readerDone = internals._startControlReader(cs.stream);
+
+    cs.push('{"jsonrpc":"2.0","method":"$pi');
+    await new Promise((r) => setTimeout(r, 10));
+    cs.push('ng"}\n');
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(sent.some((l) => l.includes("$pong"))).toBe(true);
+
+    (client as unknown as { _sendControl(msg: unknown): void })._sendControl = origSend;
+    await client.shutdown();
+    await Promise.race([readerDone, new Promise((r) => setTimeout(r, 500))]);
+  });
+});

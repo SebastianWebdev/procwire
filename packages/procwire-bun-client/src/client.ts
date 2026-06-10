@@ -35,6 +35,17 @@ type BunServer = ReturnType<typeof Bun.listen>;
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
 
 /**
+ * Minimal reader surface used by the control loop. Structural on purpose:
+ * Bun's global ReadableStreamDefaultReader adds readMany(), which a generic
+ * web-streams reader (injected in tests) doesn't have.
+ */
+interface StdinReader {
+  read(): Promise<{ value?: Uint8Array | undefined; done: boolean }>;
+  cancel(reason?: unknown): Promise<void>;
+  releaseLock(): void;
+}
+
+/**
  * Client - Child-side API for Procwire IPC.
  *
  * This is the Bun.js optimized version.
@@ -226,16 +237,44 @@ export class Client extends EventEmitter {
     void this._startControlReader();
   }
 
+  /** Active stdin reader, kept so shutdown() can cancel the pending read. */
+  private _stdinReader: StdinReader | null = null;
+
   /**
    * @internal Read the parent's control plane (stdin) line by line.
+   *
+   * Uses an explicit reader (not for-await) so shutdown() can cancel the
+   * PENDING read: a suspended read keeps the Bun event loop alive, and the
+   * "stopped" flag alone only takes effect when the next chunk arrives -
+   * i.e. never, once the parent has said its last word - forcing the parent
+   * to force-kill the child after its grace period (Bug W7).
+   *
+   * EOF (stream done) means the parent is GONE: shut down so the child
+   * exits instead of living forever as an orphan (Bug W3 port).
    */
-  private async _startControlReader(): Promise<void> {
+  private async _startControlReader(
+    input: ReadableStream<Uint8Array> = Bun.stdin.stream() as ReadableStream<Uint8Array>,
+  ): Promise<void> {
     const decoder = new TextDecoder();
     let buffer = "";
+    let reader: StdinReader | null = null;
     try {
-      for await (const chunk of Bun.stdin.stream()) {
-        if (this._controlReaderStopped) break;
-        buffer += decoder.decode(chunk as Uint8Array);
+      // Inside the try: getReader() throws synchronously if the stream is
+      // already locked (e.g. a second Client instance in the same process).
+      const activeReader = input.getReader();
+      reader = activeReader;
+      this._stdinReader = activeReader;
+      while (!this._controlReaderStopped) {
+        const { value, done } = await activeReader.read();
+        if (done) {
+          // Parent death (or deliberate stdin close): exit cleanly.
+          if (!this._controlReaderStopped) {
+            void this.shutdown();
+          }
+          break;
+        }
+        // stream:true keeps multi-byte characters split across chunks intact.
+        buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
@@ -244,6 +283,13 @@ export class Client extends EventEmitter {
       }
     } catch {
       // stdin closed / unreadable - nothing more to do.
+    } finally {
+      this._stdinReader = null;
+      try {
+        reader?.releaseLock();
+      } catch {
+        /* lock already released */
+      }
     }
   }
 
@@ -307,6 +353,11 @@ export class Client extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     this._controlReaderStopped = true;
+    // Cancel the pending stdin read: a suspended read keeps the event loop
+    // alive and would pin the child until the parent force-kills it (W7).
+    void this._stdinReader?.cancel().catch(() => {
+      /* reader already closed */
+    });
     this._socket?.end();
     this._server?.stop(true);
     this._drainWaiter?.clear();
