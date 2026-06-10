@@ -343,20 +343,48 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket data handler from ModuleManager.
    * Processes incoming data and handles frames.
+   *
+   * The socket argument identifies WHICH connection fired: Bun socket
+   * handlers are fixed at connect time, so a late event from a previous
+   * (crashed/replaced) connection must be ignored instead of poisoning the
+   * fresh session (Node fixed this as Bug C8; Bug W8 is the Bun port).
    */
-  _onSocketData(data: Buffer): void {
+  _onSocketData(socket: BunSocket, data: Buffer): void {
+    if (socket !== this._socket) return; // stale connection
     if (!this._frameBuffer) return;
 
-    const frames = this._frameBuffer.push(data);
+    // A framing error (e.g. payload over maxPayloadSize) poisons the byte
+    // stream: drop the connection instead of throwing out of the socket
+    // data handler, which would kill the parent supervisor (Bug W1b).
+    let frames;
+    try {
+      frames = this._frameBuffer.push(data);
+    } catch (err) {
+      if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+        this.emit(ModuleEvents.ERROR, err as Error);
+      }
+      this._socket?.end();
+      return;
+    }
+
     for (const frame of frames) {
-      this._handleFrame(frame);
+      // Per-frame handler errors must not kill the parent either; the
+      // framing is still aligned, so the connection stays up.
+      try {
+        this._handleFrame(frame);
+      } catch (err) {
+        if (this.listenerCount(ModuleEvents.ERROR) > 0) {
+          this.emit(ModuleEvents.ERROR, err as Error);
+        }
+      }
     }
   }
 
   /**
    * @internal Called by socket error handler from ModuleManager.
    */
-  _onSocketError(err: Error): void {
+  _onSocketError(socket: BunSocket, err: Error): void {
+    if (socket !== this._socket) return; // stale connection
     // EventEmitter throws synchronously when "error" is emitted with no
     // listener, which would crash the whole parent process. Only emit when
     // someone is listening; an unobserved socket error is still surfaced via
@@ -407,7 +435,8 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket close handler from ModuleManager.
    */
-  _onSocketClose(): void {
+  _onSocketClose(socket: BunSocket): void {
+    if (socket !== this._socket) return; // stale connection
     if (this._state === "ready") {
       this._setState("disconnected");
       this.emit(ModuleEvents.DISCONNECTED);
@@ -417,7 +446,8 @@ export class Module extends EventEmitter {
   /**
    * @internal Called by socket drain handler from ModuleManager.
    */
-  _onSocketDrain(): void {
+  _onSocketDrain(socket: BunSocket): void {
+    if (socket !== this._socket) return; // stale connection
     this._drainWaiter?.onDrain();
   }
 
@@ -577,7 +607,15 @@ export class Module extends EventEmitter {
     });
 
     // Send frame AFTER registering pending request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (error) {
+      // The request never hit the wire. Drop the pending entry NOW: otherwise
+      // its timeout timer (or a later _detach) would reject responsePromise,
+      // which no caller observes -> unhandled rejection -> process death.
+      this._cleanupRequest(requestId);
+      throw error;
+    }
 
     return responsePromise;
   }
@@ -671,7 +709,15 @@ export class Module extends EventEmitter {
     }
 
     // Send request (with backpressure support)
-    await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    try {
+      await this._sendFrame(methodId, requestId, data, methodConfig.requestCodec);
+    } catch (sendError) {
+      // The request never hit the wire: release the stream entry and the
+      // abort listener registered above, or they leak until _detach.
+      this._pendingStreams.delete(requestId);
+      abortCleanup?.();
+      throw sendError;
+    }
 
     // Yield chunks
     try {
@@ -848,20 +894,18 @@ export class Module extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, so concatenate buffers for atomic write
+    // Bun doesn't have cork/uncork, so concatenate buffers for atomic write.
+    // writeAll honors Bun's numeric write() return: partial writes are
+    // re-sent after drain instead of being silently dropped.
     const combined = Buffer.concat([headerBuf, payload]);
-    const canContinue = this._socket!.write(combined);
-
-    // OPT-04: Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter!.markNeedsDrain();
-      await this._drainWaiter!.waitForDrain();
-    }
+    await this._drainWaiter!.writeAll(this._socket!, combined);
   }
 
   private async _sendAbort(requestId: number): Promise<void> {
-    // OPT-02: Ring buffer for allocation-free headers
-    const headerBuf = this._acquireHeaderBuffer();
+    // Fresh buffer (not the ring pool): writeAll can suspend on drain while
+    // holding a reference, and a pooled slot could be reused by a concurrent
+    // send in the meantime.
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {
       methodId: ABORT_METHOD_ID,
@@ -870,13 +914,7 @@ export class Module extends EventEmitter {
       payloadLength: 0,
     });
 
-    const canContinue = this._socket!.write(headerBuf);
-
-    // Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter!.markNeedsDrain();
-      await this._drainWaiter!.waitForDrain();
-    }
+    await this._drainWaiter!.writeAll(this._socket!, headerBuf);
   }
 
   private _cleanupRequest(requestId: number): void {

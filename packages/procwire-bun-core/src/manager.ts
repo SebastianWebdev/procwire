@@ -521,8 +521,11 @@ export class ModuleManager extends EventEmitter {
       }, timeoutMs);
 
       try {
-        // Bun.connect with socket handlers that delegate to Module
-        Bun.connect({
+        // Bun.connect with socket handlers that delegate to Module. The
+        // socket argument is passed through so the Module can ignore late
+        // events from a previous (replaced) connection - Bun handlers are
+        // fixed at connect time and outlive restarts (Bug W8).
+        const connectPromise = Bun.connect({
           unix: pipePath,
           socket: {
             open(socket: BunSocket) {
@@ -535,28 +538,42 @@ export class ModuleManager extends EventEmitter {
               clearTimeout(timer);
               resolve(socket);
             },
-            data(_socket: BunSocket, data: Buffer) {
+            data(socket: BunSocket, data: Buffer) {
               // Delegate to Module for frame parsing
-              module._onSocketData(data);
+              module._onSocketData(socket, data);
             },
-            error(_socket: BunSocket, error: Error) {
-              // During connection, reject the promise
-              // After connection, delegate to Module
-              module._onSocketError(error);
+            error(socket: BunSocket, error: Error) {
+              // Before the connection settles, reject the connect promise;
+              // afterwards delegate to the Module (identity-checked there).
+              if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                reject(ManagerErrors.dataChannelFailed(error.message));
+                return;
+              }
+              module._onSocketError(socket, error);
+            },
+            close(socket: BunSocket) {
+              module._onSocketClose(socket);
+            },
+            drain(socket: BunSocket) {
+              // Notify Module that backpressure is relieved
+              module._onSocketDrain(socket);
+            },
+            // Without connectError, Bun puts a failed connect on the
+            // unhandled rejection queue (process-fatal by default) instead
+            // of letting us reject cleanly (Bug W5).
+            connectError(_socket: BunSocket, error: Error) {
               if (settled) return;
               settled = true;
               clearTimeout(timer);
               reject(ManagerErrors.dataChannelFailed(error.message));
             },
-            close(_socket: BunSocket) {
-              module._onSocketClose();
-            },
-            drain(_socket: BunSocket) {
-              // Notify Module that backpressure is relieved
-              module._onSocketDrain();
-            },
           },
         });
+        // Belt and braces: with connectError set the returned promise should
+        // not reject unhandled, but keep it observed regardless.
+        void Promise.resolve(connectPromise).catch(() => {});
       } catch (error) {
         if (settled) return;
         settled = true;

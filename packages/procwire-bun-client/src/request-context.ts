@@ -135,15 +135,11 @@ export class RequestContextImpl implements RequestContext {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, concatenate for atomic write
+    // Bun doesn't have cork/uncork, concatenate for atomic write.
+    // writeAll honors Bun's numeric write() return: partial writes are
+    // re-sent after drain instead of being silently dropped.
     const combined = Buffer.concat([headerBuf, payload]);
-    const canContinue = this._socket.write(combined);
-
-    // OPT-04: Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter.markNeedsDrain();
-      await this._drainWaiter.waitForDrain();
-    }
+    await this._drainWaiter.writeAll(this._socket, combined);
   }
 
   private _cleanup(): void {

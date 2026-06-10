@@ -125,7 +125,7 @@ describe("Bug C4b (bun-client): must honor maxPayloadSize", () => {
     const internals = client as unknown as ClientInternals;
 
     let ended = false;
-    const socket = { end: () => (ended = true), write: () => true };
+    const socket = { end: () => (ended = true), write: (d: { length: number }) => d.length };
     internals._onConnectionOpen(socket);
 
     const oversized = buildFrame({ methodId: 999, flags: 0, requestId: 1 }, Buffer.alloc(200));
@@ -138,7 +138,7 @@ describe("Bug C4b (bun-client): must honor maxPayloadSize", () => {
     const internals = client as unknown as ClientInternals;
 
     let ended = false;
-    const socket = { end: () => (ended = true), write: () => true };
+    const socket = { end: () => (ended = true), write: (d: { length: number }) => d.length };
     internals._onConnectionOpen(socket);
 
     const ok = buildFrame(

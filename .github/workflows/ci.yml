@@ -38,7 +38,10 @@ jobs:
         run: pnpm lint
 
       - name: Check formatting
-        run: pnpm format --check
+        # NOTE: must be `prettier --check` (format:check). `pnpm format --check`
+        # expanded to `prettier -w . --check`, which REWRITES files and exits 0,
+        # so formatting could never fail CI.
+        run: pnpm format:check
 
   # ============================================
   # Build & Test - Node.js packages, all platforms

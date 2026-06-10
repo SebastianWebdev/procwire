@@ -1,12 +1,15 @@
 /**
  * BunDrainWaiter - Singleton pattern for Bun socket drain waiting.
  *
- * PROBLEM: In Bun, socket.write() returns a boolean indicating if more data
- * can be written. When it returns false, you need to wait for the drain
- * callback before writing more data.
+ * PROBLEM: In Bun, socket.write() returns the NUMBER of bytes written - not
+ * a boolean. It can be less than data.length when the kernel send buffer is
+ * full (backpressure) and -1 when the socket is closed. Unwritten bytes are
+ * NOT buffered by Bun: the caller must wait for the drain callback and
+ * re-write the remaining tail itself.
  *
- * SOLUTION: This class maintains pending drain waiters and resolves them
- * when the drain callback is called.
+ * SOLUTION: This class maintains pending drain waiters, resolves them when
+ * the drain callback fires, and provides writeAll() which loops until every
+ * byte has actually been handed to the kernel.
  *
  * @example
  * ```typescript
@@ -20,15 +23,16 @@
  * }
  *
  * // When writing:
- * const canContinue = socket.write(data);
- * if (!canContinue) {
- *   drainWaiter.markNeedsDrain();
- *   await drainWaiter.waitForDrain();
- * }
+ * await drainWaiter.writeAll(socket, data);
  * ```
  *
  * @module
  */
+
+/** Minimal structural view of a writable Bun socket. */
+export interface BunWritableSocket {
+  write(data: Buffer | Uint8Array): number;
+}
 
 /**
  * Singleton drain waiter for Bun sockets.
@@ -40,6 +44,15 @@ export class BunDrainWaiter {
   private _waiters: Set<() => void> = new Set();
   private _needsDrain = false;
   private _closed = false;
+
+  /**
+   * Tail of the FIFO write queue. writeAll() calls are serialized through
+   * this chain: a partial write suspends mid-frame waiting for drain, and a
+   * concurrently submitted frame must not slip between the written prefix
+   * and the pending tail (prefix(A) + frame(B) + tail(A) would corrupt the
+   * framing). Uncontended cost is a single resolved-promise hop.
+   */
+  private _writeQueue: Promise<void> = Promise.resolve();
 
   /**
    * Call this from the socket's drain handler.
@@ -90,6 +103,56 @@ export class BunDrainWaiter {
     return new Promise<void>((resolve) => {
       this._waiters.add(resolve);
     });
+  }
+
+  /**
+   * Write a buffer FULLY to a Bun socket, honoring partial writes.
+   *
+   * socket.write() returns how many bytes were written: a partial result
+   * (including 0) means the kernel buffer is full and the unwritten tail
+   * must be re-sent after the next drain event; -1 means the socket is
+   * closed. Treating the number as a boolean drops frame tails and corrupts
+   * the wire protocol under backpressure.
+   *
+   * Calls on the same waiter are serialized in FIFO order so concurrent
+   * senders cannot interleave bytes inside one frame. Fast path (no
+   * backpressure, no contention) costs a single write() call plus one
+   * resolved-promise hop - no extra allocation.
+   *
+   * @throws {Error} If the socket closes before all bytes are written
+   */
+  writeAll(socket: BunWritableSocket, data: Buffer): Promise<void> {
+    const task = this._writeQueue.then(() => this._writeAllSerialized(socket, data));
+    // Keep the queue alive after a failed write; the error still reaches
+    // this caller through `task`.
+    this._writeQueue = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }
+
+  private async _writeAllSerialized(socket: BunWritableSocket, data: Buffer): Promise<void> {
+    let remaining: Buffer = data;
+    while (remaining.length > 0) {
+      const written = socket.write(remaining);
+
+      if (written < 0) {
+        throw new Error("Socket closed during write");
+      }
+      if (written >= remaining.length) {
+        return; // fully written
+      }
+
+      // Partial write: wait for drain, then send the rest.
+      remaining = remaining.subarray(written);
+      this.markNeedsDrain();
+      await this.waitForDrain();
+
+      if (this._closed) {
+        throw new Error("Socket closed during backpressure wait");
+      }
+    }
   }
 
   /**

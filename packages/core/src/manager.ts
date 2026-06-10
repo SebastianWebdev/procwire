@@ -114,7 +114,7 @@ export class ModuleManager extends EventEmitter {
   private readonly stdoutReaders = new Map<string, ReadlineInterface>();
   // Pending crash-restart timers, kept so they can be cancelled on shutdown to
   // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
-  // the isShuttingDown window, which is reset when shutdown() returns).
+  // the per-module shuttingDown window, which ends when its shutdown returns).
   private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
   // Control-plane heartbeat state (only populated when a module enables it).
   private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
@@ -122,7 +122,11 @@ export class ModuleManager extends EventEmitter {
   // matching $pong arrives. Lets us measure the timeout from an actual ping
   // rather than from startup.
   private readonly heartbeatPingAt = new Map<string, number>();
-  private isShuttingDown = false;
+  // Names of modules whose shutdown is currently in flight. Per-module on
+  // purpose: a single global flag suppressed crash handling for ALL modules
+  // while ANY shutdown ran, and overlapping shutdowns raced on resetting it
+  // (Bug W4).
+  private readonly shuttingDown = new Set<string>();
 
   /**
    * Register a module.
@@ -186,15 +190,18 @@ export class ModuleManager extends EventEmitter {
    * @param name - Module name, or undefined to shutdown all
    */
   async shutdown(name?: string): Promise<void> {
-    this.isShuttingDown = true;
+    const targets = name !== undefined ? [name] : Array.from(this.modules.keys());
 
-    if (name !== undefined) {
-      await this.shutdownModule(name);
-    } else {
-      await Promise.all(Array.from(this.modules.keys()).map((n) => this.shutdownModule(n)));
+    for (const target of targets) {
+      this.shuttingDown.add(target);
     }
-
-    this.isShuttingDown = false;
+    try {
+      await Promise.all(targets.map((n) => this.shutdownModule(n)));
+    } finally {
+      for (const target of targets) {
+        this.shuttingDown.delete(target);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -270,6 +277,11 @@ export class ModuleManager extends EventEmitter {
     });
 
     module._attachProcess(childProcess);
+
+    // The child's stdin can emit "error" (EPIPE) when the child dies between
+    // a writability check and the kernel flush - with no listener, that is an
+    // uncaughtException in the parent.
+    this.guardStdin(childProcess);
 
     // Check for immediate spawn errors
     const spawnError = await this.waitForSpawnResult(childProcess);
@@ -497,8 +509,9 @@ export class ModuleManager extends EventEmitter {
     // The process is gone: stop pinging it.
     this.stopHeartbeat(module.name);
 
-    // Ignore if shutting down
-    if (this.isShuttingDown) {
+    // Ignore if THIS module is shutting down (an unrelated module's
+    // shutdown must not swallow this crash)
+    if (this.shuttingDown.has(module.name)) {
       module._detach();
       module._setState("closed");
       return;
@@ -577,9 +590,9 @@ export class ModuleManager extends EventEmitter {
         this.restartTimers.delete(module.name);
 
         // Bail if the module was shut down (or closed) during the delay; the
-        // isShuttingDown flag is reset once shutdown() returns, so the module
-        // state is the reliable signal here.
-        if (this.isShuttingDown || module.state === "closed") {
+        // shuttingDown entry is removed once its shutdown returns, so the
+        // module state is the reliable signal here.
+        if (this.shuttingDown.has(module.name) || module.state === "closed") {
           resolve();
           return;
         }
@@ -643,12 +656,31 @@ export class ModuleManager extends EventEmitter {
     this.heartbeatTimers.set(name, timer);
   }
 
+  /**
+   * Ensure the child's stdin cannot crash the parent with an unhandled
+   * "error" event (EPIPE from a dying child). Idempotent.
+   */
+  private guardStdin(proc: { stdin?: NodeJS.WritableStream | null } | null | undefined): void {
+    const stdin = proc?.stdin;
+    if (stdin && stdin.listenerCount("error") === 0) {
+      stdin.on("error", () => {
+        // Swallowed on purpose: a dead control channel is surfaced by the
+        // process "exit" handler (crash path), not by the failed write.
+      });
+    }
+  }
+
   /** Write a `$ping` to the child and mark it outstanding (awaiting `$pong`). */
   private _sendHeartbeatPing(module: Module): void {
     const proc = module.process;
     if (proc?.stdin?.writable) {
-      proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
-      this.heartbeatPingAt.set(module.name, Date.now());
+      this.guardStdin(proc);
+      try {
+        proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+        this.heartbeatPingAt.set(module.name, Date.now());
+      } catch {
+        // Synchronous EPIPE: the child is dying; the exit handler takes over.
+      }
     }
   }
 
@@ -703,15 +735,21 @@ export class ModuleManager extends EventEmitter {
       return;
     }
 
-    // Send $shutdown via control channel
+    // Send $shutdown via control channel. A dying child can EPIPE here -
+    // that's fine, the exit wait below (with force-kill fallback) still runs.
     if (proc.stdin?.writable) {
-      proc.stdin.write(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          method: "$shutdown",
-          params: {},
-        }) + "\n",
-      );
+      this.guardStdin(proc);
+      try {
+        proc.stdin.write(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "$shutdown",
+            params: {},
+          }) + "\n",
+        );
+      } catch {
+        /* EPIPE from a dying child - proceed to the exit wait */
+      }
     }
 
     // Close stdout reader

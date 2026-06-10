@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import type { Socket } from "node:net";
 import { Client } from "../src/client.js";
 import type { RequestContextImpl } from "../src/request-context.js";
@@ -287,5 +288,76 @@ describe("Feature D1 (client): responds to heartbeat ping with pong", () => {
     } finally {
       shutdownSpy.mockRestore();
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W3 (client): when the parent dies hard (SIGKILL), the child noticed
+// nothing: the control reader had no EOF/close handling and the pipe server
+// kept the event loop alive, so the child lived FOREVER as an orphan (and
+// leaked its /tmp socket). stdin EOF is the reliable parent-death signal: it
+// must trigger a clean shutdown.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W3 (client): parent death (stdin EOF) must shut the child down", () => {
+  interface ControlInternals {
+    _server: { close: ReturnType<typeof vi.fn> } | null;
+    _socket: { destroy: ReturnType<typeof vi.fn> } | null;
+    _startControlReader(input: NodeJS.ReadableStream): void;
+  }
+
+  function setupWithControlStream(): {
+    client: Client;
+    input: PassThrough;
+    server: { close: ReturnType<typeof vi.fn> };
+    socket: { destroy: ReturnType<typeof vi.fn> };
+  } {
+    const client = new Client();
+    const internals = client as unknown as ControlInternals;
+    const server = { close: vi.fn() };
+    const socket = { destroy: vi.fn() };
+    internals._server = server;
+    internals._socket = socket;
+    const input = new PassThrough();
+    internals._startControlReader(input);
+    return { client, input, server, socket };
+  }
+
+  it("shuts down (closes server + socket) when the control stream reaches EOF", async () => {
+    const { input, server, socket } = setupWithControlStream();
+
+    input.end(); // parent died -> stdin EOF
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(socket.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("still handles control lines before EOF", async () => {
+    const { client, input, server } = setupWithControlStream();
+    const lines: string[] = [];
+    const sendControl = vi
+      .spyOn(client as unknown as { _sendControl(msg: unknown): void }, "_sendControl")
+      .mockImplementation((msg) => {
+        lines.push(JSON.stringify(msg));
+      });
+
+    input.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(lines.some((l) => l.includes("$pong"))).toBe(true);
+    expect(server.close).not.toHaveBeenCalled(); // no premature shutdown
+
+    sendControl.mockRestore();
+  });
+
+  it("does not double-shutdown when shutdown() itself closes the reader", async () => {
+    const { client, input, server } = setupWithControlStream();
+
+    await client.shutdown();
+    input.end();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // shutdown() closed the reader; its 'close' must not re-enter shutdown.
+    expect(server.close).toHaveBeenCalledTimes(1);
   });
 });

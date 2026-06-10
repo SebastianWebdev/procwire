@@ -35,6 +35,17 @@ type BunServer = ReturnType<typeof Bun.listen>;
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
 
 /**
+ * Minimal reader surface used by the control loop. Structural on purpose:
+ * Bun's global ReadableStreamDefaultReader adds readMany(), which a generic
+ * web-streams reader (injected in tests) doesn't have.
+ */
+interface StdinReader {
+  read(): Promise<{ value?: Uint8Array | undefined; done: boolean }>;
+  cancel(reason?: unknown): Promise<void>;
+  releaseLock(): void;
+}
+
+/**
  * Client - Child-side API for Procwire IPC.
  *
  * This is the Bun.js optimized version.
@@ -226,16 +237,44 @@ export class Client extends EventEmitter {
     void this._startControlReader();
   }
 
+  /** Active stdin reader, kept so shutdown() can cancel the pending read. */
+  private _stdinReader: StdinReader | null = null;
+
   /**
    * @internal Read the parent's control plane (stdin) line by line.
+   *
+   * Uses an explicit reader (not for-await) so shutdown() can cancel the
+   * PENDING read: a suspended read keeps the Bun event loop alive, and the
+   * "stopped" flag alone only takes effect when the next chunk arrives -
+   * i.e. never, once the parent has said its last word - forcing the parent
+   * to force-kill the child after its grace period (Bug W7).
+   *
+   * EOF (stream done) means the parent is GONE: shut down so the child
+   * exits instead of living forever as an orphan (Bug W3 port).
    */
-  private async _startControlReader(): Promise<void> {
+  private async _startControlReader(
+    input: ReadableStream<Uint8Array> = Bun.stdin.stream() as ReadableStream<Uint8Array>,
+  ): Promise<void> {
     const decoder = new TextDecoder();
     let buffer = "";
+    let reader: StdinReader | null = null;
     try {
-      for await (const chunk of Bun.stdin.stream()) {
-        if (this._controlReaderStopped) break;
-        buffer += decoder.decode(chunk as Uint8Array);
+      // Inside the try: getReader() throws synchronously if the stream is
+      // already locked (e.g. a second Client instance in the same process).
+      const activeReader = input.getReader();
+      reader = activeReader;
+      this._stdinReader = activeReader;
+      while (!this._controlReaderStopped) {
+        const { value, done } = await activeReader.read();
+        if (done) {
+          // Parent death (or deliberate stdin close): exit cleanly.
+          if (!this._controlReaderStopped) {
+            void this.shutdown();
+          }
+          break;
+        }
+        // stream:true keeps multi-byte characters split across chunks intact.
+        buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
@@ -244,6 +283,13 @@ export class Client extends EventEmitter {
       }
     } catch {
       // stdin closed / unreadable - nothing more to do.
+    } finally {
+      this._stdinReader = null;
+      try {
+        reader?.releaseLock();
+      } catch {
+        /* lock already released */
+      }
     }
   }
 
@@ -307,6 +353,11 @@ export class Client extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     this._controlReaderStopped = true;
+    // Cancel the pending stdin read: a suspended read keeps the event loop
+    // alive and would pin the child until the parent force-kills it (W7).
+    void this._stdinReader?.cancel().catch(() => {
+      /* reader already closed */
+    });
     this._socket?.end();
     this._server?.stop(true);
     this._drainWaiter?.clear();
@@ -363,6 +414,12 @@ export class Client extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         // Create server using Bun.listen with unix socket
+        // Bun.listen shares ONE handler object across ALL connections, so
+        // every handler must check WHICH socket fired. Without the identity
+        // checks, a stray connection (rejected in _onConnectionOpen) would
+        // tear down or poison the ACTIVE parent session: its close event ran
+        // _onConnectionClose() against the live session, and its data fed the
+        // active FrameBuffer.
         this._server = Bun.listen({
           unix: pipePath,
           socket: {
@@ -372,15 +429,21 @@ export class Client extends EventEmitter {
             data: (socket: BunSocket, data: Buffer) => {
               this._onSocketData(socket, data);
             },
-            error: (_socket: BunSocket, err: Error) => {
-              this._onSocketError(err);
+            error: (socket: BunSocket, err: Error) => {
+              if (socket === this._socket) {
+                this._onSocketError(err);
+              }
             },
-            close: (_socket: BunSocket) => {
-              this._onConnectionClose();
+            close: (socket: BunSocket) => {
+              if (socket === this._socket) {
+                this._onConnectionClose();
+              }
             },
-            drain: (_socket: BunSocket) => {
-              // Backpressure released
-              this._drainWaiter?.onDrain();
+            drain: (socket: BunSocket) => {
+              // Backpressure released (only the active session's waiter)
+              if (socket === this._socket) {
+                this._drainWaiter?.onDrain();
+              }
             },
           },
         });
@@ -420,6 +483,9 @@ export class Client extends EventEmitter {
    * data handler and crashing the child.
    */
   private _onSocketData(socket: BunSocket, data: Buffer): void {
+    // Only the active session may feed the frame buffer: bytes from a stray
+    // (rejected) connection would desync the framing of the live session.
+    if (socket !== this._socket) return;
     if (!this._frameBuffer) return;
     let frames;
     try {
@@ -612,7 +678,7 @@ export class Client extends EventEmitter {
   }
 
   private _sendErrorResponse(requestId: number, methodId: number, message: string): void {
-    if (!this._socket) return;
+    if (!this._socket || !this._drainWaiter) return;
 
     const payload = this._defaultCodec.serialize(message);
     const headerBuf = this._acquireHeaderBuffer();
@@ -624,9 +690,13 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, concatenate for atomic write
+    // Bun doesn't have cork/uncork, concatenate for atomic write.
+    // Fire-and-forget, but still via writeAll so a partial write cannot
+    // truncate the frame and desync the parent's framing.
     const combined = Buffer.concat([headerBuf, payload]);
-    this._socket.write(combined);
+    this._drainWaiter.writeAll(this._socket, combined).catch(() => {
+      /* socket may be closed - the close handler tears the session down */
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -658,14 +728,10 @@ export class Client extends EventEmitter {
       payloadLength: payload.length,
     });
 
-    // Bun doesn't have cork/uncork, concatenate for atomic write
+    // Bun doesn't have cork/uncork, concatenate for atomic write.
+    // writeAll honors Bun's numeric write() return: partial writes are
+    // re-sent after drain instead of being silently dropped.
     const combined = Buffer.concat([headerBuf, payload]);
-    const canContinue = this._socket.write(combined);
-
-    // OPT-04: Wait AFTER write if backpressure
-    if (!canContinue) {
-      this._drainWaiter.markNeedsDrain();
-      await this._drainWaiter.waitForDrain();
-    }
+    await this._drainWaiter.writeAll(this._socket, combined);
   }
 }

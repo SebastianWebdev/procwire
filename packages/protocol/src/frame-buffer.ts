@@ -250,6 +250,19 @@ export class FrameBuffer {
   /** Partial header buffer for streaming mode */
   private partialHeaderBytes: Buffer | null = null;
 
+  /**
+   * Number of header bytes actually copied into partialHeaderBytes.
+   * partialHeaderBytes is pre-allocated at HEADER_SIZE, so its .length
+   * can never be used to track fill progress.
+   */
+  private partialHeaderFilled: number = 0;
+
+  /**
+   * Set after a streaming-mode protocol error. The parse state is unusable
+   * at that point, so further pushes are rejected until clear().
+   */
+  private corrupted: boolean = false;
+
   /** Configured maximum payload size */
   private readonly maxPayloadSize: number;
 
@@ -300,6 +313,17 @@ export class FrameBuffer {
           "Call clear() first or enable before receiving data.",
       );
     }
+    // Switching modes (or handlers) mid-frame would leave pendingHeader /
+    // partial header state behind and desync all subsequent parsing.
+    if (
+      handler !== this.streamHandler &&
+      (this.pendingHeader !== null || this.partialHeaderFilled > 0)
+    ) {
+      throw new Error(
+        "Cannot change stream handler mid-frame: a partial frame is in progress. " +
+          "Call clear() first.",
+      );
+    }
     this.streamHandler = handler;
   }
 
@@ -335,6 +359,13 @@ export class FrameBuffer {
   // ═══════════════════════════════════════════════════════════════════════════
 
   private pushStreaming(chunk: Buffer): void {
+    if (this.corrupted) {
+      throw new Error(
+        "FrameBuffer is corrupted after a streaming protocol error. " +
+          "Call clear() before pushing more data.",
+      );
+    }
+
     let offset = 0;
 
     try {
@@ -353,6 +384,9 @@ export class FrameBuffer {
         }
       }
     } catch (error) {
+      // Parse state is unreliable from here on; refuse further data until
+      // the owner resets the buffer (the connection should be dropped).
+      this.corrupted = true;
       if (this.streamHandler?.onError) {
         this.streamHandler.onError(
           error instanceof Error ? error : new Error(String(error)),
@@ -369,7 +403,7 @@ export class FrameBuffer {
    * Returns new offset after consuming header bytes.
    */
   private parseHeaderStreaming(chunk: Buffer, offset: number): number {
-    const existingHeaderBytes = this.partialHeaderBytes?.length ?? 0;
+    const existingHeaderBytes = this.partialHeaderFilled;
     const headerBytesNeeded = HEADER_SIZE - existingHeaderBytes;
     const availableBytes = chunk.length - offset;
     const bytesToTake = Math.min(headerBytesNeeded, availableBytes);
@@ -393,12 +427,14 @@ export class FrameBuffer {
     }
 
     chunk.copy(this.partialHeaderBytes, existingHeaderBytes, offset, offset + bytesToTake);
+    this.partialHeaderFilled = existingHeaderBytes + bytesToTake;
 
-    if (existingHeaderBytes + bytesToTake === HEADER_SIZE) {
+    if (this.partialHeaderFilled === HEADER_SIZE) {
       // Header complete
       this.pendingHeader = decodeHeader(this.partialHeaderBytes);
       this.validatePayloadSize(this.pendingHeader.payloadLength);
       this.partialHeaderBytes = null;
+      this.partialHeaderFilled = 0;
       this.streamPayloadOffset = 0;
       this.streamHandler!.onFrameStart(this.pendingHeader);
     }
@@ -592,9 +628,17 @@ export class FrameBuffer {
 
   /**
    * Check if there's a partial frame in the buffer.
+   *
+   * Covers both modes: buffered batch bytes, a partially received header,
+   * and a streaming payload that has not reached its final byte yet.
    */
   get hasPartialFrame(): boolean {
-    return this._bufferedBytes > 0 || this.partialHeaderBytes !== null;
+    return (
+      this._bufferedBytes > 0 ||
+      this.partialHeaderFilled > 0 ||
+      this.partialHeaderBytes !== null ||
+      this.pendingHeader !== null
+    );
   }
 
   /**
@@ -606,6 +650,8 @@ export class FrameBuffer {
     this.pendingHeader = null;
     this.streamPayloadOffset = 0;
     this.partialHeaderBytes = null;
+    this.partialHeaderFilled = 0;
+    this.corrupted = false;
   }
 }
 

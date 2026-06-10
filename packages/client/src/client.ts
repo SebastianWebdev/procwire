@@ -259,13 +259,37 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
     this._sendInit(pipePath);
 
     // Listen for control-plane messages from the parent (e.g. heartbeat $ping).
-    // unref() so reading stdin doesn't by itself keep the child alive: the pipe
-    // server keeps the event loop running during normal operation, and once it
-    // closes (e.g. on $shutdown) the child can exit instead of being force-killed.
-    this._controlReader = createInterface({ input: process.stdin });
-    this._controlReader.on("line", (line) => this._handleControlLine(line));
-    process.stdin.unref();
+    this._startControlReader(process.stdin);
   }
+
+  /**
+   * Wire the control-plane reader over the given stream (stdin in production;
+   * injectable for tests).
+   *
+   * unref() so reading stdin doesn't by itself keep the child alive: the pipe
+   * server keeps the event loop running during normal operation, and once it
+   * closes (e.g. on $shutdown) the child can exit instead of being force-killed.
+   *
+   * EOF/close on the stream means the parent is GONE (it holds the other end
+   * of the pipe): without shutting down here, the still-listening pipe server
+   * keeps the orphaned child alive forever (Bug W3).
+   */
+  private _startControlReader(input: NodeJS.ReadableStream): void {
+    this._controlReader = createInterface({ input });
+    this._controlReader.on("line", (line) => this._handleControlLine(line));
+    this._controlReader.on("close", this._onControlClose);
+    (input as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * The control stream ended: the parent process is dead (or closed our
+   * stdin). Shut down so the child exits instead of becoming an orphan.
+   * Bound property so shutdown() can detach it before closing the reader
+   * (a shutdown WE initiated must not re-enter itself).
+   */
+  private readonly _onControlClose = (): void => {
+    void this.shutdown();
+  };
 
   /**
    * Emit an event to parent.
@@ -305,6 +329,9 @@ export class Client<S extends Schema = EmptySchema> extends EventEmitter {
    * Graceful shutdown.
    */
   async shutdown(): Promise<void> {
+    // Detach the EOF handler first: closing the reader below fires "close",
+    // which must not re-enter shutdown().
+    this._controlReader?.off("close", this._onControlClose);
     this._controlReader?.close();
     this._controlReader = null;
     this._socket?.destroy();
