@@ -301,3 +301,48 @@ describe("Bug X1 (bun-client): a stray connection must not tear down the active 
     }
   }, 15000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W2 (bun-client): writeAll must serialize concurrent senders.
+//
+// A partial write suspends at waitForDrain() mid-frame. Without a write
+// queue, a concurrently submitted frame (e.g. a response racing an event
+// emission on the shared socket) slips between the written prefix and the
+// pending tail and corrupts the framing. (Found by Codex review on PR #49.)
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W2 (bun-client): concurrent writeAll calls must not interleave frames", () => {
+  it("keeps frames contiguous when a second send is submitted mid-partial-write", async () => {
+    const wire: Buffer[] = [];
+    let firstWrite = true;
+    const socket = {
+      write(d: Buffer): number {
+        if (firstWrite) {
+          firstWrite = false;
+          const n = Math.floor(d.length / 2);
+          wire.push(Buffer.from(d.subarray(0, n)));
+          return n; // partial: sender must suspend and retry the tail
+        }
+        wire.push(Buffer.from(d));
+        return d.length;
+      },
+    };
+
+    const waiter = new BunDrainWaiter();
+    const frameA = buildFrame({ methodId: 1, flags: 0, requestId: 1 }, Buffer.alloc(100, 0xaa));
+    const frameB = buildFrame({ methodId: 2, flags: 0, requestId: 2 }, Buffer.alloc(20, 0xbb));
+
+    const pA = waiter.writeAll(socket, frameA);
+    const pB = waiter.writeAll(socket, frameB); // submitted while A is mid-frame
+
+    await new Promise((r) => setTimeout(r, 10));
+    waiter.onDrain();
+    await Promise.all([pA, pB]);
+
+    const frames = new FrameBuffer().push(Buffer.concat(wire));
+    expect(frames.length).toBe(2);
+    expect(frames[0]!.header.methodId).toBe(1);
+    expect(frames[0]!.payload.equals(Buffer.alloc(100, 0xaa))).toBe(true);
+    expect(frames[1]!.header.methodId).toBe(2);
+    expect(frames[1]!.payload.equals(Buffer.alloc(20, 0xbb))).toBe(true);
+  });
+});

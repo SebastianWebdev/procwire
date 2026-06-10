@@ -46,6 +46,15 @@ export class BunDrainWaiter {
   private _closed = false;
 
   /**
+   * Tail of the FIFO write queue. writeAll() calls are serialized through
+   * this chain: a partial write suspends mid-frame waiting for drain, and a
+   * concurrently submitted frame must not slip between the written prefix
+   * and the pending tail (prefix(A) + frame(B) + tail(A) would corrupt the
+   * framing). Uncontended cost is a single resolved-promise hop.
+   */
+  private _writeQueue: Promise<void> = Promise.resolve();
+
+  /**
    * Call this from the socket's drain handler.
    * Resolves all pending waiters.
    */
@@ -105,12 +114,25 @@ export class BunDrainWaiter {
    * closed. Treating the number as a boolean drops frame tails and corrupts
    * the wire protocol under backpressure.
    *
-   * Fast path (no backpressure) costs a single write() call plus one
-   * comparison - no extra allocation, no await suspension.
+   * Calls on the same waiter are serialized in FIFO order so concurrent
+   * senders cannot interleave bytes inside one frame. Fast path (no
+   * backpressure, no contention) costs a single write() call plus one
+   * resolved-promise hop - no extra allocation.
    *
    * @throws {Error} If the socket closes before all bytes are written
    */
-  async writeAll(socket: BunWritableSocket, data: Buffer): Promise<void> {
+  writeAll(socket: BunWritableSocket, data: Buffer): Promise<void> {
+    const task = this._writeQueue.then(() => this._writeAllSerialized(socket, data));
+    // Keep the queue alive after a failed write; the error still reaches
+    // this caller through `task`.
+    this._writeQueue = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }
+
+  private async _writeAllSerialized(socket: BunWritableSocket, data: Buffer): Promise<void> {
     let remaining: Buffer = data;
     while (remaining.length > 0) {
       const written = socket.write(remaining);

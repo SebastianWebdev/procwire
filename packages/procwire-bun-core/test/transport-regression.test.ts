@@ -258,3 +258,136 @@ describe("Bug S1 (bun-core): failed send must not orphan pending state", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug W2 (bun-core): writeAll must serialize concurrent senders.
+//
+// A partial write suspends at waitForDrain() mid-frame. Without a write
+// queue, a concurrently submitted frame slips between the written prefix
+// and the pending tail: prefix(A) + frame(B) + tail(A) -> corrupted framing.
+// (Found by Codex review on PR #49.)
+// ═══════════════════════════════════════════════════════════════════════════
+describe("Bug W2 (bun-core): concurrent writeAll calls must not interleave frames", () => {
+  it("keeps frames contiguous when a second send is submitted mid-partial-write", async () => {
+    const { buildFrame } = await import("@procwire/protocol");
+
+    const wire: Buffer[] = [];
+    // First write: accept only half (forces the sender to suspend on drain).
+    // Every later write: accept fully (simulates capacity freed by the
+    // receiver between the partial write and the drain event).
+    let firstWrite = true;
+    const socket = {
+      write(d: Buffer): number {
+        if (firstWrite) {
+          firstWrite = false;
+          const n = Math.floor(d.length / 2);
+          wire.push(Buffer.from(d.subarray(0, n)));
+          return n;
+        }
+        wire.push(Buffer.from(d));
+        return d.length;
+      },
+    };
+
+    const waiter = new BunDrainWaiter();
+    const frameA = buildFrame({ methodId: 1, flags: 0, requestId: 1 }, Buffer.alloc(100, 0xaa));
+    const frameB = buildFrame({ methodId: 2, flags: 0, requestId: 2 }, Buffer.alloc(20, 0xbb));
+
+    const pA = waiter.writeAll(socket, frameA);
+    const pB = waiter.writeAll(socket, frameB); // submitted while A is mid-frame
+
+    // Let both calls reach their suspension/queue points, then release drain.
+    await new Promise((r) => setTimeout(r, 10));
+    waiter.onDrain();
+    await Promise.all([pA, pB]);
+
+    const frames = new FrameBuffer().push(Buffer.concat(wire));
+    expect(frames.length).toBe(2);
+    expect(frames[0]!.header.methodId).toBe(1);
+    expect(frames[0]!.payload.equals(Buffer.alloc(100, 0xaa))).toBe(true);
+    expect(frames[1]!.header.methodId).toBe(2);
+    expect(frames[1]!.payload.equals(Buffer.alloc(20, 0xbb))).toBe(true);
+  });
+
+  it("keeps frames intact when two real concurrent sends hit backpressure", async () => {
+    const path = tmpSock();
+    const received: Buffer[] = [];
+    let receivedBytes = 0;
+    let receiverSocket: { resume(): void } | null = null;
+    const resumeReceiver = (): void => {
+      receiverSocket?.resume();
+    };
+
+    const server = Bun.listen({
+      unix: path,
+      socket: {
+        open(socket) {
+          receiverSocket = socket as unknown as { pause(): void; resume(): void };
+          (socket as unknown as { pause(): void }).pause();
+        },
+        data(_socket, data: Buffer) {
+          received.push(Buffer.from(data));
+          receivedBytes += data.length;
+        },
+        error() {},
+        close() {},
+      },
+    });
+
+    const waiter = new BunDrainWaiter();
+    const sender = await Bun.connect({
+      unix: path,
+      socket: {
+        data() {},
+        error() {},
+        close() {},
+        drain() {
+          waiter.onDrain();
+        },
+      },
+    });
+
+    try {
+      const payloadA = Buffer.alloc(2 * 1024 * 1024, 0xa1);
+      const payloadB = Buffer.alloc(2 * 1024 * 1024, 0xb2);
+
+      const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+      const internals = mod as unknown as SendInternals;
+      internals._socket = sender as BunSocket;
+      internals._drainWaiter = waiter;
+
+      const resumeTimer = setTimeout(resumeReceiver, 200);
+
+      // Two sends racing on the same socket under backpressure.
+      await Promise.all([
+        internals._sendFrame(7, 1, payloadA, rawCodec),
+        internals._sendFrame(8, 2, payloadB, rawCodec),
+      ]);
+
+      const expectedTotal = 2 * (11 + payloadA.length);
+      await waitFor(() => receivedBytes >= expectedTotal, 8000);
+      clearTimeout(resumeTimer);
+      resumeReceiver();
+
+      expect(receivedBytes).toBe(expectedTotal);
+
+      // Both frames must parse cleanly (any order) - interleaving would
+      // desync the FrameBuffer and fail these assertions.
+      const frames = new FrameBuffer({ maxPayloadSize: 64 * 1024 * 1024 }).push(
+        Buffer.concat(received),
+      );
+      expect(frames.length).toBe(2);
+      const byMethod = new Map(frames.map((f) => [f.header.methodId, f]));
+      expect(byMethod.get(7)!.payload.equals(payloadA)).toBe(true);
+      expect(byMethod.get(8)!.payload.equals(payloadB)).toBe(true);
+    } finally {
+      sender.end();
+      server.stop(true);
+      try {
+        unlinkSync(path);
+      } catch {
+        /* already removed */
+      }
+    }
+  }, 20000);
+});
