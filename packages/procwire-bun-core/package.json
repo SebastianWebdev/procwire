@@ -52,8 +52,8 @@
     "test:ci": "bun test"
   },
   "dependencies": {
-    "@procwire/protocol": "workspace:*",
-    "@procwire/codecs": "workspace:*"
+    "@procwire/protocol": "workspace:^",
+    "@procwire/codecs": "workspace:^"
   },
   "devDependencies": {
     "@types/bun": "latest",
