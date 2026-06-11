@@ -24,7 +24,9 @@ JSON-RPC on the data channel would cause severe performance issues:
 - **~500ms serialization overhead** per 1MB of data
 - **~30 MB/s throughput** vs **~2.5 GB/s** with binary protocol
 
-### New Wire Format (Data Plane)
+## Wire Format (Data Plane)
+
+Every data-plane message is a frame: an 11-byte header followed by the codec-encoded payload.
 
 ```
 +----------+-------+----------+----------+----------------------+
@@ -33,4 +35,29 @@ JSON-RPC on the data channel would cause severe performance issues:
 +----------+-------+----------+----------+----------------------+
 ```
 
-More detailed architecture documentation is on the way.
+| Field      | Size    | Type         | Meaning                                                                 |
+| ---------- | ------- | ------------ | ----------------------------------------------------------------------- |
+| Method ID  | 2 bytes | uint16 BE    | Method/event ID assigned during handshake; `0xFFFF` is the abort signal |
+| Flags      | 1 byte  | bitfield     | Direction, response/error, stream chunk/end, ack (bits 6–7 reserved)    |
+| Request ID | 4 bytes | uint32 BE    | Correlation ID; `0` means fire-and-forget or unsolicited (events)       |
+| Length     | 4 bytes | uint32 BE    | Payload length in bytes                                                 |
+| Payload    | N bytes | codec output | Serialized by the method's codec (msgpack, Arrow, raw, ...)             |
+
+All integers are big-endian. Method names never travel on the data plane — only the numeric IDs exchanged in the handshake.
+
+## Control-Plane Messages
+
+The control plane is newline-delimited JSON-RPC 2.0 over the child's stdio:
+
+| Message     | Direction      | Purpose                                                                         |
+| ----------- | -------------- | ------------------------------------------------------------------------------- |
+| `$init`     | child → parent | Handshake: carries the data-plane pipe path and the child's method/event schema |
+| `$ping`     | parent → child | Heartbeat probe (only when `spawnPolicy.heartbeat` is enabled)                  |
+| `$pong`     | child → parent | Heartbeat reply; a missed reply within `timeoutMs` kills the child              |
+| `$shutdown` | parent → child | Graceful stop: the child closes its pipe server and exits on its own            |
+
+## Reliability
+
+- **Per-module shutdown** — `manager.shutdown(name)` stops a single module: pending crash-restarts are cancelled, `$shutdown` is sent, and only a child that fails to exit within 5 seconds is force-killed.
+- **Orphan prevention** — the child treats stdin EOF as parent death and shuts itself down, so a crashed parent never leaves worker processes running forever.
+- **Exception-safe receive path** — a framing error (e.g. an oversized payload) drops the connection instead of throwing from the socket handler, and a corrupt payload rejects only the affected request or stream. A bad frame cannot crash the parent — the supervisor of every module.

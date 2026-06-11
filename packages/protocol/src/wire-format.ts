@@ -13,7 +13,7 @@
  * └──────────┴───────┴──────────┴──────────┴──────────────────────┘
  *
  * Header: 11 bytes (this file)
- * Payload: variable length (handled by FrameBuffer in TASK-02)
+ * Payload: variable length (accumulated and framed by FrameBuffer)
  *
  * @module
  */
@@ -34,10 +34,15 @@ export const HEADER_SIZE = 11;
 export const DEFAULT_MAX_PAYLOAD_SIZE = 1024 * 1024 * 1024; // 1GB
 
 /**
- * Absolute maximum payload size - Node.js Buffer limitation.
- * Cannot be exceeded regardless of configuration.
+ * Absolute maximum payload size - a deliberate, conservative interop cap.
+ *
+ * The wire format itself allows up to ~4GiB (the length field is a uint32),
+ * and on Node >= 22 (the supported floor) Buffer's MAX_LENGTH is far above
+ * 2GB - so this is NOT a runtime limitation. Capping at 2GB-1 keeps payload
+ * sizes within a signed 32-bit range for interop with other runtimes and
+ * implementations. Cannot be exceeded regardless of configuration.
  */
-export const ABSOLUTE_MAX_PAYLOAD_SIZE = 2 * 1024 * 1024 * 1024 - 1; // ~2GB
+export const ABSOLUTE_MAX_PAYLOAD_SIZE = 2 * 1024 * 1024 * 1024 - 1; // 2GB - 1
 
 /**
  * Reserved method ID for abort signal.
@@ -262,8 +267,8 @@ export function createFlags(options: {
  * // Use default 1GB limit
  * validateHeader(header);
  *
- * // Custom limit for large file transfers
- * validateHeader(header, 4 * 1024 * 1024 * 1024); // 4GB
+ * // Raised limit for large transfers (still capped at ABSOLUTE_MAX_PAYLOAD_SIZE)
+ * validateHeader(header, 1536 * 1024 * 1024); // 1.5GB
  *
  * // Strict limit for control messages
  * validateHeader(header, 1024 * 1024); // 1MB
@@ -287,7 +292,7 @@ export function validateHeader(
     );
   }
 
-  // Also check Node.js absolute limit
+  // Also check the absolute interop cap
   if (header.payloadLength > ABSOLUTE_MAX_PAYLOAD_SIZE) {
     throw new Error(
       `Payload exceeds Node.js Buffer limit: ${header.payloadLength} bytes. ` +

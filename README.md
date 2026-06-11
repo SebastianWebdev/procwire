@@ -1,6 +1,6 @@
 # Procwire
 
-High-performance, type-safe IPC (Inter-Process Communication) for Node.js and Bun, with **zero runtime dependencies** in the core packages.
+High-performance, type-safe IPC (Inter-Process Communication) for Node.js and Bun. `@procwire/protocol` has **zero runtime dependencies**; `core` and `client` depend only on `@procwire/codecs` (MessagePack + Arrow).
 
 Procwire connects a parent process to child worker processes over a **dual-channel** transport:
 
@@ -21,6 +21,8 @@ JSON-RPC stays on the small, infrequent control messages; user data never pays t
 | **[@procwire/bun-client](packages/procwire-bun-client)** | Child side for the Bun runtime                                                |
 
 The Node and Bun implementations are identical on the wire.
+
+Two workspace tools are not published to npm: `packages/bench` (benchmarks) and `dashboard/` (benchmark dashboard).
 
 ## Quick Start
 
@@ -76,7 +78,7 @@ Each package's README has the full API. On Bun, use `@procwire/bun-core` / `@pro
 - **Cancellation** — `AbortController` support.
 - **Type-safe** — builder pattern with generics; the parent defines the schema.
 - **Cross-platform** — Named Pipes on Windows, Unix Domain Sockets on Linux/macOS.
-- **Zero runtime dependencies** in the core packages.
+- **Lean dependencies** — zero runtime dependencies in `@procwire/protocol`; `core`/`client` depend only on `@procwire/codecs` (MessagePack + Arrow).
 
 ## Architecture
 

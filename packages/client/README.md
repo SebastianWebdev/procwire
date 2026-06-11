@@ -61,8 +61,11 @@ const client = new Client(options?)
 ```typescript
 interface ClientOptions {
   defaultCodec?: Codec; // Default codec for all methods/events
+  maxPayloadSize?: number; // Max accepted inbound payload in bytes
 }
 ```
+
+`maxPayloadSize` guards against oversized frames: a frame declaring a larger payload is rejected and the connection is dropped. Defaults to the `FrameBuffer` default (1GB).
 
 #### `.handle(name, handler, definition?)`
 
@@ -107,6 +110,21 @@ Emit an event to the parent process.
 ```typescript
 client.emitEvent("progress", { percent: 75 });
 ```
+
+#### `.shutdown()`
+
+Graceful shutdown — closes the data socket and pipe server so the process can exit.
+
+```typescript
+await client.shutdown();
+```
+
+### Lifecycle
+
+The client also shuts down automatically in two cases:
+
+- **`$shutdown` from the parent** — when the parent calls `manager.shutdown()`, it sends a `$shutdown` control message; the client shuts down cleanly so the parent never has to force-kill it.
+- **stdin EOF (parent death)** — if the parent process dies (or closes the child's stdin), the control stream ends and the client shuts down, so the child exits instead of living on as an orphan.
 
 ### RequestContext
 

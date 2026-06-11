@@ -2,7 +2,7 @@
 
 Child-side API for Procwire IPC — **Bun.js optimized**.
 
-Drop-in alternative to `@procwire/client` using Bun-native APIs (`Bun.listen()` for named pipe server, Bun socket handlers) for lower overhead and tighter runtime integration.
+Alternative to `@procwire/client` using Bun-native APIs (`Bun.listen()` for named pipe server, Bun socket handlers) for lower overhead and tighter runtime integration. It exposes the same runtime API and speaks the same wire format; the typed schema generics from the Node packages (`Client<S>`, `ExtractSchema`) are not yet available on Bun.
 
 ## Highlights
 
@@ -63,8 +63,11 @@ const client = new Client(options?)
 ```typescript
 interface ClientOptions {
   defaultCodec?: Codec; // Default codec for all methods/events
+  maxPayloadSize?: number; // Max accepted inbound payload in bytes
 }
 ```
+
+`maxPayloadSize` guards against oversized frames: a frame declaring a larger payload is rejected and the connection is dropped. Defaults to the `FrameBuffer` default (1GB).
 
 #### `.handle(name, handler, definition?)`
 
@@ -117,6 +120,15 @@ Graceful shutdown — closes socket and pipe server.
 ```typescript
 await client.shutdown();
 ```
+
+### Lifecycle
+
+The client also shuts down automatically in two cases:
+
+- **`$shutdown` from the parent** — when the parent calls `manager.shutdown()`, it sends a `$shutdown` control message; the client shuts down cleanly so the parent never has to force-kill it.
+- **stdin EOF (parent death)** — if the parent process dies (or closes the child's stdin), the control stream ends and the client shuts down, so the child exits instead of living on as an orphan.
+
+Shutdown is immediate: the stdin reader is cancellable, so a pending control-plane read never pins the Bun event loop past `shutdown()`.
 
 ### RequestContext
 
@@ -198,7 +210,7 @@ ClientErrors.responseAlreadySent(); // Double response
 
 ## Differences from `@procwire/client`
 
-This package has the **same API surface** as `@procwire/client` but uses Bun-native primitives under the hood:
+This package has the same runtime API and wire format as `@procwire/client` but uses Bun-native primitives under the hood. One gap: the typed schema generics from the Node package (`Client<S>`, `ExtractSchema`) are not yet available here — handlers are untyped (`unknown`) at compile time.
 
 | Concern       | `@procwire/client` (Node.js)               | `@procwire/bun-client` (Bun)                     |
 | ------------- | ------------------------------------------ | ------------------------------------------------ |

@@ -2,7 +2,7 @@
 
 Parent-side module system for Procwire IPC — **Bun.js optimized**.
 
-Drop-in alternative to `@procwire/core` using Bun-native APIs (`Bun.spawn()`, `Bun.listen()`, `Bun.connect()`) for lower overhead and tighter runtime integration.
+Alternative to `@procwire/core` using Bun-native APIs (`Bun.spawn()`, `Bun.listen()`, `Bun.connect()`) for lower overhead and tighter runtime integration. It exposes the same runtime API and speaks the same wire format; the typed schema generics from the Node packages (`Module<S>`, `ExtractSchema`) are not yet available on Bun.
 
 ## Highlights
 
@@ -69,7 +69,8 @@ const module = new Module("name")
   .method(name, config)
   .event(name, config?)
   .spawnPolicy(policy)
-  .maxPayloadSize(bytes);
+  .maxPayloadSize(bytes)
+  .requestTimeout(ms);
 ```
 
 #### `.executable(command, args, options?)`
@@ -115,8 +116,31 @@ module.spawnPolicy({
   retryDelay: { type: "exponential", base: 1000, max: 30000 },
   restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
+  heartbeat: { intervalMs: 5000, timeoutMs: 15000 }, // Liveness check (off by default)
   socketBufferSize: 4 * 1024 * 1024, // 4MB for large payloads
 });
+```
+
+##### Heartbeat (liveness)
+
+The optional `heartbeat` policy detects a worker that is still running but hung. The parent sends `$ping` over the control plane (stdin) every `intervalMs`; if the matching `$pong` does not arrive within `timeoutMs`, the worker is killed and the normal crash/restart path runs (so `restartOnCrash` applies). Disabled by default.
+
+```typescript
+module.spawnPolicy({
+  restartOnCrash: true,
+  heartbeat: { intervalMs: 5000, timeoutMs: 15000 },
+});
+```
+
+#### `.requestTimeout(ms)`
+
+Set the default per-request timeout for `result`/`ack` methods. **By default, requests time out after 30 seconds (30000 ms)** — `send()` never hangs forever out of the box. Pass `0` to disable the default for this module.
+
+Precedence per request: child schema timeout → per-method `timeout` → this module default.
+
+```typescript
+module.requestTimeout(60000); // 60s default for all methods
+module.requestTimeout(0); // disable the default timeout
 ```
 
 ### Communication
@@ -182,6 +206,10 @@ await manager.shutdown();          // All
 await manager.shutdown("worker1"); // Specific
 ```
 
+#### Graceful shutdown
+
+`manager.shutdown()` sends a `$shutdown` message over the control plane; a Procwire client closes its pipe server and exits on its own — no signal needed. If the process has not exited within 5 seconds, it is force-killed as a fallback.
+
 ### Module States
 
 ```typescript
@@ -245,7 +273,7 @@ module.on(ModuleEvents.DISCONNECTED, () => console.log("Disconnected"));
 
 ## Differences from `@procwire/core`
 
-This package has the **same API surface** as `@procwire/core` but uses Bun-native primitives under the hood:
+This package has the same runtime API and wire format as `@procwire/core` but uses Bun-native primitives under the hood. One gap: the typed schema generics from the Node package (`Module<S>`, `ExtractSchema`) are not yet available here — methods are untyped (`unknown`) at compile time.
 
 | Concern        | `@procwire/core` (Node.js)                 | `@procwire/bun-core` (Bun)                       |
 | -------------- | ------------------------------------------ | ------------------------------------------------ |

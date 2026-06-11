@@ -45,7 +45,7 @@ npm whoami
 npm access ls-packages
 ```
 
-You should see `@procwire/core`, `@procwire/codecs`, `@procwire/client`, and `@procwire/protocol` with `read-write` access.
+You should see `@procwire/core`, `@procwire/codecs`, `@procwire/client`, `@procwire/protocol`, `@procwire/bun-core`, and `@procwire/bun-client` with `read-write` access.
 
 ### Setting Up Trusted Publisher
 
@@ -69,6 +69,8 @@ Repeat this for each package:
 - `@procwire/codecs`
 - `@procwire/client`
 - `@procwire/protocol`
+- `@procwire/bun-core`
+- `@procwire/bun-client`
 
 ### Package Configuration
 
@@ -109,6 +111,8 @@ This interactive prompt will ask:
 ◯ @procwire/codecs
 ◯ @procwire/client
 ◯ @procwire/protocol
+◯ @procwire/bun-core
+◯ @procwire/bun-client
 
 🦋  What kind of change is this for @procwire/core?
 ◉ minor - New features
@@ -321,6 +325,8 @@ npm view @procwire/core version
 npm view @procwire/codecs version
 npm view @procwire/client version
 npm view @procwire/protocol version
+npm view @procwire/bun-core version
+npm view @procwire/bun-client version
 
 # Re-run publish (changesets will skip already-published versions)
 pnpm release

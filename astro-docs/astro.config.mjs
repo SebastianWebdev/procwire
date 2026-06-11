@@ -75,7 +75,7 @@ Key Architectural Concepts:
             tip: true,
           },
 
-          promote: ["guides/getting-started", "guides/core-concepts"],
+          promote: ["guides/getting-started", "guides/concepts"],
 
           exclude: ["changelog", "team"],
         }),
