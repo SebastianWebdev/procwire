@@ -10,7 +10,7 @@ import { buildFrame } from "@procwire/protocol";
 import { msgpackCodec } from "@procwire/codecs";
 
 interface ClientInternals {
-  _onSocketError(err: Error): void;
+  _handleTransportError(err: Error): void;
   _onConnectionOpen(socket: unknown): void;
   _onConnectionClose(): void;
   _onSocketData(socket: unknown, data: Buffer): void;
@@ -29,7 +29,7 @@ describe("Bug C5 (bun-client): unobserved socket error must not crash the child"
     const client = new Client();
 
     expect(() =>
-      (client as unknown as ClientInternals)._onSocketError(new Error("ECONNRESET")),
+      (client as unknown as ClientInternals)._handleTransportError(new Error("ECONNRESET")),
     ).not.toThrow();
   });
 
@@ -42,7 +42,7 @@ describe("Bug C5 (bun-client): unobserved socket error must not crash the child"
     });
 
     const err = new Error("EPIPE");
-    expect(() => (client as unknown as ClientInternals)._onSocketError(err)).not.toThrow();
+    expect(() => (client as unknown as ClientInternals)._handleTransportError(err)).not.toThrow();
     expect(caught).toBe(err);
   });
 });

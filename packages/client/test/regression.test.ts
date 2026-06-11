@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { Socket } from "node:net";
 import { Client } from "../src/client.js";
-import type { RequestContextImpl } from "../src/request-context.js";
+import type { RequestContextImpl } from "@procwire/runtime-core";
 import { msgpackCodec } from "@procwire/codecs";
 import { buildFrame } from "@procwire/protocol";
 
@@ -299,9 +299,16 @@ describe("Feature D1 (client): responds to heartbeat ping with pong", () => {
 // must trigger a clean shutdown.
 // ═══════════════════════════════════════════════════════════════════════════
 describe("Bug W3 (client): parent death (stdin EOF) must shut the child down", () => {
+  interface FakeTransport {
+    writeFrame: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+    resume: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  }
+
   interface ControlInternals {
     _server: { close: ReturnType<typeof vi.fn> } | null;
-    _socket: { destroy: ReturnType<typeof vi.fn> } | null;
+    _transport: FakeTransport | null;
     _startControlReader(input: NodeJS.ReadableStream): void;
   }
 
@@ -309,27 +316,32 @@ describe("Bug W3 (client): parent death (stdin EOF) must shut the child down", (
     client: Client;
     input: PassThrough;
     server: { close: ReturnType<typeof vi.fn> };
-    socket: { destroy: ReturnType<typeof vi.fn> };
+    transport: FakeTransport;
   } {
     const client = new Client();
     const internals = client as unknown as ControlInternals;
     const server = { close: vi.fn() };
-    const socket = { destroy: vi.fn() };
+    const transport: FakeTransport = {
+      writeFrame: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      close: vi.fn(),
+    };
     internals._server = server;
-    internals._socket = socket;
+    internals._transport = transport;
     const input = new PassThrough();
     internals._startControlReader(input);
-    return { client, input, server, socket };
+    return { client, input, server, transport };
   }
 
   it("shuts down (closes server + socket) when the control stream reaches EOF", async () => {
-    const { input, server, socket } = setupWithControlStream();
+    const { input, server, transport } = setupWithControlStream();
 
     input.end(); // parent died -> stdin EOF
     await new Promise((r) => setTimeout(r, 20));
 
     expect(server.close).toHaveBeenCalledTimes(1);
-    expect(socket.destroy).toHaveBeenCalledTimes(1);
+    expect(transport.close).toHaveBeenCalledTimes(1);
   });
 
   it("still handles control lines before EOF", async () => {

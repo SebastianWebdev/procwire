@@ -18,7 +18,7 @@ import {
   type InferCodecInput,
   type InferCodecOutput,
 } from "@procwire/codecs";
-import type { SendReturn } from "../src/schema-types.js";
+import type { SendReturn } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST TYPES

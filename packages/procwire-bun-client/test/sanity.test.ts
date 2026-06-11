@@ -115,9 +115,9 @@ describe("Client", () => {
   it("should throw for unknown event", async () => {
     const client = new Client().event("known");
 
-    // Manually set socket to bypass not connected check
+    // Manually set the transport to bypass the not-connected check
     // @ts-expect-error - accessing private property for testing
-    client._socket = {} as never;
+    client._transport = {} as never;
 
     await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event");
   });

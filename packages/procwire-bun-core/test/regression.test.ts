@@ -253,16 +253,17 @@ describe("Bug C9 (bun-core): connectDataChannel must time out instead of hanging
       let outcome: unknown = "pending";
       void (
         manager as unknown as {
-          connectDataChannel(m: Module, p: string, t?: number): Promise<unknown>;
+          _connectDataChannel(m: Module, p: string, policy: object): Promise<unknown>;
         }
       )
-        .connectDataChannel(fakeModule, "/tmp/procwire-never", 1000)
+        ._connectDataChannel(fakeModule, "/tmp/procwire-never", {})
         .then(
           (v) => (outcome = v),
           (e) => (outcome = e),
         );
 
-      jest.advanceTimersByTime(1000);
+      // The connect timeout is fixed at 10s in the adapter.
+      jest.advanceTimersByTime(10_000);
       await flush();
 
       // Fixed: the timeout fired -> rejected. Buggy: no timer -> still "pending".
@@ -371,6 +372,8 @@ describe("Feature D1 (bun-core): heartbeat detects an unresponsive child", () =>
       kill: () => {
         calls.kill++;
       },
+      // _killProcess only fires while the process is still alive.
+      exitCode: null,
       // no stdout -> the pong reader is skipped, keeping the test focused.
     };
     mod._attachProcess(proc as never);

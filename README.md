@@ -15,7 +15,7 @@ JSON-RPC stays on the small, infrequent control messages; user data never pays t
 | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | **[@procwire/protocol](packages/protocol)**              | Wire format, framing, flags (11-byte header), `FrameBuffer`                   |
 | **[@procwire/codecs](packages/codecs)**                  | `rawCodec`, `msgpackCodec`, `arrowCodec`                                      |
-| **[@procwire/runtime-core](packages/runtime-core)**      | Shared types, errors and events used by the four runtime packages (internal)  |
+| **[@procwire/runtime-core](packages/runtime-core)**      | The shared IPC core (`ModuleCore`/`ClientCore`/manager policies) - internal   |
 | **[@procwire/core](packages/core)**                      | Parent side: `ModuleManager`, `Module` (spawn, lifecycle, restart, heartbeat) |
 | **[@procwire/client](packages/client)**                  | Child side: `Client`, `RequestContext`                                        |
 | **[@procwire/bun-core](packages/procwire-bun-core)**     | Parent side for the Bun runtime                                               |

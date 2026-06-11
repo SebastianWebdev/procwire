@@ -1,15 +1,17 @@
 /**
  * RequestContext implementation for method handlers.
  *
+ * Runtime-agnostic: all socket specifics live behind the FrameTransport,
+ * so this single implementation serves both the Node and Bun clients.
+ *
  * @module
  */
 
-import type { Socket } from "node:net";
-import { Flags, encodeHeaderInto } from "@procwire/protocol";
-import type { DrainWaiter } from "@procwire/protocol";
+import { Flags, encodeHeaderInto, HEADER_SIZE } from "@procwire/protocol";
+import type { FrameTransport } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
-import type { RequestContext } from "@procwire/runtime-core";
-import { ClientErrors } from "@procwire/runtime-core";
+import type { RequestContext } from "./client-types.js";
+import { ClientErrors } from "./client-errors.js";
 
 /**
  * Internal implementation of RequestContext.
@@ -26,10 +28,8 @@ export class RequestContextImpl implements RequestContext {
     public readonly method: string,
     private readonly _methodId: number,
     private readonly _codec: Codec,
-    private readonly _socket: Socket,
+    private readonly _transport: FrameTransport,
     private readonly _abortCallbacks: Map<number, Set<() => void>>,
-    private readonly _acquireHeader: () => Buffer,
-    private readonly _drainWaiter: DrainWaiter,
   ) {}
 
   get aborted(): boolean {
@@ -110,10 +110,8 @@ export class RequestContextImpl implements RequestContext {
   }
 
   /**
-   * Send response data with proper backpressure handling.
-   *
-   * Uses RING+SYNC pattern: write BEFORE await for allocation-free headers.
-   * DrainWaiter singleton prevents MaxListenersExceededWarning.
+   * Send response data; the transport resolves once the frame has been fully
+   * handed to the OS (after any backpressure drained).
    */
   private async _sendResponse(data: unknown, flags: number): Promise<void> {
     // Empty payload cases:
@@ -123,8 +121,10 @@ export class RequestContextImpl implements RequestContext {
     const isStreamEnd = (flags & Flags.STREAM_END) !== 0;
     const isEmptyAck = (flags & Flags.IS_ACK) !== 0 && data == null;
     const payload = isStreamEnd || isEmptyAck ? Buffer.alloc(0) : this._codec.serialize(data);
-    const headerBuf = this._acquireHeader();
 
+    // The header buffer is owned by this call (never pooled), so the
+    // transport may hold it across a backpressure wait.
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
     encodeHeaderInto(headerBuf, {
       methodId: this._methodId,
       flags,
@@ -132,17 +132,7 @@ export class RequestContextImpl implements RequestContext {
       payloadLength: payload.length,
     });
 
-    // Write BEFORE await to prevent deadlock. headerBuf is freshly allocated
-    // and owned by this call, so it can be written without an extra copy.
-    this._socket.cork();
-    this._socket.write(headerBuf);
-    const canContinue = this._socket.write(payload);
-    this._socket.uncork();
-
-    // OPT-04: Wait AFTER write if backpressure - ring buffer no longer needed
-    if (!canContinue) {
-      await this._drainWaiter.waitForDrain();
-    }
+    await this._transport.writeFrame(headerBuf, payload);
   }
 
   private _cleanup(): void {

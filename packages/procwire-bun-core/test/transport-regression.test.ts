@@ -14,8 +14,6 @@ import { BunDrainWaiter } from "@procwire/protocol";
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
 
 interface SendInternals {
-  _socket: unknown;
-  _drainWaiter: BunDrainWaiter | null;
   _pendingRequests: Map<number, unknown>;
   _pendingStreams: Map<number, unknown>;
   _sendFrame(methodId: number, requestId: number, data: unknown, codec: unknown): Promise<void>;
@@ -71,15 +69,15 @@ describe("Bug W1 (bun-core): partial socket writes must not drop frame tails", (
       },
     });
 
-    const waiter = new BunDrainWaiter();
+    let mod: Module | null = null;
     const sender = await Bun.connect({
       unix: path,
       socket: {
         data() {},
         error() {},
         close() {},
-        drain() {
-          waiter.onDrain();
+        drain(socket) {
+          mod?._onSocketDrain(socket as BunSocket);
         },
       },
     });
@@ -88,10 +86,9 @@ describe("Bug W1 (bun-core): partial socket writes must not drop frame tails", (
       const payload = Buffer.alloc(4 * 1024 * 1024);
       for (let i = 0; i < payload.length; i++) payload[i] = i % 251;
 
-      const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+      mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+      mod._attachDataChannel(sender as BunSocket);
       const internals = mod as unknown as SendInternals;
-      internals._socket = sender as BunSocket;
-      internals._drainWaiter = waiter;
 
       // Let the kernel buffers fill first, then release the receiver so the
       // drain path can complete the send.
@@ -335,15 +332,15 @@ describe("Bug W2 (bun-core): concurrent writeAll calls must not interleave frame
       },
     });
 
-    const waiter = new BunDrainWaiter();
+    let mod: Module | null = null;
     const sender = await Bun.connect({
       unix: path,
       socket: {
         data() {},
         error() {},
         close() {},
-        drain() {
-          waiter.onDrain();
+        drain(socket) {
+          mod?._onSocketDrain(socket as BunSocket);
         },
       },
     });
@@ -352,10 +349,9 @@ describe("Bug W2 (bun-core): concurrent writeAll calls must not interleave frame
       const payloadA = Buffer.alloc(2 * 1024 * 1024, 0xa1);
       const payloadB = Buffer.alloc(2 * 1024 * 1024, 0xb2);
 
-      const mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+      mod = new Module("worker").executable("bun", ["w.ts"]).method("foo");
+      mod._attachDataChannel(sender as BunSocket);
       const internals = mod as unknown as SendInternals;
-      internals._socket = sender as BunSocket;
-      internals._drainWaiter = waiter;
 
       const resumeTimer = setTimeout(resumeReceiver, 200);
 
@@ -418,12 +414,12 @@ describe("Bug W5 (bun-core): failed data-channel connect must reject cleanly", (
         _onSocketDrain() {},
       };
       const api = manager as unknown as {
-        connectDataChannel(m: unknown, p: string, t?: number): Promise<unknown>;
+        _connectDataChannel(m: unknown, p: string, policy: object): Promise<unknown>;
       };
 
       let thrown: Error | null = null;
       try {
-        await api.connectDataChannel(fakeModule, tmpSock(), 1000);
+        await api._connectDataChannel(fakeModule, tmpSock(), {});
       } catch (err) {
         thrown = err as Error;
       }

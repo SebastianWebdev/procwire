@@ -43,3 +43,22 @@ export type {
 } from "./client-types.js";
 
 export { ProcwireClientError, ClientErrors } from "./client-errors.js";
+
+// Schema accumulation types for the Module builder pattern
+export type {
+  AddMethod,
+  AddMethodSymmetric,
+  AddEvent,
+  SendReturn,
+  MethodsWithResponseType,
+  MethodsWithoutResponseType,
+  DualCodecMethodConfig,
+  SingleCodecMethodConfig,
+  TypedEventConfig,
+} from "./schema-types.js";
+
+// Shared runtime cores (consumed by the four runtime packages)
+export { ModuleCore } from "./module-core.js";
+export { ModuleManagerCore, SpawnError, type ManagedModule } from "./manager-core.js";
+export { ClientCore, type HandleOptions } from "./client-core.js";
+export { RequestContextImpl } from "./request-context.js";

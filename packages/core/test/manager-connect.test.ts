@@ -30,7 +30,11 @@ vi.mock("node:net", () => ({
 
 const { ModuleManager } = await import("../src/manager.js");
 
-type ConnectFn = (pipePath: string, bufSize?: number, timeoutMs?: number) => Promise<unknown>;
+type ConnectFn = (
+  module: unknown,
+  pipePath: string,
+  policy: { socketBufferSize?: number },
+) => Promise<unknown>;
 
 describe("Bug C9: connectDataChannel must time out instead of hanging", () => {
   it("rejects and destroys the socket when the connection never completes", async () => {
@@ -39,17 +43,18 @@ describe("Bug C9: connectDataChannel must time out instead of hanging", () => {
       createdSockets.length = 0;
       const manager = new ModuleManager();
       const connect = (
-        manager as unknown as { connectDataChannel: ConnectFn }
-      ).connectDataChannel.bind(manager);
+        manager as unknown as { _connectDataChannel: ConnectFn }
+      )._connectDataChannel.bind(manager);
 
       let outcome: unknown = "pending";
       // The fake socket never emits "connect" or "error".
-      connect("/tmp/procwire-never", undefined, 1000).then(
+      connect(null, "/tmp/procwire-never", {}).then(
         (v) => (outcome = v),
         (e) => (outcome = e),
       );
 
-      await vi.advanceTimersByTimeAsync(1000);
+      // The connect timeout is fixed at 10s in the adapter.
+      await vi.advanceTimersByTimeAsync(10_000);
       await Promise.resolve();
 
       // Fixed: the timeout fired -> rejected + socket destroyed.

@@ -49,6 +49,7 @@
     "test:ci": "vitest run"
   },
   "dependencies": {
+    "@procwire/protocol": "workspace:^",
     "@procwire/codecs": "workspace:^"
   },
   "devDependencies": {

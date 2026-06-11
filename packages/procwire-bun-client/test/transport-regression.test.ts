@@ -10,10 +10,8 @@ import { FrameBuffer, buildFrame, Flags, hasFlag } from "@procwire/protocol";
 import type { Frame } from "@procwire/protocol";
 import { rawCodec, msgpackCodec } from "@procwire/codecs";
 import { Client } from "../src/index.js";
-import { RequestContextImpl } from "../src/request-context.js";
-import { BunDrainWaiter } from "@procwire/protocol";
-
-type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
+import { RequestContextImpl } from "@procwire/runtime-core";
+import { BunDrainWaiter, BunSocketTransport, type BunTransportSocket } from "@procwire/protocol";
 
 function tmpSock(): string {
   return `/tmp/procwire-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}.sock`;
@@ -61,7 +59,7 @@ describe("Bug W1 (bun-client): partial socket writes must not drop response tail
       },
     });
 
-    const waiter = new BunDrainWaiter();
+    let transport: BunSocketTransport | null = null;
     const sender = await Bun.connect({
       unix: path,
       socket: {
@@ -69,25 +67,17 @@ describe("Bug W1 (bun-client): partial socket writes must not drop response tail
         error() {},
         close() {},
         drain() {
-          waiter.onDrain();
+          transport?.handleDrain();
         },
       },
     });
+    transport = new BunSocketTransport(sender as unknown as BunTransportSocket);
 
     try {
       const payload = Buffer.alloc(4 * 1024 * 1024);
       for (let i = 0; i < payload.length; i++) payload[i] = (i * 7) % 251;
 
-      const ctx = new RequestContextImpl(
-        42,
-        "bigResponse",
-        7,
-        rawCodec,
-        sender as BunSocket,
-        new Map(),
-        () => Buffer.allocUnsafe(11),
-        waiter,
-      );
+      const ctx = new RequestContextImpl(42, "bigResponse", 7, rawCodec, transport, new Map());
 
       const resumeTimer = setTimeout(resumeReceiver, 200);
 
@@ -384,7 +374,7 @@ describe("Bug W7 (bun-client): the stdin reader must not pin the child's event l
   interface ReaderInternals {
     _server: { stop(force?: boolean): void } | null;
     _socket: unknown;
-    _startControlReader(input?: ReadableStream<Uint8Array>): Promise<void>;
+    _runControlReader(input?: ReadableStream<Uint8Array>): Promise<void>;
     _sendControl(msg: unknown): void;
   }
 
@@ -394,7 +384,7 @@ describe("Bug W7 (bun-client): the stdin reader must not pin the child's event l
     internals._server = { stop: () => {} };
 
     const cs = makeControlStream();
-    const readerDone = internals._startControlReader(cs.stream);
+    const readerDone = internals._runControlReader(cs.stream);
     await new Promise((r) => setTimeout(r, 20));
 
     await client.shutdown();
@@ -418,7 +408,7 @@ describe("Bug W7 (bun-client): the stdin reader must not pin the child's event l
     };
 
     const cs = makeControlStream();
-    const readerDone = internals._startControlReader(cs.stream);
+    const readerDone = internals._runControlReader(cs.stream);
     await new Promise((r) => setTimeout(r, 20));
 
     cs.close(); // parent died -> stdin EOF
@@ -439,7 +429,7 @@ describe("Bug W7 (bun-client): the stdin reader must not pin the child's event l
     };
 
     const cs = makeControlStream();
-    const readerDone = internals._startControlReader(cs.stream);
+    const readerDone = internals._runControlReader(cs.stream);
 
     cs.push('{"jsonrpc":"2.0","method":"$pi');
     await new Promise((r) => setTimeout(r, 10));

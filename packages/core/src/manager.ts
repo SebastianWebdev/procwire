@@ -1,86 +1,30 @@
 /**
- * ModuleManager - Orchestrates lifecycle of worker modules.
+ * ModuleManager - Node.js runtime adapter over the shared ModuleManagerCore.
  *
- * RESPONSIBILITIES:
- * - Register and store modules
- * - Spawn child processes
- * - Handle spawn retry on failure
- * - Handle restart on crash
- * - Graceful shutdown
- *
- * NOT RESPONSIBLE FOR:
- * - Communication (Module does this)
- * - Request tracking (Module does this)
+ * ALL lifecycle policies (spawn retry/backoff, crash-restart window,
+ * per-module shutdown guard, heartbeat state machine) live ONCE in
+ * @procwire/runtime-core. This class owns only what is Node-specific:
+ * child_process.spawn + exit events, the readline control-plane reader,
+ * stdin EPIPE guarding, net.createConnection for the data plane and
+ * SIGKILL/exit-wait mechanics.
  *
  * @module
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { createConnection, type Socket } from "node:net";
+import { createConnection } from "node:net";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
-import { EventEmitter } from "node:events";
+import type { SpawnPolicy, InitMessage } from "@procwire/runtime-core";
+import { ManagerErrors, ModuleManagerCore } from "@procwire/runtime-core";
 import type { Module } from "./module.js";
-import type {
-  SpawnPolicy,
-  ModuleSchema,
-  InitMessage,
-  RetryDelayConfig,
-  HeartbeatConfig,
-} from "@procwire/runtime-core";
-import { ManagerErrors } from "@procwire/runtime-core";
-import { ManagerEvents } from "@procwire/runtime-core";
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Default spawn policy values.
- */
-const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
-  initTimeout: 30_000,
-  maxRetries: 3,
-  retryDelay: { type: "exponential", base: 1000, max: 30_000 },
-  restartOnCrash: false,
-  restartLimit: { maxRestarts: 5, windowMs: 60_000 },
-  socketBufferSize: undefined as unknown as number, // undefined = use OS default
-  heartbeat: null, // disabled by default
-};
+export { SpawnError } from "@procwire/runtime-core";
 
 /** Delay for detecting immediate spawn errors (ms) */
 const SPAWN_ERROR_DETECTION_DELAY_MS = 100;
 
-/** Delay before attempting to restart a crashed module (ms) */
-const RESTART_WAIT_DELAY_MS = 1000;
-
-/** Timeout for graceful shutdown before force kill (ms) */
-const FORCE_KILL_TIMEOUT_MS = 5000;
-
 /** Timeout for connecting to the child's data-plane pipe before giving up (ms) */
 const DATA_CHANNEL_CONNECT_TIMEOUT_MS = 10000;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SPAWN ERROR
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Spawn error with details.
- */
-export class SpawnError extends Error {
-  constructor(
-    message: string,
-    public readonly moduleName: string,
-    public readonly attempts: number,
-    public readonly lastError?: Error | undefined,
-  ) {
-    super(message);
-    this.name = "SpawnError";
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MODULE MANAGER
-// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * ModuleManager - Orchestrates lifecycle of worker modules.
@@ -108,163 +52,15 @@ export class SpawnError extends Error {
  * await manager.shutdown();
  * ```
  */
-export class ModuleManager extends EventEmitter {
-  private readonly modules = new Map<string, Module>();
-  private readonly restartTimestamps = new Map<string, number[]>();
+export class ModuleManager extends ModuleManagerCore<ChildProcess, Module> {
   private readonly stdoutReaders = new Map<string, ReadlineInterface>();
-  // Pending crash-restart timers, kept so they can be cancelled on shutdown to
-  // avoid resurrecting a module mid-/post-shutdown (the restart delay outlives
-  // the per-module shuttingDown window, which ends when its shutdown returns).
-  private readonly restartTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // Control-plane heartbeat state (only populated when a module enables it).
-  private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
-  // Timestamp of an outstanding (unanswered) $ping per module; cleared once the
-  // matching $pong arrives. Lets us measure the timeout from an actual ping
-  // rather than from startup.
-  private readonly heartbeatPingAt = new Map<string, number>();
-  // Names of modules whose shutdown is currently in flight. Per-module on
-  // purpose: a single global flag suppressed crash handling for ALL modules
-  // while ANY shutdown ran, and overlapping shutdowns raced on resetting it
-  // (Bug W4).
-  private readonly shuttingDown = new Set<string>();
-
-  /**
-   * Register a module.
-   *
-   * @param module - Module to register
-   * @throws {Error} if module with same name already registered
-   */
-  register(module: Module): this {
-    if (this.modules.has(module.name)) {
-      throw ManagerErrors.alreadyRegistered(module.name);
-    }
-
-    module._validate();
-    this.modules.set(module.name, module);
-
-    return this;
-  }
-
-  /**
-   * Get a registered module.
-   *
-   * @param name - Module name
-   * @returns Module or undefined
-   */
-  get(name: string): Module | undefined {
-    return this.modules.get(name);
-  }
-
-  /**
-   * Check if module is registered.
-   */
-  has(name: string): boolean {
-    return this.modules.has(name);
-  }
-
-  /**
-   * Get all registered module names.
-   */
-  get moduleNames(): string[] {
-    return Array.from(this.modules.keys());
-  }
-
-  /**
-   * Spawn module(s).
-   *
-   * @param name - Module name, or undefined to spawn all
-   * @throws {SpawnError} if spawn fails after all retries
-   */
-  async spawn(name?: string): Promise<void> {
-    if (name !== undefined) {
-      await this.spawnModule(name);
-    } else {
-      // Spawn all in parallel
-      await Promise.all(Array.from(this.modules.keys()).map((n) => this.spawnModule(n)));
-    }
-  }
-
-  /**
-   * Shutdown module(s).
-   *
-   * @param name - Module name, or undefined to shutdown all
-   */
-  async shutdown(name?: string): Promise<void> {
-    const targets = name !== undefined ? [name] : Array.from(this.modules.keys());
-
-    for (const target of targets) {
-      this.shuttingDown.add(target);
-    }
-    try {
-      await Promise.all(targets.map((n) => this.shutdownModule(n)));
-    } finally {
-      for (const target of targets) {
-        this.shuttingDown.delete(target);
-      }
-    }
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: Spawn Logic
+  // RUNTIME HOOKS: process control
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /**
-   * Spawn a single module with retry logic.
-   */
-  private async spawnModule(name: string): Promise<void> {
-    const module = this.modules.get(name);
-    if (!module) {
-      throw ManagerErrors.notRegistered(name);
-    }
-
-    const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= policy.maxRetries; attempt++) {
-      try {
-        // Wait before retry (not on first attempt)
-        if (attempt > 0) {
-          const delay = this.calculateRetryDelay(attempt, policy.retryDelay);
-          this.emit(ManagerEvents.RETRYING, name, attempt, delay, lastError);
-          await this.sleep(delay);
-        }
-
-        await this.spawnModuleOnce(module, policy);
-        return; // Success!
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        // Cleanup failed attempt
-        this.cleanupModule(module);
-
-        this.emit(
-          ManagerEvents.SPAWN_FAILED,
-          name,
-          attempt,
-          lastError,
-          attempt < policy.maxRetries,
-        );
-      }
-    }
-
-    // All retries exhausted
-    module._setState("closed");
-    throw new SpawnError(
-      `Failed to spawn module "${name}" after ${policy.maxRetries + 1} attempts: ${lastError?.message}`,
-      name,
-      policy.maxRetries + 1,
-      lastError ?? undefined,
-    );
-  }
-
-  /**
-   * Single spawn attempt (no retry).
-   */
-  private async spawnModuleOnce(module: Module, policy: Required<SpawnPolicy>): Promise<void> {
+  protected _spawnProcess(module: Module): ChildProcess {
     const exe = module.executableConfig!;
-
-    // 1. Spawn process
-    module._setState("initializing");
 
     const childProcess = spawn(exe.command, exe.args, {
       stdio: ["pipe", "pipe", "inherit"],
@@ -276,50 +72,18 @@ export class ModuleManager extends EventEmitter {
       },
     });
 
-    module._attachProcess(childProcess);
-
     // The child's stdin can emit "error" (EPIPE) when the child dies between
     // a writability check and the kernel flush - with no listener, that is an
     // uncaughtException in the parent.
     this.guardStdin(childProcess);
 
-    // Check for immediate spawn errors
-    const spawnError = await this.waitForSpawnResult(childProcess);
-    if (spawnError) {
-      throw spawnError;
-    }
-
-    // Setup exit handler for crash detection
-    childProcess.on("exit", (code, signal) => {
-      this.handleProcessExit(module, code, signal);
-    });
-
-    // 2. Wait for $init from child
-    const initMessage = await this.waitForInit(module, childProcess, policy.initTimeout);
-
-    // 3. Validate schema
-    this.validateSchema(module, initMessage.params.schema);
-    module._attachSchema(initMessage.params.schema);
-
-    // 4. Connect data channel
-    module._setState("connecting");
-    const socket = await this.connectDataChannel(initMessage.params.pipe, policy.socketBufferSize);
-    module._attachDataChannel(socket);
-
-    // 5. Ready!
-    module._setState("ready");
-    this.emit(ManagerEvents.READY, module.name);
-
-    // 6. Start liveness heartbeat if configured.
-    if (policy.heartbeat) {
-      this.startHeartbeat(module, policy.heartbeat);
-    }
+    return childProcess;
   }
 
   /**
    * Wait briefly to catch immediate spawn errors.
    */
-  private waitForSpawnResult(proc: ChildProcess): Promise<Error | null> {
+  protected _waitForSpawnResult(_module: Module, proc: ChildProcess): Promise<Error | null> {
     return new Promise((resolve) => {
       let resolved = false;
 
@@ -343,10 +107,49 @@ export class ModuleManager extends EventEmitter {
     });
   }
 
+  protected _watchProcessExit(module: Module, proc: ChildProcess): void {
+    proc.on("exit", (code, signal) => {
+      this.handleProcessExit(module, code, signal);
+    });
+  }
+
+  protected _killProcess(module: Module): void {
+    const proc = module.process;
+    if (proc && !proc.killed) {
+      proc.kill("SIGKILL");
+    }
+  }
+
+  protected _waitForExitOrKill(
+    module: Module,
+    proc: ChildProcess,
+    timeoutMs: number,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        proc.kill("SIGKILL");
+        resolve();
+      }, timeoutMs);
+
+      proc.on("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RUNTIME HOOKS: control plane (stdio)
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
    * Wait for $init message from child.
    */
-  private waitForInit(module: Module, proc: ChildProcess, timeout: number): Promise<InitMessage> {
+  protected _waitForInit(
+    module: Module,
+    proc: ChildProcess,
+    timeout: number,
+  ): Promise<InitMessage> {
     return new Promise((resolve, reject) => {
       let resolved = false;
 
@@ -428,32 +231,62 @@ export class ModuleManager extends EventEmitter {
   }
 
   /**
-   * Validate child schema against module config.
+   * Write one newline-terminated control message to the child's stdin.
+   * A dying child can EPIPE here - reported as "not sent"; the exit handler
+   * (crash path) surfaces the death, not the failed write.
    */
-  private validateSchema(module: Module, childSchema: ModuleSchema): void {
-    const expected = module._buildExpectedSchema();
-
-    for (const methodName of expected.methods) {
-      if (!childSchema.methods[methodName]) {
-        throw ManagerErrors.schemaMissingMethod(module.name, methodName);
+  protected _writeControlMessage(module: Module, message: string): boolean {
+    const proc = module.process;
+    if (proc?.stdin?.writable) {
+      this.guardStdin(proc);
+      try {
+        proc.stdin.write(`${message}\n`);
+        return true;
+      } catch {
+        // Synchronous EPIPE: the child is dying; the exit handler takes over.
+        return false;
       }
     }
+    return false;
+  }
 
-    for (const eventName of expected.events) {
-      if (!childSchema.events[eventName]) {
-        throw ManagerErrors.schemaMissingEvent(module.name, eventName);
-      }
+  protected _disposeControlReader(name: string): void {
+    const reader = this.stdoutReaders.get(name);
+    if (reader) {
+      reader.close();
+      this.stdoutReaders.delete(name);
     }
   }
 
   /**
-   * Connect to data channel.
+   * Ensure the child's stdin cannot crash the parent with an unhandled
+   * "error" event (EPIPE from a dying child). Idempotent.
    */
-  private connectDataChannel(
+  private guardStdin(proc: { stdin?: NodeJS.WritableStream | null } | null | undefined): void {
+    const stdin = proc?.stdin;
+    if (stdin && stdin.listenerCount("error") === 0) {
+      stdin.on("error", () => {
+        // Swallowed on purpose: a dead control channel is surfaced by the
+        // process "exit" handler (crash path), not by the failed write.
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RUNTIME HOOKS: data plane
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Connect to the child's data channel and attach it to the module.
+   */
+  protected _connectDataChannel(
+    module: Module,
     pipePath: string,
-    socketBufferSize?: number,
-    timeoutMs: number = DATA_CHANNEL_CONNECT_TIMEOUT_MS,
-  ): Promise<Socket> {
+    policy: Required<SpawnPolicy>,
+  ): Promise<void> {
+    const socketBufferSize = policy.socketBufferSize;
+    const timeoutMs = DATA_CHANNEL_CONNECT_TIMEOUT_MS;
+
     return new Promise((resolve, reject) => {
       const socket = createConnection(pipePath);
 
@@ -489,349 +322,13 @@ export class ModuleManager extends EventEmitter {
           }
         }
 
-        resolve(socket);
+        module._attachDataChannel(socket);
+        resolve();
       });
       socket.on("error", (err) => {
         clearTimeout(timer);
         reject(ManagerErrors.dataChannelFailed(err.message));
       });
     });
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: Crash & Restart
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Handle child process exit.
-   */
-  private handleProcessExit(module: Module, code: number | null, signal: string | null): void {
-    // The process is gone: stop pinging it.
-    this.stopHeartbeat(module.name);
-
-    // Ignore if THIS module is shutting down (an unrelated module's
-    // shutdown must not swallow this crash)
-    if (this.shuttingDown.has(module.name)) {
-      module._detach();
-      module._setState("closed");
-      return;
-    }
-
-    // Ignore if already closed
-    if (module.state === "closed") {
-      return;
-    }
-
-    const wasReady = module.state === "ready";
-    const error = ManagerErrors.processCrashed(module.name, code, signal);
-
-    // Detach module
-    module._detach();
-    module._setState("disconnected");
-
-    this.emit(ManagerEvents.ERROR, module.name, error);
-
-    // Check if we should restart
-    const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
-
-    if (wasReady && policy.restartOnCrash && this.canRestart(module.name, policy)) {
-      this.recordRestart(module.name);
-      this.emit(ManagerEvents.RESTARTING, module.name, error);
-
-      // Restart async
-      this.restartModule(module).catch((restartError: Error) => {
-        module._setState("closed");
-        this.emit(
-          ManagerEvents.ERROR,
-          module.name,
-          ManagerErrors.restartFailed(restartError.message),
-        );
-      });
-    } else {
-      module._setState("closed");
-
-      if (wasReady && policy.restartOnCrash) {
-        this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.tooManyRestarts());
-      }
-    }
-  }
-
-  /**
-   * Check if restart is allowed.
-   */
-  private canRestart(name: string, policy: Required<SpawnPolicy>): boolean {
-    const { maxRestarts, windowMs } = policy.restartLimit;
-    const now = Date.now();
-
-    // Get timestamps, filter to window
-    let timestamps = this.restartTimestamps.get(name) ?? [];
-    timestamps = timestamps.filter((ts) => now - ts < windowMs);
-    this.restartTimestamps.set(name, timestamps);
-
-    return timestamps.length < maxRestarts;
-  }
-
-  /**
-   * Record a restart.
-   */
-  private recordRestart(name: string): void {
-    const timestamps = this.restartTimestamps.get(name) ?? [];
-    timestamps.push(Date.now());
-    this.restartTimestamps.set(name, timestamps);
-  }
-
-  /**
-   * Restart a module.
-   */
-  private restartModule(module: Module): Promise<void> {
-    // Wait a bit before restart, using a tracked timer so shutdown() can cancel it.
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.restartTimers.delete(module.name);
-
-        // Bail if the module was shut down (or closed) during the delay; the
-        // shuttingDown entry is removed once its shutdown returns, so the
-        // module state is the reliable signal here.
-        if (this.shuttingDown.has(module.name) || module.state === "closed") {
-          resolve();
-          return;
-        }
-
-        // Re-spawn with retry logic.
-        this.spawnModule(module.name).then(resolve, reject);
-      }, RESTART_WAIT_DELAY_MS);
-
-      this.restartTimers.set(module.name, timer);
-    });
-  }
-
-  /**
-   * Cancel a pending crash-restart timer, if any.
-   */
-  private cancelRestart(name: string): void {
-    const timer = this.restartTimers.get(name);
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      this.restartTimers.delete(name);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: Heartbeat (liveness)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Start the control-plane heartbeat for a ready module.
-   *
-   * Sends a `$ping` over the child's stdin and, while a ping is unanswered,
-   * checks that the matching `$pong` arrives within `timeoutMs` of *that ping*
-   * (never from startup). A new ping is only sent once the previous one was
-   * answered, so a dead child is reliably detected regardless of how
-   * `intervalMs` and `timeoutMs` relate. On timeout the child is treated as
-   * dead (killed -> the normal crash/restart path runs).
-   */
-  private startHeartbeat(module: Module, config: HeartbeatConfig): void {
-    const { name } = module;
-    this.stopHeartbeat(name); // never run two timers for one module
-
-    // Send the first ping immediately so the timeout is always measured from an
-    // actual ping rather than from when the module became ready.
-    this._sendHeartbeatPing(module);
-
-    const timer = setInterval(() => {
-      const pingAt = this.heartbeatPingAt.get(name);
-      if (pingAt !== undefined) {
-        // A ping is still unanswered: time out only relative to that ping. Do
-        // not send another ping meanwhile (it would reset the deadline and a
-        // dead child would never be detected).
-        if (Date.now() - pingAt >= config.timeoutMs) {
-          this.onHeartbeatTimeout(module, config.timeoutMs);
-        }
-        return;
-      }
-      // Previous ping was answered: send the next one.
-      this._sendHeartbeatPing(module);
-    }, config.intervalMs);
-
-    this.heartbeatTimers.set(name, timer);
-  }
-
-  /**
-   * Ensure the child's stdin cannot crash the parent with an unhandled
-   * "error" event (EPIPE from a dying child). Idempotent.
-   */
-  private guardStdin(proc: { stdin?: NodeJS.WritableStream | null } | null | undefined): void {
-    const stdin = proc?.stdin;
-    if (stdin && stdin.listenerCount("error") === 0) {
-      stdin.on("error", () => {
-        // Swallowed on purpose: a dead control channel is surfaced by the
-        // process "exit" handler (crash path), not by the failed write.
-      });
-    }
-  }
-
-  /** Write a `$ping` to the child and mark it outstanding (awaiting `$pong`). */
-  private _sendHeartbeatPing(module: Module): void {
-    const proc = module.process;
-    if (proc?.stdin?.writable) {
-      this.guardStdin(proc);
-      try {
-        proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "$ping" })}\n`);
-        this.heartbeatPingAt.set(module.name, Date.now());
-      } catch {
-        // Synchronous EPIPE: the child is dying; the exit handler takes over.
-      }
-    }
-  }
-
-  /** Record a `$pong`: the outstanding ping was answered. */
-  private handlePong(name: string): void {
-    if (this.heartbeatTimers.has(name)) {
-      this.heartbeatPingAt.delete(name);
-    }
-  }
-
-  /** The child missed too many heartbeats: kill it so the crash path runs. */
-  private onHeartbeatTimeout(module: Module, timeoutMs: number): void {
-    this.stopHeartbeat(module.name);
-    this.emit(
-      ManagerEvents.ERROR,
-      module.name,
-      ManagerErrors.heartbeatTimeout(module.name, timeoutMs),
-    );
-    // SIGKILL a hung child; its "exit" drives handleProcessExit -> restart.
-    module.process?.kill("SIGKILL");
-  }
-
-  /** Stop and clear heartbeat state for a module. */
-  private stopHeartbeat(name: string): void {
-    const timer = this.heartbeatTimers.get(name);
-    if (timer !== undefined) {
-      clearInterval(timer);
-      this.heartbeatTimers.delete(name);
-    }
-    this.heartbeatPingAt.delete(name);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: Shutdown
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Shutdown a single module.
-   */
-  private async shutdownModule(name: string): Promise<void> {
-    const module = this.modules.get(name);
-    if (!module) return;
-
-    // Cancel any pending crash-restart so the module isn't resurrected, and
-    // stop the liveness heartbeat.
-    this.cancelRestart(name);
-    this.stopHeartbeat(name);
-
-    const proc = module.process;
-    if (!proc) {
-      module._setState("closed");
-      return;
-    }
-
-    // Send $shutdown via control channel. A dying child can EPIPE here -
-    // that's fine, the exit wait below (with force-kill fallback) still runs.
-    if (proc.stdin?.writable) {
-      this.guardStdin(proc);
-      try {
-        proc.stdin.write(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            method: "$shutdown",
-            params: {},
-          }) + "\n",
-        );
-      } catch {
-        /* EPIPE from a dying child - proceed to the exit wait */
-      }
-    }
-
-    // Close stdout reader
-    const reader = this.stdoutReaders.get(name);
-    if (reader) {
-      reader.close();
-      this.stdoutReaders.delete(name);
-    }
-
-    // Detach module
-    module._detach();
-
-    // Wait for exit or force kill
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        proc.kill("SIGKILL");
-        resolve();
-      }, FORCE_KILL_TIMEOUT_MS);
-
-      proc.on("exit", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
-
-    module._setState("closed");
-    this.emit(ManagerEvents.CLOSED, name);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Cleanup module after failed spawn.
-   */
-  private cleanupModule(module: Module): void {
-    this.stopHeartbeat(module.name);
-
-    const proc = module.process;
-    if (proc && !proc.killed) {
-      proc.kill("SIGKILL");
-    }
-
-    const reader = this.stdoutReaders.get(module.name);
-    if (reader) {
-      reader.close();
-      this.stdoutReaders.delete(module.name);
-    }
-
-    module._detach();
-  }
-
-  /**
-   * Resolve spawn policy with defaults.
-   */
-  private resolveSpawnPolicy(policy: SpawnPolicy): Required<SpawnPolicy> {
-    return {
-      initTimeout: policy.initTimeout ?? DEFAULT_SPAWN_POLICY.initTimeout,
-      maxRetries: policy.maxRetries ?? DEFAULT_SPAWN_POLICY.maxRetries,
-      retryDelay: policy.retryDelay ?? DEFAULT_SPAWN_POLICY.retryDelay,
-      restartOnCrash: policy.restartOnCrash ?? DEFAULT_SPAWN_POLICY.restartOnCrash,
-      restartLimit: policy.restartLimit ?? DEFAULT_SPAWN_POLICY.restartLimit,
-      socketBufferSize: policy.socketBufferSize ?? DEFAULT_SPAWN_POLICY.socketBufferSize,
-      heartbeat: policy.heartbeat ?? DEFAULT_SPAWN_POLICY.heartbeat,
-    };
-  }
-
-  /**
-   * Calculate retry delay.
-   */
-  private calculateRetryDelay(attempt: number, config: RetryDelayConfig): number {
-    if (config.type === "fixed") {
-      return config.delay;
-    }
-
-    // Exponential: base * 2^(attempt-1), capped at max
-    const delay = config.base * Math.pow(2, attempt - 1);
-    return Math.min(delay, config.max);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
