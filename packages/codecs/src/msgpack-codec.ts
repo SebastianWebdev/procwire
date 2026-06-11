@@ -16,7 +16,8 @@ import type { Codec } from "./types.js";
 const extensionCodec = new ExtensionCodec();
 
 // Extension type 1: Buffer
-// ⚡️ OPTIMIZATION: Zero-copy wrapping using buffer view
+// Encode COPIES the bytes (`new Uint8Array(obj)` is the copying constructor);
+// decode is zero-copy (a Buffer view aliasing the input's memory).
 extensionCodec.register({
   type: 1,
   encode: (obj: unknown): Uint8Array | null => {
@@ -26,7 +27,7 @@ extensionCodec.register({
     return null;
   },
   decode: (data: Uint8Array): Buffer => {
-    // ⚡️ Zero-copy: Create Buffer view over same memory
+    // Zero-copy: Buffer view over the same memory as the decoded input
     return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   },
 });

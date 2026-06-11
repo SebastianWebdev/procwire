@@ -66,7 +66,8 @@ const module = new Module("name")
   .method(name, config)
   .event(name, config?)
   .spawnPolicy(policy)
-  .maxPayloadSize(bytes);
+  .maxPayloadSize(bytes)
+  .requestTimeout(ms);
 ```
 
 #### `.executable(command, args, options?)`
@@ -112,8 +113,31 @@ module.spawnPolicy({
   retryDelay: { type: "exponential", base: 1000, max: 30000 },
   restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
+  heartbeat: { intervalMs: 5000, timeoutMs: 15000 }, // Liveness check (off by default)
   socketBufferSize: 4 * 1024 * 1024, // 4MB for large payloads
 });
+```
+
+##### Heartbeat (liveness)
+
+The optional `heartbeat` policy detects a worker that is still running but hung. The parent sends `$ping` over the control plane (stdin) every `intervalMs`; if the matching `$pong` does not arrive within `timeoutMs`, the worker is killed and the normal crash/restart path runs (so `restartOnCrash` applies). Disabled by default.
+
+```typescript
+module.spawnPolicy({
+  restartOnCrash: true,
+  heartbeat: { intervalMs: 5000, timeoutMs: 15000 },
+});
+```
+
+#### `.requestTimeout(ms)`
+
+Set the default per-request timeout for `result`/`ack` methods. **By default, requests time out after 30 seconds (30000 ms)** — `send()` never hangs forever out of the box. Pass `0` to disable the default for this module.
+
+Precedence per request: child schema timeout → per-method `timeout` → this module default.
+
+```typescript
+module.requestTimeout(60000); // 60s default for all methods
+module.requestTimeout(0); // disable the default timeout
 ```
 
 ### Communication
@@ -178,6 +202,10 @@ if (manager.has("worker1")) { ... }
 await manager.shutdown();          // All
 await manager.shutdown("worker1"); // Specific
 ```
+
+#### Graceful shutdown
+
+`manager.shutdown()` sends a `$shutdown` message over the control plane; a Procwire client closes its pipe server and exits on its own — no signal needed. If the process has not exited within 5 seconds, it is force-killed (SIGKILL) as a fallback.
 
 ### Module States
 

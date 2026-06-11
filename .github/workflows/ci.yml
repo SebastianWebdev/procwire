@@ -141,19 +141,73 @@ jobs:
         run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" --if-present test
 
   # ============================================
+  # Workspace tooling - dashboard, bench, docs site
+  # Previously had ZERO CI coverage despite real test suites.
+  # ============================================
+  aux-checks:
+    name: Dashboard, Bench & Docs
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install D2 (diagrams for the docs site)
+        run: curl -fsSL https://d2lang.com/install.sh | sh -s --
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # bench/dashboard typecheck against the libraries' dist output
+      - name: Build library packages
+        run: pnpm --filter "@procwire/*" --if-present build
+
+      # Must run where ALL six publishables have dist/ - the build-and-test
+      # job excludes the bun packages (they build in the bun job), so the
+      # tarball check would false-fail there.
+      - name: Check publish artifacts (LICENSE, dist entrypoints, dependency ranges)
+        run: node scripts/check-publish-artifacts.mjs
+
+      - name: Typecheck bench
+        run: pnpm --filter "@procwire/bench" --if-present typecheck
+
+      - name: Typecheck dashboard
+        run: pnpm --filter "procwire-dashboard" --filter "procwire-dashboard-client" --if-present typecheck
+
+      - name: Test dashboard
+        run: pnpm --filter "procwire-dashboard" --if-present test
+
+      - name: Build dashboard
+        run: pnpm --filter "procwire-dashboard" --filter "procwire-dashboard-client" --if-present build
+
+      - name: Build docs site
+        run: pnpm --filter "astro-docs" --if-present build
+
+  # ============================================
   # Final status check - for branch protection
   # ============================================
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [lint, build-and-test, bun-test]
+    needs: [lint, build-and-test, bun-test, aux-checks]
     if: always()
     steps:
       - name: Check CI status
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ]] || \
              [[ "${{ needs.build-and-test.result }}" != "success" ]] || \
-             [[ "${{ needs.bun-test.result }}" != "success" ]]; then
+             [[ "${{ needs.bun-test.result }}" != "success" ]] || \
+             [[ "${{ needs.aux-checks.result }}" != "success" ]]; then
             echo "❌ CI failed"
             exit 1
           fi

@@ -319,8 +319,10 @@ export class BenchmarkRunner extends EventEmitter {
         await this.executeRequest(module, methodName, mode, payload);
         const requestEnd = process.hrtime.bigint();
         collector.recordLatency(requestEnd - requestStart);
-        // Count both request and response bytes for throughput
-        collector.recordBytes(payloadBytes * 2);
+        // Throughput bytes: echo-style modes return the payload (request +
+        // response), ack handlers return an empty acknowledgement - counting
+        // payloadBytes * 2 for ack inflated MB/s by ~2x.
+        collector.recordBytes(mode === "ack" ? payloadBytes : payloadBytes * 2);
       } catch {
         collector.recordError();
       }
@@ -399,7 +401,8 @@ export class BenchmarkRunner extends EventEmitter {
         .then(() => {
           const requestEnd = process.hrtime.bigint();
           collector.recordLatency(requestEnd - requestStart);
-          collector.recordBytes(payloadBytes * 2);
+          // Same accounting as the sequential path: ack returns no payload.
+          collector.recordBytes(mode === "ack" ? payloadBytes : payloadBytes * 2);
           inflight.delete(promise);
         })
         .catch(() => {

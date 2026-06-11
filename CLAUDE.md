@@ -2,13 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## ⚠️ FIRST: Read Local Rules
+## Local Rules (optional)
 
-**BEZWZGLĘDNIE** przeczytaj i przestrzegaj zasad z pliku [`.claude/rules/local.md`](.claude/rules/local.md). Ten plik definiuje folder roboczy agenta, zarządzanie taskami i memory. Zasady z `local.md` mają najwyższy priorytet.
+If `.claude/rules/local.md` exists locally, read it and follow its rules with highest priority (it defines the agent working folder, task management, and memory). It is a developer-local, untracked file — if it does not exist, simply proceed.
 
 ## Project Overview
 
-This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library with zero runtime dependencies in the core package.
+This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library. `@procwire/protocol` has zero runtime dependencies; `core` and `client` depend only on `@procwire/codecs` (MessagePack + Arrow).
 
 The data plane uses a binary protocol (zero JSON); the control plane uses JSON-RPC over stdio.
 
@@ -21,6 +21,7 @@ The data plane uses a binary protocol (zero JSON); the control plane uses JSON-R
 - `@procwire/bun-core` - Parent-side for Bun.js
 - `@procwire/bun-client` - Child-side for Bun.js
 - `packages/bench` - Benchmarks (not published to npm)
+- `dashboard/` - Benchmark dashboard (workspace tool, not published to npm)
 
 ## Architecture
 
@@ -143,11 +144,17 @@ git diff <commit-range> > <filename>.diff
 
 ## CI/CD
 
-- CI workflow: `.github/workflows/release.yml` (for automated releases)
-- Uses Changesets for version management
+Four GitHub Actions workflows:
+
+- `.github/workflows/ci.yml` - Lint, typecheck, test, build on PRs and pushes to `main`
+- `.github/workflows/release.yml` - Automated releases via Changesets (version PR + npm publish)
+- `.github/workflows/deploy-docs.yml` - Builds and deploys the `astro-docs/` site to GitHub Pages
+- `.github/workflows/pr-validation.yml` - Advisory PR checks (changeset presence, PR title format)
+
+Uses Changesets for version management.
 
 ## Monorepo Management
 
 - Uses **pnpm workspaces** with workspace protocol (`workspace:*`, `workspace:^`)
 - All packages share dev dependencies (hoisted to root)
-- Each codec package has its own peer dependencies
+- `@procwire/codecs` ships `@msgpack/msgpack` and `apache-arrow` as regular dependencies; `core` and `client` pull them in via `@procwire/codecs`

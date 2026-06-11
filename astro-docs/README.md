@@ -1,49 +1,24 @@
-# Starlight Starter Kit: Basics
+# Procwire Docs (astro-docs)
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+Documentation site for Procwire, built with [Astro Starlight](https://starlight.astro.build/). Deployed to [procwire.dev](https://procwire.dev) via GitHub Pages.
 
-```
-pnpm create astro@latest -- --template starlight
-```
+## Content
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+- **Guides** — hand-written pages in `src/content/docs/guides/` (getting started, concepts, architecture).
+- **API Reference** — generated at build time by [starlight-typedoc](https://github.com/HiDeoo/starlight-typedoc) from the source of `@procwire/protocol`, `@procwire/codecs`, `@procwire/core`, and `@procwire/client` (see `astro.config.mjs`).
+- **llms.txt** — an LLM-friendly export produced by `starlight-llms-txt`.
 
-## 🚀 Project Structure
+## Commands
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+Run from the repository root:
 
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+```bash
+pnpm --filter astro-docs dev     # Dev server at localhost:4321
+pnpm --filter astro-docs build   # Production build to astro-docs/dist/
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+The build requires the [D2](https://d2lang.com/) binary for diagram rendering (`curl -fsSL https://d2lang.com/install.sh | sh -s --`).
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+## Deployment
 
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                | Action                                           |
-| :--------------------- | :----------------------------------------------- |
-| `pnpm install`         | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+`.github/workflows/deploy-docs.yml` builds and deploys the site to GitHub Pages on pushes to `main` that touch docs-related files.
