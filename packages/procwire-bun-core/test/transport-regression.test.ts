@@ -9,7 +9,7 @@ import { unlinkSync } from "node:fs";
 import { FrameBuffer } from "@procwire/protocol";
 import { rawCodec, msgpackCodec } from "@procwire/codecs";
 import { Module } from "../src/index.js";
-import { BunDrainWaiter } from "../src/drain-waiter.js";
+import { BunDrainWaiter } from "@procwire/protocol";
 
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
 

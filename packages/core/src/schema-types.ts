@@ -8,7 +8,7 @@
  */
 
 import type { Codec, Schema, InferCodecInput, InferCodecOutput } from "@procwire/codecs";
-import type { ResponseType } from "./types.js";
+import type { ResponseType } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SCHEMA ACCUMULATION (used by Module builder pattern)

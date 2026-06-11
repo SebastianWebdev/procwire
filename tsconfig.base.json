@@ -7,6 +7,8 @@
       "@procwire/protocol/*": ["packages/protocol/src/*"],
       "@procwire/codecs": ["packages/codecs/src/index.ts"],
       "@procwire/codecs/*": ["packages/codecs/src/*"],
+      "@procwire/runtime-core": ["packages/runtime-core/src/index.ts"],
+      "@procwire/runtime-core/*": ["packages/runtime-core/src/*"],
       "@procwire/core": ["packages/core/src/index.ts"],
       "@procwire/core/*": ["packages/core/src/*"],
       "@procwire/client": ["packages/client/src/index.ts"],

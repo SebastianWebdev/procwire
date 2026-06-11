@@ -20,6 +20,7 @@ import { join } from "node:path";
 const PACKAGES = [
   "packages/protocol",
   "packages/codecs",
+  "packages/runtime-core",
   "packages/core",
   "packages/client",
   "packages/procwire-bun-core",

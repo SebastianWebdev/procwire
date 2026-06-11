@@ -42,7 +42,7 @@ import type {
   SpawnPolicy,
   ModuleSchema,
   ResponseType,
-} from "./types.js";
+} from "@procwire/runtime-core";
 import type {
   AddMethod,
   AddMethodSymmetric,
@@ -54,8 +54,8 @@ import type {
   SingleCodecMethodConfig,
   TypedEventConfig,
 } from "./schema-types.js";
-import { ModuleErrors } from "./errors.js";
-import { ModuleEvents } from "./events.js";
+import { ModuleErrors } from "@procwire/runtime-core";
+import { ModuleEvents } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INTERNAL TYPES

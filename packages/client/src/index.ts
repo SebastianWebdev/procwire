@@ -30,7 +30,7 @@
 
 export { Client } from "./client.js";
 export { RequestContextImpl } from "./request-context.js";
-export { ProcwireClientError, ClientErrors } from "./errors.js";
+export { ProcwireClientError, ClientErrors } from "@procwire/runtime-core";
 export type {
   ResponseType,
   MethodDefinition,
@@ -39,7 +39,7 @@ export type {
   MethodHandler,
   RequestContext,
   TypedRequestContext,
-} from "./types.js";
+} from "@procwire/runtime-core";
 
 // Re-export schema types from @procwire/codecs for convenience
 export type { Schema, EmptySchema, ExtractSchema } from "@procwire/codecs";

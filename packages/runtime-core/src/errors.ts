@@ -1,5 +1,6 @@
 /**
- * Error types and factory functions for @procwire/bun-core.
+ * Error types and factory functions for the parent side
+ * (@procwire/core and @procwire/bun-core).
  *
  * @module
  */

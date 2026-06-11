@@ -37,10 +37,10 @@ import type {
   MethodHandler,
   ClientOptions,
   TypedRequestContext,
-} from "./types.js";
+} from "@procwire/runtime-core";
 import { RequestContextImpl } from "./request-context.js";
-import { ClientErrors } from "./errors.js";
-import type { ResponseType } from "./types.js";
+import { ClientErrors } from "@procwire/runtime-core";
+import type { ResponseType } from "@procwire/runtime-core";
 
 /**
  * Options for `client.handle()`.

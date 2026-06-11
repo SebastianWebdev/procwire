@@ -1,15 +1,12 @@
 /**
- * Type definitions for @procwire/bun-client.
+ * Type definitions for the child side
+ * (@procwire/client and @procwire/bun-client).
  *
  * @module
  */
 
 import type { Codec } from "@procwire/codecs";
-
-/**
- * Response type for methods.
- */
-export type ResponseType = "result" | "stream" | "ack" | "none";
+import type { ResponseType } from "./types.js";
 
 /**
  * Method definition for registration.
@@ -125,5 +122,25 @@ export interface RequestContext {
    * @returns Promise that resolves when the error has been written
    *          and socket buffer has drained (if backpressure occurred).
    */
+  error(err: Error | string): Promise<void>;
+}
+
+/**
+ * Type-safe request context.
+ *
+ * Response methods (`respond`, `ack`, `chunk`) are typed to `TRes`,
+ * providing compile-time safety that the handler sends the correct response type.
+ *
+ * @typeParam TRes - Expected response data type
+ */
+export interface TypedRequestContext<TRes = unknown> {
+  readonly requestId: number;
+  readonly method: string;
+  readonly aborted: boolean;
+  onAbort(callback: () => void): void;
+  respond(data: TRes): Promise<void>;
+  ack(data?: TRes): Promise<void>;
+  chunk(data: TRes): Promise<void>;
+  end(): Promise<void>;
   error(err: Error | string): Promise<void>;
 }

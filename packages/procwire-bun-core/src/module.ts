@@ -35,10 +35,10 @@ import type {
   EventConfig,
   SpawnPolicy,
   ModuleSchema,
-} from "./types.js";
-import { ModuleErrors } from "./errors.js";
-import { ModuleEvents } from "./events.js";
-import { BunDrainWaiter } from "./drain-waiter.js";
+} from "@procwire/runtime-core";
+import { ModuleErrors } from "@procwire/runtime-core";
+import { ModuleEvents } from "@procwire/runtime-core";
+import { BunDrainWaiter } from "@procwire/protocol";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BUN TYPES (will be available at runtime)

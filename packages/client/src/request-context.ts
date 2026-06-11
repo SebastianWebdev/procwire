@@ -8,8 +8,8 @@ import type { Socket } from "node:net";
 import { Flags, encodeHeaderInto } from "@procwire/protocol";
 import type { DrainWaiter } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
-import type { RequestContext } from "./types.js";
-import { ClientErrors } from "./errors.js";
+import type { RequestContext } from "@procwire/runtime-core";
+import { ClientErrors } from "@procwire/runtime-core";
 
 /**
  * Internal implementation of RequestContext.

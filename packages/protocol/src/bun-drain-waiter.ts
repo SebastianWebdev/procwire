@@ -41,7 +41,7 @@ export interface BunWritableSocket {
  * with a simple callback-based pattern.
  */
 export class BunDrainWaiter {
-  private _waiters: Set<() => void> = new Set();
+  private _waiters: Set<{ resolve: () => void; reject: (err: Error) => void }> = new Set();
   private _needsDrain = false;
   private _closed = false;
 
@@ -61,8 +61,8 @@ export class BunDrainWaiter {
   onDrain(): void {
     this._needsDrain = false;
     // Resolve all waiters
-    for (const resolve of this._waiters) {
-      resolve();
+    for (const waiter of this._waiters) {
+      waiter.resolve();
     }
     this._waiters.clear();
   }
@@ -100,8 +100,8 @@ export class BunDrainWaiter {
     }
 
     // Add this request to waiters
-    return new Promise<void>((resolve) => {
-      this._waiters.add(resolve);
+    return new Promise<void>((resolve, reject) => {
+      this._waiters.add({ resolve, reject });
     });
   }
 
@@ -145,35 +145,28 @@ export class BunDrainWaiter {
       }
 
       // Partial write: wait for drain, then send the rest.
+      // waitForDrain rejects if the socket is cleared while suspended.
       remaining = remaining.subarray(written);
       this.markNeedsDrain();
       await this.waitForDrain();
-
-      if (this._closed) {
-        throw new Error("Socket closed during backpressure wait");
-      }
     }
   }
 
   /**
-   * Clear all pending waiters.
+   * Clear all pending waiters and mark the socket closed.
    * Call this on socket close/disconnect.
+   *
+   * Pending waiters are REJECTED (matching Node's DrainWaiter): a sender
+   * suspended on backpressure must not "succeed" against a dead socket.
    */
   clear(): void {
     this._needsDrain = false;
     this._closed = true;
-    // Resolve all waiters so they don't hang
-    for (const resolve of this._waiters) {
-      resolve();
+    // Reject all pending waiters so they don't hang
+    const error = new Error("Socket closed during backpressure wait");
+    for (const waiter of this._waiters) {
+      waiter.reject(error);
     }
     this._waiters.clear();
-  }
-
-  /**
-   * Mark socket as closed but don't clear waiters yet.
-   * They will be cleared when they complete.
-   */
-  markClosed(): void {
-    this._closed = true;
   }
 }

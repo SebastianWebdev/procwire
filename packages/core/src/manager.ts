@@ -26,9 +26,9 @@ import type {
   InitMessage,
   RetryDelayConfig,
   HeartbeatConfig,
-} from "./types.js";
-import { ManagerErrors } from "./errors.js";
-import { ManagerEvents } from "./events.js";
+} from "@procwire/runtime-core";
+import { ManagerErrors } from "@procwire/runtime-core";
+import { ManagerEvents } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS

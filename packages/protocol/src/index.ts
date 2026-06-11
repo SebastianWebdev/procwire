@@ -60,3 +60,5 @@ export {
 } from "./frame-buffer.js";
 
 export { DrainWaiter } from "./drain-waiter.js";
+
+export { BunDrainWaiter, type BunWritableSocket } from "./bun-drain-waiter.js";
