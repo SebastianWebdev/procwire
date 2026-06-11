@@ -25,10 +25,15 @@ import {
   ABORT_METHOD_ID,
 } from "@procwire/protocol";
 import { msgpackCodec, codecDeserialize, type Codec } from "@procwire/codecs";
-import type { MethodDefinition, EventDefinition, MethodHandler, ClientOptions } from "./types.js";
+import type {
+  MethodDefinition,
+  EventDefinition,
+  MethodHandler,
+  ClientOptions,
+} from "@procwire/runtime-core";
 import { RequestContextImpl } from "./request-context.js";
-import { ClientErrors } from "./errors.js";
-import { BunDrainWaiter } from "./drain-waiter.js";
+import { ClientErrors } from "@procwire/runtime-core";
+import { BunDrainWaiter } from "@procwire/protocol";
 
 // Bun types
 type BunServer = ReturnType<typeof Bun.listen>;

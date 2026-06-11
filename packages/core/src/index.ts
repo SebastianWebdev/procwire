@@ -31,8 +31,13 @@
 
 export { Module } from "./module.js";
 export { ModuleManager, SpawnError } from "./manager.js";
-export { ProcwireError, ModuleErrors, ManagerErrors } from "./errors.js";
-export { ManagerEvents, ModuleEvents, type ManagerEvent, type ModuleEvent } from "./events.js";
+export { ProcwireError, ModuleErrors, ManagerErrors } from "@procwire/runtime-core";
+export {
+  ManagerEvents,
+  ModuleEvents,
+  type ManagerEvent,
+  type ModuleEvent,
+} from "@procwire/runtime-core";
 
 export type {
   ModuleState,
@@ -45,7 +50,7 @@ export type {
   ModuleSchema,
   ResponseType,
   InitMessage,
-} from "./types.js";
+} from "@procwire/runtime-core";
 
 export type {
   AddMethod,

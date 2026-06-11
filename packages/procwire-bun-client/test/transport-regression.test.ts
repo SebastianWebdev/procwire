@@ -11,7 +11,7 @@ import type { Frame } from "@procwire/protocol";
 import { rawCodec, msgpackCodec } from "@procwire/codecs";
 import { Client } from "../src/index.js";
 import { RequestContextImpl } from "../src/request-context.js";
-import { BunDrainWaiter } from "../src/drain-waiter.js";
+import { BunDrainWaiter } from "@procwire/protocol";
 
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
 

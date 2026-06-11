@@ -31,9 +31,14 @@
 
 export { Module } from "./module.js";
 export { ModuleManager, SpawnError } from "./manager.js";
-export { BunDrainWaiter } from "./drain-waiter.js";
-export { ProcwireError, ModuleErrors, ManagerErrors } from "./errors.js";
-export { ManagerEvents, ModuleEvents, type ManagerEvent, type ModuleEvent } from "./events.js";
+export { BunDrainWaiter } from "@procwire/protocol";
+export { ProcwireError, ModuleErrors, ManagerErrors } from "@procwire/runtime-core";
+export {
+  ManagerEvents,
+  ModuleEvents,
+  type ManagerEvent,
+  type ModuleEvent,
+} from "@procwire/runtime-core";
 
 export type {
   ModuleState,
@@ -46,4 +51,4 @@ export type {
   ModuleSchema,
   ResponseType,
   InitMessage,
-} from "./types.js";
+} from "@procwire/runtime-core";

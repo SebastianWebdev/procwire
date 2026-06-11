@@ -1,6 +1,6 @@
 # Procwire
 
-High-performance, type-safe IPC (Inter-Process Communication) for Node.js and Bun. `@procwire/protocol` has **zero runtime dependencies**; `core` and `client` depend only on `@procwire/codecs` (MessagePack + Arrow).
+High-performance, type-safe IPC (Inter-Process Communication) for Node.js and Bun. `@procwire/protocol` has **zero runtime dependencies**; the runtime packages depend only on other `@procwire/*` packages, with MessagePack + Arrow pulled in via `@procwire/codecs`.
 
 Procwire connects a parent process to child worker processes over a **dual-channel** transport:
 
@@ -15,6 +15,7 @@ JSON-RPC stays on the small, infrequent control messages; user data never pays t
 | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | **[@procwire/protocol](packages/protocol)**              | Wire format, framing, flags (11-byte header), `FrameBuffer`                   |
 | **[@procwire/codecs](packages/codecs)**                  | `rawCodec`, `msgpackCodec`, `arrowCodec`                                      |
+| **[@procwire/runtime-core](packages/runtime-core)**      | Shared types, errors and events used by the four runtime packages (internal)  |
 | **[@procwire/core](packages/core)**                      | Parent side: `ModuleManager`, `Module` (spawn, lifecycle, restart, heartbeat) |
 | **[@procwire/client](packages/client)**                  | Child side: `Client`, `RequestContext`                                        |
 | **[@procwire/bun-core](packages/procwire-bun-core)**     | Parent side for the Bun runtime                                               |
@@ -78,7 +79,7 @@ Each package's README has the full API. On Bun, use `@procwire/bun-core` / `@pro
 - **Cancellation** — `AbortController` support.
 - **Type-safe** — builder pattern with generics; the parent defines the schema.
 - **Cross-platform** — Named Pipes on Windows, Unix Domain Sockets on Linux/macOS.
-- **Lean dependencies** — zero runtime dependencies in `@procwire/protocol`; `core`/`client` depend only on `@procwire/codecs` (MessagePack + Arrow).
+- **Lean dependencies** — zero runtime dependencies in `@procwire/protocol`; the runtime packages depend only on other `@procwire/*` packages (MessagePack + Arrow via `@procwire/codecs`).
 
 ## Architecture
 

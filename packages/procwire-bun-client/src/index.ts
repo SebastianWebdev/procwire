@@ -30,8 +30,8 @@
 
 export { Client } from "./client.js";
 export { RequestContextImpl } from "./request-context.js";
-export { BunDrainWaiter } from "./drain-waiter.js";
-export { ProcwireClientError, ClientErrors } from "./errors.js";
+export { BunDrainWaiter } from "@procwire/protocol";
+export { ProcwireClientError, ClientErrors } from "@procwire/runtime-core";
 export type {
   ResponseType,
   MethodDefinition,
@@ -39,4 +39,4 @@ export type {
   ClientOptions,
   MethodHandler,
   RequestContext,
-} from "./types.js";
+} from "@procwire/runtime-core";

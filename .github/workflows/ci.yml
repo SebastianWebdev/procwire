@@ -127,9 +127,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Bun packages depend on protocol + codecs, build those first
+      # "^..." selects all workspace dependencies of the Bun packages
+      # (protocol, codecs, runtime-core) without listing them by hand.
       - name: Build dependencies
-        run: pnpm --filter "@procwire/protocol" --filter "@procwire/codecs" build
+        run: pnpm --filter "@procwire/bun-core^..." --filter "@procwire/bun-client^..." build
 
       - name: Build Bun packages
         run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" build

@@ -7,7 +7,7 @@
 
 import { describe, it, expectTypeOf } from "vitest";
 import { Client } from "../src/client.js";
-import type { TypedRequestContext, RequestContext } from "../src/types.js";
+import type { TypedRequestContext, RequestContext } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST TYPES

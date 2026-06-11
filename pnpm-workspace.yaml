@@ -1,6 +1,7 @@
 packages:
   - packages/protocol
   - packages/codecs
+  - packages/runtime-core
   - packages/core
   - packages/client
   - packages/bench

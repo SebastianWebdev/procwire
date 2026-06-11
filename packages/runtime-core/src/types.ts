@@ -1,5 +1,6 @@
 /**
- * Core types for the Module system.
+ * Core types for the Module system — parent side
+ * (@procwire/core and @procwire/bun-core).
  *
  * @module
  */

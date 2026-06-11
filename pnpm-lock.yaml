@@ -228,6 +228,9 @@ importers:
       '@procwire/protocol':
         specifier: workspace:^
         version: link:../protocol
+      '@procwire/runtime-core':
+        specifier: workspace:^
+        version: link:../runtime-core
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -275,6 +278,9 @@ importers:
       '@procwire/protocol':
         specifier: workspace:^
         version: link:../protocol
+      '@procwire/runtime-core':
+        specifier: workspace:^
+        version: link:../runtime-core
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -297,6 +303,9 @@ importers:
       '@procwire/protocol':
         specifier: workspace:^
         version: link:../protocol
+      '@procwire/runtime-core':
+        specifier: workspace:^
+        version: link:../runtime-core
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -316,6 +325,9 @@ importers:
       '@procwire/protocol':
         specifier: workspace:^
         version: link:../protocol
+      '@procwire/runtime-core':
+        specifier: workspace:^
+        version: link:../runtime-core
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -328,6 +340,25 @@ importers:
         version: 5.9.3
 
   packages/protocol:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.7
+      rimraf:
+        specifier: ^6.0.1
+        version: 6.1.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.7)(sugarss@5.0.1(postcss@8.5.6))
+
+  packages/runtime-core:
+    dependencies:
+      '@procwire/codecs':
+        specifier: workspace:^
+        version: link:../codecs
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@procwire/protocol": "workspace:^",
+    "@procwire/runtime-core": "workspace:^",
     "@procwire/codecs": "workspace:^"
   },
   "devDependencies": {

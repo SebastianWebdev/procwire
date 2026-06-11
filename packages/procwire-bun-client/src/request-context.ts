@@ -8,9 +8,9 @@
 
 import { Flags, encodeHeaderInto } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
-import type { RequestContext } from "./types.js";
-import { ClientErrors } from "./errors.js";
-import type { BunDrainWaiter } from "./drain-waiter.js";
+import type { RequestContext } from "@procwire/runtime-core";
+import { ClientErrors } from "@procwire/runtime-core";
+import type { BunDrainWaiter } from "@procwire/protocol";
 
 // Bun socket type
 type BunSocket = Awaited<ReturnType<typeof Bun.connect>>;
