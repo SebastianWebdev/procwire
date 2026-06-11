@@ -1,6 +1,6 @@
 {
   "name": "procwire-dashboard",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "Benchmark dashboard for Procwire IPC library",
   "type": "module",
