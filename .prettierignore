@@ -3,3 +3,7 @@
 **/coverage/**
 pnpm-lock.yaml
 
+
+# generated TypeDoc output (gitignored)
+astro-docs/src/content/docs/api/
+astro-docs/.astro/

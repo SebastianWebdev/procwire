@@ -24,12 +24,12 @@
   },
   "exports": {
     ".": {
-      "types": "./src/lib.d.ts",
+      "types": "./src/lib.ts",
       "default": "./src/lib.ts"
     }
   },
   "main": "./src/lib.ts",
-  "types": "./src/lib.d.ts",
+  "types": "./src/lib.ts",
   "scripts": {
     "clean": "rimraf dist results \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -48,11 +48,9 @@
     "@procwire/codecs": "workspace:*",
     "@procwire/core": "workspace:*",
     "@procwire/bun-client": "workspace:*",
-    "@procwire/bun-core": "workspace:*",
-    "better-sqlite3": "^12.6.2"
+    "@procwire/bun-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.21.0",

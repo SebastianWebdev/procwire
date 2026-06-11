@@ -5,8 +5,11 @@ on:
     branches:
       - main
     paths:
-      # Only trigger when docs-related files change
+      # Only trigger when docs-related files change.
+      # packages/*/src matters because TypeDoc generates the API reference
+      # from package sources - API changes must redeploy the docs.
       - "astro-docs/**"
+      - "packages/*/src/**"
       - "packages/*/README.md"
       - "docs/**"
       - ".github/workflows/deploy-docs.yml"
