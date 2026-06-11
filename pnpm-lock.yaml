@@ -206,13 +206,7 @@ importers:
       '@procwire/core':
         specifier: workspace:*
         version: link:../core
-      better-sqlite3:
-        specifier: ^12.6.2
-        version: 12.6.2
     devDependencies:
-      '@types/better-sqlite3':
-        specifier: ^7.6.13
-        version: 7.6.13
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.7
@@ -229,10 +223,10 @@ importers:
   packages/client:
     dependencies:
       '@procwire/codecs':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../codecs
       '@procwire/protocol':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../protocol
     devDependencies:
       '@types/node':
@@ -276,10 +270,10 @@ importers:
   packages/core:
     dependencies:
       '@procwire/codecs':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../codecs
       '@procwire/protocol':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../protocol
     devDependencies:
       '@types/node':
@@ -298,10 +292,10 @@ importers:
   packages/procwire-bun-client:
     dependencies:
       '@procwire/codecs':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../codecs
       '@procwire/protocol':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../protocol
     devDependencies:
       '@types/bun':
@@ -317,10 +311,10 @@ importers:
   packages/procwire-bun-core:
     dependencies:
       '@procwire/codecs':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../codecs
       '@procwire/protocol':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../protocol
     devDependencies:
       '@types/bun':
