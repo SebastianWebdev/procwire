@@ -82,10 +82,6 @@ jobs:
       - name: Build packages
         run: pnpm ${{ env.PNPM_FILTER }} build
 
-      - name: Check publish artifacts (LICENSE, dist entrypoints, dependency ranges)
-        if: matrix.os == 'ubuntu-latest'
-        run: node scripts/check-publish-artifacts.mjs
-
       - name: Typecheck
         run: pnpm ${{ env.PNPM_FILTER }} --if-present typecheck
 
@@ -175,6 +171,12 @@ jobs:
       # bench/dashboard typecheck against the libraries' dist output
       - name: Build library packages
         run: pnpm --filter "@procwire/*" --if-present build
+
+      # Must run where ALL six publishables have dist/ - the build-and-test
+      # job excludes the bun packages (they build in the bun job), so the
+      # tarball check would false-fail there.
+      - name: Check publish artifacts (LICENSE, dist entrypoints, dependency ranges)
+        run: node scripts/check-publish-artifacts.mjs
 
       - name: Typecheck bench
         run: pnpm --filter "@procwire/bench" --if-present typecheck
