@@ -118,6 +118,11 @@ export interface SpawnPolicy {
   /**
    * Socket buffer size in bytes for data channel.
    * Higher values improve throughput for large payloads.
+   *
+   * Node runtimes only: Bun.connect() exposes no socket buffer sizing API,
+   * so @procwire/bun-core accepts this option for parity but ignores it
+   * (kernel defaults apply).
+   *
    * @default undefined (uses OS default, typically 64KB)
    * @example 4 * 1024 * 1024 // 4MB for large Arrow transfers
    */

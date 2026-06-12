@@ -324,6 +324,18 @@ export abstract class ModuleManagerCore<
     this.cancelRestart(name);
 
     const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
+
+    // Fail fast on a nonsensical heartbeat config: intervalMs <= 0 would make
+    // setInterval fire every ~1ms (ping spam), and timeoutMs <= 0 would kill
+    // the child on the very first tick (D9).
+    if (policy.heartbeat && (policy.heartbeat.intervalMs <= 0 || policy.heartbeat.timeoutMs <= 0)) {
+      throw ManagerErrors.invalidHeartbeatConfig(
+        name,
+        policy.heartbeat.intervalMs,
+        policy.heartbeat.timeoutMs,
+      );
+    }
+
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= policy.maxRetries; attempt++) {
@@ -385,6 +397,11 @@ export abstract class ModuleManagerCore<
     // 2. Wait for $init from child
     const initMessage = await this._waitForInit(module, proc, policy.initTimeout);
 
+    // The adapters resolve any {"method":"$init"} control line; a buggy or
+    // foreign child can omit/mangle params. Without this check the schema
+    // access below surfaced as a confusing TypeError (D9).
+    this.validateInitMessage(module.name, initMessage);
+
     // 3. Validate schema
     this.validateSchema(module, initMessage.params.schema);
     module._attachSchema(initMessage.params.schema);
@@ -400,6 +417,26 @@ export abstract class ModuleManagerCore<
     // 6. Start liveness heartbeat if configured.
     if (policy.heartbeat) {
       this.startHeartbeat(module, policy.heartbeat);
+    }
+  }
+
+  /**
+   * Validate the structural shape of a $init message before touching its
+   * params (D9). The adapters only check `method === "$init"`.
+   */
+  private validateInitMessage(name: string, initMessage: InitMessage): void {
+    const params: Partial<InitMessage["params"]> | undefined = initMessage?.params;
+    const schema = params?.schema;
+    if (
+      typeof params?.pipe !== "string" ||
+      schema === null ||
+      typeof schema !== "object" ||
+      schema.methods === null ||
+      typeof schema.methods !== "object" ||
+      schema.events === null ||
+      typeof schema.events !== "object"
+    ) {
+      throw ManagerErrors.invalidInitFormat(name);
     }
   }
 

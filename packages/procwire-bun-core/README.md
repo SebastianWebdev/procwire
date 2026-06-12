@@ -117,9 +117,12 @@ module.spawnPolicy({
   restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
   heartbeat: { intervalMs: 5000, timeoutMs: 15000 }, // Liveness check (off by default)
-  socketBufferSize: 4 * 1024 * 1024, // 4MB for large payloads
 });
 ```
+
+> **Note:** `socketBufferSize` (available on `@procwire/core`) is accepted for
+> API parity but **ignored on Bun** - `Bun.connect()` exposes no socket buffer
+> sizing API. Kernel defaults apply.
 
 ##### Heartbeat (liveness)
 

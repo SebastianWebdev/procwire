@@ -29,6 +29,8 @@ class FakeManager extends ModuleManagerCore<FakeProc, TestModule> {
   nextProcId = 1;
   /** When > 0, the next N spawn attempts fail at the init step. */
   failInits = 0;
+  /** When true, _waitForInit resolves a $init without params.schema. */
+  malformedInit = false;
   controlMessages: { name: string; message: string }[] = [];
   killed: number[] = [];
   exitHandlers = new Map<number, (code: number | null, signal: string | null) => void>();
@@ -52,6 +54,15 @@ class FakeManager extends ModuleManagerCore<FakeProc, TestModule> {
     if (this.failInits > 0) {
       this.failInits--;
       return Promise.reject(new Error("init boom"));
+    }
+    if (this.malformedInit) {
+      // What a buggy/foreign child can produce: a syntactically valid $init
+      // line whose params lack the schema entirely.
+      return Promise.resolve({
+        jsonrpc: "2.0",
+        method: "$init",
+        params: { pipe: "/tmp/fake.sock" },
+      } as InitMessage);
     }
     return Promise.resolve({
       jsonrpc: "2.0",
@@ -292,6 +303,42 @@ describe("ManagerCore: crash & restart", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("ManagerCore: config & handshake validation (D9)", () => {
+  it("D9: rejects a heartbeat config with non-positive intervalMs at spawn", async () => {
+    const manager = new FakeManager();
+    // intervalMs: 0 means setInterval(.., 0) -> ~1ms ping spam.
+    const mod = makeModule("worker", { heartbeat: { intervalMs: 0, timeoutMs: 1000 } });
+    manager.register(mod);
+
+    await expect(manager.spawn("worker")).rejects.toThrow(/heartbeat/);
+    expect(manager.nextProcId).toBe(1); // failed fast: nothing was spawned
+  });
+
+  it("D9: rejects a heartbeat config with non-positive timeoutMs at spawn", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker", { heartbeat: { intervalMs: 1000, timeoutMs: -1 } });
+    manager.register(mod);
+
+    await expect(manager.spawn("worker")).rejects.toThrow(/heartbeat/);
+  });
+
+  it("D9: a malformed $init (missing schema) fails the spawn descriptively, not with a TypeError", async () => {
+    const manager = new FakeManager();
+    manager.malformedInit = true;
+    const mod = makeModule("worker");
+    manager.register(mod);
+
+    const err = await manager.spawn("worker").then(
+      () => null,
+      (e: Error) => e,
+    );
+
+    expect(err).toBeInstanceOf(SpawnError);
+    expect(err!.message).toContain("invalid $init");
+    expect(err!.message).not.toContain("Cannot read properties");
   });
 });
 
