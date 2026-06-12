@@ -154,37 +154,40 @@ export class ModuleManager extends ModuleManagerCore<BunSubprocess, Module> {
   protected _killProcess(module: Module): void {
     const proc = module.process;
     if (proc && proc.exitCode === null) {
-      proc.kill();
+      // SIGKILL, matching the Node manager: this is the FORCE kill (init
+      // timeout, heartbeat timeout, cleanup) - a hung child with a SIGTERM
+      // handler must not survive it (D8).
+      proc.kill("SIGKILL");
     }
   }
 
-  protected _waitForExitOrKill(
+  protected async _waitForExitOrKill(
     _module: Module,
     proc: BunSubprocess,
     timeoutMs: number,
   ): Promise<void> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        proc.kill();
-        resolve();
-      }, timeoutMs);
+    if (proc.exitCode !== null) {
+      return;
+    }
 
-      // Check if process is already dead
-      if (proc.exitCode !== null) {
-        clearTimeout(timer);
-        resolve();
-        return;
-      }
+    // Bun reports exits natively via proc.exited - no need for the old 100ms
+    // exitCode poll (which also leaked its interval when the force-kill timer
+    // fired first) (D8).
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = await Promise.race([
+      proc.exited.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), timeoutMs);
+      }),
+    ]);
+    clearTimeout(timer);
 
-      // Poll for exit (Bun doesn't have process.on('exit') equivalent)
-      const checkExit = setInterval(() => {
-        if (proc.exitCode !== null) {
-          clearInterval(checkExit);
-          clearTimeout(timer);
-          resolve();
-        }
-      }, 100);
-    });
+    if (timedOut) {
+      // Grace period over: SIGKILL (un-trappable) and wait for the real exit
+      // so callers observe a truly dead child.
+      proc.kill("SIGKILL");
+      await proc.exited;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -212,7 +215,9 @@ export class ModuleManager extends ModuleManagerCore<BunSubprocess, Module> {
         if (!resolved) {
           resolved = true;
           abortController.abort();
-          proc.kill();
+          // SIGKILL like the Node manager: a child stuck before $init may
+          // well be hung with signal handlers installed (D8).
+          proc.kill("SIGKILL");
           reject(ManagerErrors.initTimeout(module.name, timeout));
         }
       }, timeout);
