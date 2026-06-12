@@ -130,6 +130,16 @@ The client also shuts down automatically in two cases:
 
 Shutdown is immediate: the stdin reader is cancellable, so a pending control-plane read never pins the Bun event loop past `shutdown()`.
 
+### stdout is the control plane
+
+The client talks JSON-RPC to the parent over **stdout** (`$init`, `$pong`).
+Library writes go through `process.stdout.write` directly, so a patched or
+replaced `console` (loggers, silencers) cannot break the channel. The reverse
+contract applies to your handler code: regular logging is fine (the parent
+ignores non-JSON lines), but **do not print bare JSON-RPC lines** (text
+starting with `{`) to stdout - they could be parsed as control messages.
+Prefer `console.error`/stderr for diagnostics.
+
 ### RequestContext
 
 Passed to method handlers to send responses back to parent.

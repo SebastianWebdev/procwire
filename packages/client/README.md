@@ -126,6 +126,16 @@ The client also shuts down automatically in two cases:
 - **`$shutdown` from the parent** — when the parent calls `manager.shutdown()`, it sends a `$shutdown` control message; the client shuts down cleanly so the parent never has to force-kill it.
 - **stdin EOF (parent death)** — if the parent process dies (or closes the child's stdin), the control stream ends and the client shuts down, so the child exits instead of living on as an orphan.
 
+### stdout is the control plane
+
+The client talks JSON-RPC to the parent over **stdout** (`$init`, `$pong`).
+Library writes go through `process.stdout.write` directly, so a patched or
+replaced `console` (loggers, silencers) cannot break the channel. The reverse
+contract applies to your handler code: regular logging is fine (the parent
+ignores non-JSON lines), but **do not print bare JSON-RPC lines** (text
+starting with `{`) to stdout - they could be parsed as control messages.
+Prefer `console.error`/stderr for diagnostics.
+
 ### RequestContext
 
 Passed to method handlers to send responses back to parent.

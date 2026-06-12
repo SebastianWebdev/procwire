@@ -38,8 +38,8 @@ describe("Client", () => {
     it("should throw if adding handlers after start", async () => {
       const client = new Client().handle("foo", vi.fn());
 
-      // Mock console.log to capture $init
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      // Swallow the $init control line (written to process.stdout - D10)
+      const consoleSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
       // Start will fail without actual pipe, but _started flag is set first
       try {
@@ -56,7 +56,7 @@ describe("Client", () => {
     it("should throw if adding events after start", async () => {
       const client = new Client().handle("foo", vi.fn());
 
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
       try {
         await client.start();
