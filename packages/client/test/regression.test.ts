@@ -255,27 +255,29 @@ describe("Feature D1 (client): responds to heartbeat ping with pong", () => {
 
   it("writes a $pong when it receives a $ping", () => {
     const client = new Client();
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    // Control-plane writes go to process.stdout directly, not console.log
+    // (D10: a user-patched console must not break or spoof the channel).
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
 
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toMatchObject({ method: "$pong" });
+      expect(stdoutSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toMatchObject({ method: "$pong" });
     } finally {
-      logSpy.mockRestore();
+      stdoutSpy.mockRestore();
     }
   });
 
   it("ignores unknown and malformed control lines", () => {
     const client = new Client();
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$unknown" }));
       handleControl(client, "not json");
 
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdoutSpy).not.toHaveBeenCalled();
     } finally {
-      logSpy.mockRestore();
+      stdoutSpy.mockRestore();
     }
   });
 

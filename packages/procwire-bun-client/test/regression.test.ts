@@ -5,6 +5,7 @@
  * PASS once the fix is applied. These mirror the @procwire/client fixes.
  */
 import { describe, it, expect, spyOn } from "bun:test";
+import * as fs from "node:fs";
 import { Client } from "../src/index.js";
 import { buildFrame } from "@procwire/protocol";
 import { msgpackCodec } from "@procwire/codecs";
@@ -161,27 +162,35 @@ describe("Feature D1 (bun-client): responds to heartbeat ping with pong", () => 
 
   it("writes a $pong when it receives a $ping", () => {
     const client = new Client();
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    // Control-plane writes go through fs.writeSync(1, ...) on Bun: immune to
+    // a patched console (D10) AND it keeps fd 1 in blocking mode, unlike
+    // Bun's process.stdout.write (see the bun-core W6 canary).
+    const writeSpy = spyOn(fs, "writeSync").mockImplementation(
+      (_fd: unknown, data: unknown): number => (data as Buffer).length,
+    );
     try {
       handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
 
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toMatchObject({ method: "$pong" });
+      expect(writeSpy).toHaveBeenCalledTimes(1);
+      expect(writeSpy.mock.calls[0]![0]).toBe(1);
+      expect(JSON.parse(String(writeSpy.mock.calls[0]![1]))).toMatchObject({ method: "$pong" });
     } finally {
-      logSpy.mockRestore();
+      writeSpy.mockRestore();
     }
   });
 
   it("ignores unknown and malformed control lines", () => {
     const client = new Client();
-    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const writeSpy = spyOn(fs, "writeSync").mockImplementation(
+      (_fd: unknown, data: unknown): number => (data as Buffer).length,
+    );
     try {
       handleControl(client, JSON.stringify({ jsonrpc: "2.0", method: "$unknown" }));
       handleControl(client, "not json");
 
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(writeSpy).not.toHaveBeenCalled();
     } finally {
-      logSpy.mockRestore();
+      writeSpy.mockRestore();
     }
   });
 

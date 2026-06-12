@@ -434,9 +434,17 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     }
   }
 
-  /** Write a JSON-RPC control message to the parent over stdout. */
+  /**
+   * Write a JSON-RPC control message to the parent over stdout.
+   *
+   * Deliberately process.stdout.write, NOT console.log: user code routinely
+   * patches/replaces console (loggers, silencers), which must not be able to
+   * break or spoof the control plane (D10). The reverse contract holds for
+   * embedders: stdout IS the control plane - do not print bare JSON-RPC
+   * lines ({"jsonrpc":...}) to stdout from handler code.
+   */
   protected _sendControl(message: unknown): void {
-    console.log(JSON.stringify(message));
+    process.stdout.write(`${JSON.stringify(message)}\n`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -480,7 +488,7 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     };
 
     // Write to stdout (JSON-RPC control plane)
-    console.log(JSON.stringify(initMessage));
+    this._sendControl(initMessage);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

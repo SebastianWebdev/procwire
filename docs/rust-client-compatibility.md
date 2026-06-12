@@ -234,6 +234,12 @@ giant allocation, process survives.
 `packages/client/src/client.ts` (frame-buffer `push` guarded with
 `maxPayloadSize`, `socket.destroy()` on throw).
 
+**Note (D6):** since the Phase-4 hardening, `FrameBuffer` enforces the full
+header contract on every parsed frame: `methodId 0` is rejected and the
+reserved flag bits 6–7 **must be zero**. A Rust client that sets reserved
+bits will have its connection dropped by the TypeScript peer; keep them `0`
+(as §2 already requires) and apply the same checks on receive.
+
 ### 4.5 — `requestId` is a wrapping `uint32`, `0` reserved — **CHECK**
 
 **What changed:** `C6` — the request-id allocator wraps within the `uint32` range

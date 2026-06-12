@@ -39,9 +39,11 @@ function requestFrame(methodId: number, requestId: number, data: unknown): Buffe
 }
 
 async function startedClient(client: TestClient): Promise<TestClient> {
-  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  // Swallow the $init control line (library writes go to process.stdout
+  // directly - see D10).
+  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   await client.start();
-  logSpy.mockRestore();
+  stdoutSpy.mockRestore();
   return client;
 }
 
@@ -166,25 +168,55 @@ describe("ClientCore: disconnect teardown", () => {
   });
 });
 
+describe("ClientCore: control plane (D10)", () => {
+  it("D10: control-plane writes bypass a user-patched console.log", async () => {
+    // User code routinely patches console.log (loggers, test frameworks,
+    // silencers). The JSON-RPC control plane must not break because of it:
+    // library writes go through process.stdout.write directly.
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const originalLog = console.log;
+    console.log = () => {}; // a patched console that swallows everything
+    try {
+      const client = new TestClient().handle("x", () => {}) as TestClient;
+      await client.start();
+
+      const initLine = stdoutSpy.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.includes('"$init"'));
+      expect(initLine).toBeDefined();
+      expect(JSON.parse(initLine!.trim())).toMatchObject({ method: "$init" });
+
+      client.controlLine(JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
+      const pongLine = stdoutSpy.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.includes('"$pong"'));
+      expect(pongLine).toBeDefined();
+    } finally {
+      console.log = originalLog;
+      stdoutSpy.mockRestore();
+    }
+  });
+});
+
 describe("ClientCore: control plane", () => {
   it("answers $ping with $pong and shuts down on $shutdown", async () => {
     const client = await startedClient(new TestClient().handle("x", () => {}) as TestClient);
 
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const shutdownSpy = vi.spyOn(client, "shutdown").mockResolvedValue(undefined);
     try {
       client.controlLine(JSON.stringify({ jsonrpc: "2.0", method: "$ping" }));
-      expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toMatchObject({ method: "$pong" });
+      expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toMatchObject({ method: "$pong" });
 
       client.controlLine(JSON.stringify({ jsonrpc: "2.0", method: "$shutdown" }));
       expect(shutdownSpy).toHaveBeenCalledTimes(1);
 
       client.controlLine("not json");
       client.controlLine(JSON.stringify({ method: "$unknown" }));
-      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(stdoutSpy).toHaveBeenCalledTimes(1);
     } finally {
       shutdownSpy.mockRestore();
-      logSpy.mockRestore();
+      stdoutSpy.mockRestore();
     }
   });
 });

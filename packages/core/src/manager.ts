@@ -109,7 +109,7 @@ export class ModuleManager extends ModuleManagerCore<ChildProcess, Module> {
 
   protected _watchProcessExit(module: Module, proc: ChildProcess): void {
     proc.on("exit", (code, signal) => {
-      this.handleProcessExit(module, code, signal);
+      this.handleProcessExit(module, proc, code, signal);
     });
   }
 

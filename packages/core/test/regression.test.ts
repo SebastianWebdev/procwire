@@ -442,12 +442,16 @@ describe("Bug C10: shutdown must cancel a pending crash-restart", () => {
         .spyOn(manager as unknown as { spawnModule: (n: string) => Promise<void> }, "spawnModule")
         .mockResolvedValue(undefined);
 
-      // Simulate a crash of a ready module -> schedules a restart after a delay.
+      // Simulate a crash of a ready module -> schedules a restart after a
+      // delay. The exit must carry the module's current process (D1 filters
+      // stale generations).
+      const proc = { killed: false, kill: vi.fn() };
+      mod._attachProcess(proc as never);
       (
         manager as unknown as {
-          handleProcessExit: (m: Module, c: number | null, s: string | null) => void;
+          handleProcessExit: (m: Module, p: unknown, c: number | null, s: string | null) => void;
         }
-      ).handleProcessExit(mod, 1, null);
+      ).handleProcessExit(mod, proc, 1, null);
 
       // Shut down while the restart is still pending.
       const shutdownDone = manager.shutdown();
@@ -906,7 +910,12 @@ describe("Bug W2 (core): EPIPE on the child's stdin must not crash the parent", 
 // ═══════════════════════════════════════════════════════════════════════════
 describe("Bug W4 (core): shutdown of one module must not affect another's crash handling", () => {
   interface ShutdownApi {
-    handleProcessExit(module: Module, code: number | null, signal: string | null): void;
+    handleProcessExit(
+      module: Module,
+      proc: unknown,
+      code: number | null,
+      signal: string | null,
+    ): void;
   }
 
   function makeProc(): EventEmitter & {
@@ -958,14 +967,14 @@ describe("Bug W4 (core): shutdown of one module must not affect another's crash 
   }
 
   it("reports a crash of module B while module A is mid-shutdown", async () => {
-    const { manager, modB, procA, errors } = setupTwoModules();
+    const { manager, modB, procA, procB, errors } = setupTwoModules();
     const api = manager as unknown as ShutdownApi;
 
     // A's shutdown is in flight: its child has not exited yet.
     const shutdownA = manager.shutdown("a");
 
     // B crashes in that window. The crash MUST be reported, not swallowed.
-    api.handleProcessExit(modB, 1, null);
+    api.handleProcessExit(modB, procB, 1, null);
 
     expect(errors.some((e) => e.name === "b")).toBe(true);
     expect(modB.state).toBe("closed"); // restartOnCrash: false -> closed after report
@@ -988,7 +997,7 @@ describe("Bug W4 (core): shutdown of one module must not affect another's crash 
 
     // Now B's child exits in response to ITS $shutdown. In production the
     // spawn-time exit listener runs handleProcessExit for it.
-    api.handleProcessExit(modB, 0, null);
+    api.handleProcessExit(modB, procB, 0, null);
     procB.emit("exit", 0, null);
     await shutdownB;
 

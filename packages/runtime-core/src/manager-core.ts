@@ -23,9 +23,10 @@ import type {
   InitMessage,
   RetryDelayConfig,
   HeartbeatConfig,
+  ResponseType,
 } from "./types.js";
 import { ManagerErrors } from "./errors.js";
-import { ManagerEvents } from "./events.js";
+import { ManagerEvents, ModuleEvents } from "./events.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -84,11 +85,13 @@ export interface ManagedModule<TProcess> {
   readonly executableConfig: ExecutableConfig | null;
   readonly spawnPolicyConfig: SpawnPolicy;
   readonly process: TProcess | null;
+  /** EventEmitter subscription (modules extend EventEmitter). */
+  on(event: string, listener: () => void): unknown;
   _validate(): void;
   _setState(state: ModuleState): void;
   _attachProcess(process: TProcess): void;
   _attachSchema(schema: ModuleSchema): void;
-  _buildExpectedSchema(): { methods: string[]; events: string[] };
+  _buildExpectedSchema(): { methods: { name: string; response: ResponseType }[]; events: string[] };
   _detach(): void;
 }
 
@@ -132,7 +135,7 @@ export abstract class ModuleManagerCore<
    * Spawn the child process for `module`. The adapter owns stdio config and
    * any runtime-specific guards (e.g. Node's stdin EPIPE guard). Exit wiring
    * happens in _watchProcessExit (or at spawn time, if the runtime requires
-   * it) and must route into this.handleProcessExit().
+   * it) and must route into this.handleProcessExit() with the exited process.
    */
   protected abstract _spawnProcess(module: TModule): TProcess;
 
@@ -144,9 +147,9 @@ export abstract class ModuleManagerCore<
 
   /**
    * Attach crash detection for the started process, routing exits into
-   * this.handleProcessExit(module, code, signal). Called once the spawn-error
-   * window has passed; runtimes that must wire exit at spawn time (Bun's
-   * onExit option) implement this as a no-op.
+   * this.handleProcessExit(module, proc, code, signal). Called once the
+   * spawn-error window has passed; runtimes that must wire exit at spawn time
+   * (Bun's onExit option) implement this as a no-op.
    */
   protected abstract _watchProcessExit(module: TModule, proc: TProcess): void;
 
@@ -228,6 +231,11 @@ export abstract class ModuleManagerCore<
     module._validate();
     this.modules.set(module.name, module);
 
+    // React to a data-channel-only loss (socket gone, process still alive):
+    // without this the module would sit "disconnected" forever with a live
+    // child no path ever restarts (D3).
+    module.on(ModuleEvents.DISCONNECTED, () => this.handleDataChannelLoss(module));
+
     return this;
   }
 
@@ -303,7 +311,31 @@ export abstract class ModuleManagerCore<
       throw ManagerErrors.notRegistered(name);
     }
 
+    // Double-spawn guard: a module that is live (ready) or mid-spawn
+    // (initializing/connecting) must not be spawned again - the second spawn
+    // would replace module.process and orphan the first child (D2).
+    const state = module.state;
+    if (state !== "created" && state !== "closed" && state !== "disconnected") {
+      throw ManagerErrors.spawnNotAllowed(name, state);
+    }
+
+    // An explicit spawn supersedes a pending crash-restart for this module;
+    // without this the stale timer would fire a second, racing spawn (D2).
+    this.cancelRestart(name);
+
     const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
+
+    // Fail fast on a nonsensical heartbeat config: intervalMs <= 0 would make
+    // setInterval fire every ~1ms (ping spam), and timeoutMs <= 0 would kill
+    // the child on the very first tick (D9).
+    if (policy.heartbeat && (policy.heartbeat.intervalMs <= 0 || policy.heartbeat.timeoutMs <= 0)) {
+      throw ManagerErrors.invalidHeartbeatConfig(
+        name,
+        policy.heartbeat.intervalMs,
+        policy.heartbeat.timeoutMs,
+      );
+    }
+
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= policy.maxRetries; attempt++) {
@@ -365,6 +397,11 @@ export abstract class ModuleManagerCore<
     // 2. Wait for $init from child
     const initMessage = await this._waitForInit(module, proc, policy.initTimeout);
 
+    // The adapters resolve any {"method":"$init"} control line; a buggy or
+    // foreign child can omit/mangle params. Without this check the schema
+    // access below surfaced as a confusing TypeError (D9).
+    this.validateInitMessage(module.name, initMessage);
+
     // 3. Validate schema
     this.validateSchema(module, initMessage.params.schema);
     module._attachSchema(initMessage.params.schema);
@@ -384,14 +421,46 @@ export abstract class ModuleManagerCore<
   }
 
   /**
+   * Validate the structural shape of a $init message before touching its
+   * params (D9). The adapters only check `method === "$init"`.
+   */
+  private validateInitMessage(name: string, initMessage: InitMessage): void {
+    const params: Partial<InitMessage["params"]> | undefined = initMessage?.params;
+    const schema = params?.schema;
+    if (
+      typeof params?.pipe !== "string" ||
+      schema === null ||
+      typeof schema !== "object" ||
+      schema.methods === null ||
+      typeof schema.methods !== "object" ||
+      schema.events === null ||
+      typeof schema.events !== "object"
+    ) {
+      throw ManagerErrors.invalidInitFormat(name);
+    }
+  }
+
+  /**
    * Validate child schema against module config.
    */
   private validateSchema(module: TModule, childSchema: ModuleSchema): void {
     const expected = module._buildExpectedSchema();
 
-    for (const methodName of expected.methods) {
-      if (!childSchema.methods[methodName]) {
+    for (const { name: methodName, response } of expected.methods) {
+      const childMethod = childSchema.methods[methodName];
+      if (!childMethod) {
         throw ManagerErrors.schemaMissingMethod(module.name, methodName);
+      }
+      // Both sides declare a response type; disagreement (e.g. parent expects
+      // a stream, child answers with a single result) must fail the handshake
+      // instead of surfacing later as a confusing send()/stream() error (D4).
+      if (childMethod.response !== response) {
+        throw ManagerErrors.schemaResponseMismatch(
+          module.name,
+          methodName,
+          response,
+          childMethod.response,
+        );
       }
     }
 
@@ -407,9 +476,23 @@ export abstract class ModuleManagerCore<
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Handle child process exit. Runtime adapters route their exit events here.
+   * Handle child process exit. Runtime adapters route their exit events here,
+   * passing the process whose exit fired so stale generations are filtered.
    */
-  protected handleProcessExit(module: TModule, code: number | null, signal: string | null): void {
+  protected handleProcessExit(
+    module: TModule,
+    proc: TProcess,
+    code: number | null,
+    signal: string | null,
+  ): void {
+    // Generation guard: a late exit from a previous (killed/replaced) process
+    // must not detach the module's CURRENT process - it would tear down a
+    // freshly respawned session and stop its heartbeat (D1). The module holds
+    // exactly the process of the live generation; anything else is stale.
+    if (module.process !== proc) {
+      return;
+    }
+
     // The process is gone: stop pinging it.
     this.stopHeartbeat(module.name);
 
@@ -426,7 +509,11 @@ export abstract class ModuleManagerCore<
       return;
     }
 
-    const wasReady = module.state === "ready";
+    // "disconnected" with the current process still attached means the data
+    // channel dropped first (a crashed child's socket close can beat its exit
+    // event, and the D3 kill path goes through here too) - the module WAS
+    // ready, so it stays eligible for crash-restart.
+    const wasReady = module.state === "ready" || module.state === "disconnected";
     const error = ManagerErrors.processCrashed(module.name, code, signal);
 
     // Detach module
@@ -458,6 +545,26 @@ export abstract class ModuleManagerCore<
         this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.tooManyRestarts());
       }
     }
+  }
+
+  /**
+   * The module's data channel closed while its process is (presumably) still
+   * alive. In-flight work was already failed by the module core; surface the
+   * loss and kill the child so the normal exit -> crash/restart path decides
+   * what happens next (D3).
+   */
+  private handleDataChannelLoss(module: TModule): void {
+    // A close during this module's own shutdown is the expected teardown.
+    if (this.shuttingDown.has(module.name)) {
+      return;
+    }
+    // No process attached: the exit path already ran (or never spawned).
+    if (module.process === null) {
+      return;
+    }
+
+    this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.dataChannelLost(module.name));
+    this._killProcess(module);
   }
 
   /**

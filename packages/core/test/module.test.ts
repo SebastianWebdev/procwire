@@ -162,13 +162,18 @@ describe("Module", () => {
     it("should build expected schema", () => {
       const mod = new Module("worker")
         .method("foo")
-        .method("bar")
+        .method("bar", { response: "stream" })
         .event("progress")
         .event("status");
 
       const schema = mod._buildExpectedSchema();
 
-      expect(schema.methods).toEqual(["foo", "bar"]);
+      // Carries the declared response types so the handshake can verify the
+      // child agrees (D4).
+      expect(schema.methods).toEqual([
+        { name: "foo", response: "result" },
+        { name: "bar", response: "stream" },
+      ]);
       expect(schema.events).toEqual(["progress", "status"]);
     });
 

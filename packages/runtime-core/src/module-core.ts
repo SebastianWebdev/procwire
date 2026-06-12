@@ -421,9 +421,16 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
 
   /**
    * @internal Socket close from the runtime adapter.
+   *
+   * Losing the data channel while the module is live strands every in-flight
+   * request/stream - nothing can ever answer them - so they are failed NOW
+   * instead of waiting out their timeouts (streams have none and would hang
+   * forever). The manager reacts to the "disconnected" event (kill -> normal
+   * crash/restart path). (D3)
    */
   _handleTransportClose(): void {
     if (this._state === "ready") {
+      this._failAllPending(ModuleErrors.disconnected());
       this._setState("disconnected");
       this.emit(ModuleEvents.DISCONNECTED);
     }
@@ -438,21 +445,32 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   }
 
   /**
-   * @internal Called by ModuleManager on shutdown/crash.
+   * Fail every pending request and stream with `error`.
+   *
+   * Used on detach and on data-channel loss: once the channel is gone nothing
+   * can answer them. Timeout timers are cleared and abort listeners removed so
+   * a long-lived user AbortSignal cannot fire against torn-down state.
    */
-  _detach(): void {
-    // Reject all pending requests
+  private _failAllPending(error: Error): void {
     for (const [_id, pending] of this._pendingRequests) {
-      pending.reject(ModuleErrors.disconnected());
+      pending.reject(error);
       if (pending.timeout) clearTimeout(pending.timeout);
+      pending.abortCleanup?.();
     }
     this._pendingRequests.clear();
 
-    // Error all pending streams
     for (const [_id, stream] of this._pendingStreams) {
-      stream.error(ModuleErrors.disconnected());
+      stream.error(error);
     }
     this._pendingStreams.clear();
+  }
+
+  /**
+   * @internal Called by ModuleManager on shutdown/crash.
+   */
+  _detach(): void {
+    // Reject all pending requests and streams
+    this._failAllPending(ModuleErrors.disconnected());
 
     // Let the adapter remove its socket listeners BEFORE the transport tears
     // the socket down, so a late "data"/"error"/"close" event cannot fire
@@ -489,9 +507,15 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   /**
    * @internal Build expected schema for validation against child.
    */
-  _buildExpectedSchema(): { methods: string[]; events: string[] } {
+  _buildExpectedSchema(): {
+    methods: { name: string; response: ResponseType }[];
+    events: string[];
+  } {
     return {
-      methods: Array.from(this._methods.keys()),
+      methods: Array.from(this._methods.entries()).map(([name, config]) => ({
+        name,
+        response: config.response,
+      })),
       events: Array.from(this._events.keys()),
     };
   }
@@ -578,9 +602,11 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
     const responsePromise = new Promise<unknown>((resolve, reject) => {
-      // Precedence: child schema -> method config -> module default.
-      // A resolved value of 0 (or negative) disables the timeout.
-      const timeout = schemaMethod.timeout ?? methodConfig.timeout ?? this._defaultRequestTimeout;
+      // Precedence: parent method config -> child schema -> module default.
+      // The parent's explicit timeout must win - the child must not be able
+      // to extend a deadline the embedder chose (D4). A resolved value of 0
+      // (or negative) disables the timeout.
+      const timeout = methodConfig.timeout ?? schemaMethod.timeout ?? this._defaultRequestTimeout;
       const timer =
         timeout > 0
           ? setTimeout(() => {
@@ -598,6 +624,13 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
         abortCleanup,
       });
     });
+
+    // The pending entry can be failed (detach / data-channel loss) while this
+    // send is still suspended on backpressure in _sendFrame below - a window
+    // in which no caller holds responsePromise yet. Mark it observed so that
+    // rejection is never "unhandled"; the caller still receives it via the
+    // return below (or the _sendFrame error from the catch).
+    responsePromise.catch(() => {});
 
     // Send frame AFTER registering pending request (with backpressure support)
     try {
@@ -803,8 +836,15 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
       return;
     }
 
-    // Event (requestId = 0, from child)
-    if (header.requestId === 0 && hasFlag(header.flags, Flags.DIRECTION_TO_PARENT)) {
+    // Event (requestId = 0, from child). Method and event ids overlap, so a
+    // response/stream frame whose requestId is (wrongly) 0 must be dropped
+    // here - decoding it as the event sharing that id would corrupt the
+    // event stream (D5).
+    if (
+      header.requestId === 0 &&
+      hasFlag(header.flags, Flags.DIRECTION_TO_PARENT) &&
+      !hasFlag(header.flags, Flags.IS_RESPONSE)
+    ) {
       this._handleEvent(frame);
       return;
     }

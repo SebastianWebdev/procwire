@@ -124,6 +124,37 @@ describe("ModuleCore: request/response correlation", () => {
   });
 });
 
+describe("ModuleCore: timeout precedence", () => {
+  it("D4: the parent's explicit method timeout outranks the child schema's timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = new ModuleCore("worker")
+        .executable("node", ["w.js"])
+        .method("foo", { timeout: 25, codec: msgpackCodec }) as ModuleCore;
+      // Child advertises a much longer timeout; the parent's explicit config
+      // must win - the child must not be able to extend the parent's deadline.
+      mod._attachSchema({
+        methods: { foo: { id: 1, response: "result", timeout: 60_000 } },
+        events: {},
+      });
+      mod._attachTransport(new FakeTransport());
+      mod._setState("ready");
+
+      const outcome = mod.send("foo", {}).then(
+        () => null,
+        (err: Error) => err,
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      const err = await outcome;
+
+      expect(err).not.toBeNull();
+      expect(err!.message).toContain("Timeout");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("ModuleCore: abort", () => {
   it("sends an ABORT frame and rejects with AbortError when the signal fires", async () => {
     const { mod, transport } = setupReadyModule({ cancellable: true });
@@ -246,7 +277,7 @@ describe("ModuleCore: streams", () => {
 });
 
 describe("ModuleCore: events", () => {
-  it("dispatches child events to onEvent subscribers", () => {
+  function setupEventModule(): { mod: ModuleCore; seen: unknown[] } {
     const mod = new ModuleCore("worker")
       .executable("node", ["w.js"])
       .method("foo")
@@ -260,6 +291,11 @@ describe("ModuleCore: events", () => {
 
     const seen: unknown[] = [];
     mod.onEvent("progress", (data) => seen.push(data));
+    return { mod, seen };
+  }
+
+  it("dispatches child events to onEvent subscribers", () => {
+    const { mod, seen } = setupEventModule();
 
     mod._handleTransportData(
       buildFrame(
@@ -269,6 +305,87 @@ describe("ModuleCore: events", () => {
     );
 
     expect(seen).toEqual([{ percent: 50 }]);
+  });
+
+  it("D5: a requestId-0 frame with IS_RESPONSE must not be dispatched as an event", () => {
+    const { mod, seen } = setupEventModule();
+
+    // Method ids and event ids live in overlapping number spaces. A response
+    // frame whose requestId is (wrongly) 0 falls through the response branch;
+    // it must be dropped, not decoded as the event sharing that id.
+    mod._handleTransportData(
+      buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT, requestId: 0 },
+        msgpackCodec.serialize({ percent: 99 }),
+      ),
+    );
+
+    expect(seen).toEqual([]);
+  });
+
+  it("D5: a requestId-0 stream frame must not be dispatched as an event", () => {
+    const { mod, seen } = setupEventModule();
+
+    mod._handleTransportData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.DIRECTION_TO_PARENT,
+          requestId: 0,
+        },
+        msgpackCodec.serialize({ percent: 99 }),
+      ),
+    );
+
+    expect(seen).toEqual([]);
+  });
+});
+
+describe("ModuleCore: data-channel loss (D3)", () => {
+  it("D3: transport close rejects in-flight requests immediately", async () => {
+    const { mod } = setupReadyModule();
+
+    const pending = mod.send("foo", {});
+    const outcome = pending.then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+
+    mod._handleTransportClose();
+
+    // The rejection must be immediate (driven by the close), not the
+    // request timeout. Race against a short timer to prove it.
+    const result = await Promise.race([
+      outcome,
+      new Promise((resolve) => setTimeout(resolve, 100, "still pending")),
+    ]);
+    expect(result).toContain("disconnected");
+    expect(mod.state).toBe("disconnected");
+  });
+
+  it("D3: transport close errors in-flight streams immediately", async () => {
+    const mod = new ModuleCore("worker")
+      .executable("node", ["w.js"])
+      .method("st", { response: "stream", codec: msgpackCodec }) as ModuleCore;
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+    const transport = new FakeTransport();
+    mod._attachTransport(transport);
+    mod._setState("ready");
+
+    const gen = mod.stream("st", {});
+    const first = gen.next().then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+    await vi.waitFor(() => expect(transport.frames.length).toBe(1));
+
+    mod._handleTransportClose();
+
+    const result = await Promise.race([
+      first,
+      new Promise((resolve) => setTimeout(resolve, 100, "still pending")),
+    ]);
+    expect(result).toContain("disconnected");
   });
 });
 

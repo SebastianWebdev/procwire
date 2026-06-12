@@ -119,13 +119,29 @@ export const ManagerErrors = {
   /** Module not registered */
   notRegistered: (name: string) => new ProcwireError(`Module "${name}" not registered`),
 
+  /** Spawn attempted while the module is live or already spawning */
+  spawnNotAllowed: (name: string, state: string) =>
+    new ProcwireError(
+      `Module "${name}" cannot be spawned in state "${state}" ` +
+        `(already running or spawn in progress)`,
+    ),
+
   /** Init timeout */
   initTimeout: (name: string, timeout: number) =>
     new ProcwireError(`Module "${name}" did not send $init within ${timeout}ms`),
 
   /** Invalid init message format */
   invalidInitFormat: (name: string) =>
-    new ProcwireError(`Module "${name}" sent invalid $init format (missing schema)`),
+    new ProcwireError(
+      `Module "${name}" sent invalid $init format (missing/malformed pipe or schema)`,
+    ),
+
+  /** Nonsensical heartbeat configuration */
+  invalidHeartbeatConfig: (name: string, intervalMs: number, timeoutMs: number) =>
+    new ProcwireError(
+      `Module "${name}": heartbeat intervalMs and timeoutMs must be > 0 ` +
+        `(got intervalMs: ${intervalMs}, timeoutMs: ${timeoutMs})`,
+    ),
 
   /** Module error from child */
   moduleError: (name: string, message: string) =>
@@ -139,9 +155,23 @@ export const ManagerErrors = {
   schemaMissingEvent: (name: string, event: string) =>
     new ProcwireError(`Module "${name}": child did not register expected event "${event}"`),
 
+  /** Schema validation failed - response type disagreement */
+  schemaResponseMismatch: (name: string, method: string, expected: string, actual: string) =>
+    new ProcwireError(
+      `Module "${name}": method "${method}" response type mismatch ` +
+        `(parent declared "${expected}", child declared "${actual}")`,
+    ),
+
   /** Data channel connection failed */
   dataChannelFailed: (message: string) =>
     new ProcwireError(`Data channel connect failed: ${message}`),
+
+  /** Data channel closed while the child process is still alive */
+  dataChannelLost: (name: string) =>
+    new ProcwireError(
+      `Module "${name}" lost its data channel while the process is still running; ` +
+        `killing the child so the crash/restart policy applies`,
+    ),
 
   /** Module process crashed */
   processCrashed: (name: string, exitCode: number | null, signal: string | null) =>
