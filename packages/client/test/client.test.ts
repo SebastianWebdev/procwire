@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import { Client } from "../src/client.js";
-import { RequestContextImpl } from "../src/request-context.js";
+import { RequestContextImpl } from "@procwire/runtime-core";
 import { msgpackCodec } from "@procwire/codecs";
-import { HEADER_SIZE, DrainWaiter } from "@procwire/protocol";
+import { NodeSocketTransport } from "@procwire/protocol";
 
 describe("Client", () => {
   describe("builder API", () => {
@@ -94,18 +94,14 @@ describe("Client", () => {
     it("should send response with IS_RESPONSE flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42, // requestId
         "testMethod",
         1, // methodId
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.respond({ result: "success" });
@@ -119,18 +115,14 @@ describe("Client", () => {
     it("should send ack with IS_ACK flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.ack({ jobId: 123 });
@@ -142,18 +134,14 @@ describe("Client", () => {
     it("should send stream chunks without setting responded", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.chunk({ data: 1 });
@@ -166,18 +154,14 @@ describe("Client", () => {
     it("should end stream with STREAM_END flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.chunk({ data: 1 });
@@ -189,18 +173,14 @@ describe("Client", () => {
     it("should send error with IS_ERROR flag", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.error(new Error("Something went wrong"));
@@ -212,18 +192,14 @@ describe("Client", () => {
     it("should throw if responding twice", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await ctx.respond({ result: "first" });
@@ -237,18 +213,14 @@ describe("Client", () => {
     it("should register abort callback", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       const callback = vi.fn();
@@ -261,18 +233,14 @@ describe("Client", () => {
     it("should track aborted state", () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       expect(ctx.aborted).toBe(false);
@@ -285,18 +253,14 @@ describe("Client", () => {
     it("should cleanup abort callbacks on respond", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       ctx.onAbort(vi.fn());
@@ -310,8 +274,6 @@ describe("Client", () => {
     it("should wait for drain when socket buffer is full", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       // Make write return false (buffer full) and set writableNeedDrain
       socket.write.mockImplementation(() => {
@@ -324,10 +286,8 @@ describe("Client", () => {
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       // Start respond - should wait for drain after write
@@ -355,7 +315,6 @@ describe("Client", () => {
     it("should throw when socket closes during drain wait", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
 
       // RING+SYNC: Write happens before await, so we need socket.write
       // to return false (backpressure) to trigger waitForDrain
@@ -363,17 +322,13 @@ describe("Client", () => {
       socket.writableNeedDrain = true;
       socket.destroyed = true;
 
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
-
       const ctx = new RequestContextImpl(
         42,
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       await expect(ctx.respond({ data: "test" })).rejects.toThrow(
@@ -384,8 +339,6 @@ describe("Client", () => {
     it("should handle rapid chunk() calls with backpressure", async () => {
       const socket = createMockSocket();
       const abortCallbacks = new Map<number, Set<() => void>>();
-      const acquireHeader = vi.fn(() => Buffer.allocUnsafe(HEADER_SIZE));
-      const drainWaiter = new DrainWaiter(socket as unknown as Socket);
 
       // First two writes succeed, then backpressure kicks in
       let writeCount = 0;
@@ -405,10 +358,8 @@ describe("Client", () => {
         "testMethod",
         1,
         msgpackCodec,
-        socket as unknown as Socket,
+        new NodeSocketTransport(socket as unknown as Socket),
         abortCallbacks,
-        acquireHeader,
-        drainWaiter,
       );
 
       // First chunk should complete
@@ -481,12 +432,12 @@ describe("Client", () => {
     it("should throw if emitting unknown event", async () => {
       const client = new Client().event("progress");
 
-      // Mock as connected
+      // Mock as connected (the shared core checks the transport)
       const clientAny = client as unknown as {
-        _socket: Socket | null;
+        _transport: NodeSocketTransport | null;
         _eventNameToId: Map<string, number>;
       };
-      clientAny._socket = createMockSocket() as unknown as Socket;
+      clientAny._transport = new NodeSocketTransport(createMockSocket() as unknown as Socket);
       clientAny._eventNameToId.set("progress", 1);
 
       await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event: unknown");
@@ -505,10 +456,14 @@ describe("Client", () => {
 
       expect(client.connected).toBe(false);
 
-      // Mock socket
-      const clientAny = client as unknown as { _socket: Socket | null };
+      // Mock socket + transport (adapter checks the socket, the core checks the transport)
+      const clientAny = client as unknown as {
+        _socket: Socket | null;
+        _transport: NodeSocketTransport | null;
+      };
       const mockSocket = createMockSocket();
       clientAny._socket = mockSocket as unknown as Socket;
+      clientAny._transport = new NodeSocketTransport(mockSocket as unknown as Socket);
 
       expect(client.connected).toBe(true);
 

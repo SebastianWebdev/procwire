@@ -1,14 +1,15 @@
 /**
  * Schema accumulation and helper types for Module builder pattern.
  *
- * These types are specific to @procwire/core. Shared schema types
- * (Schema, MethodDescriptor, etc.) live in @procwire/codecs.
+ * Used by ModuleCore and re-exported by the parent-side runtime packages.
+ * Shared schema types (Schema, MethodDescriptor, etc.) live in
+ * @procwire/codecs.
  *
  * @module
  */
 
 import type { Codec, Schema, InferCodecInput, InferCodecOutput } from "@procwire/codecs";
-import type { ResponseType } from "@procwire/runtime-core";
+import type { ResponseType } from "./types.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SCHEMA ACCUMULATION (used by Module builder pattern)

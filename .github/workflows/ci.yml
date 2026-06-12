@@ -135,11 +135,21 @@ jobs:
       - name: Build Bun packages
         run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" build
 
+      # The cross-runtime E2E pairs spawn the OTHER runtime's packages.
+      - name: Build Node packages (cross-runtime E2E)
+        run: pnpm --filter "@procwire/core" --filter "@procwire/client" build
+
       - name: Typecheck Bun packages
         run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" --if-present typecheck
 
+      # Includes Bun parent <-> Node child (test/cross-runtime.test.ts).
       - name: Test Bun packages
         run: pnpm --filter "@procwire/bun-core" --filter "@procwire/bun-client" --if-present test
+
+      # Node parent <-> Bun child runs under vitest in @procwire/core; this is
+      # the only job with both runtimes installed (the OS matrix skips it).
+      - name: Cross-runtime E2E (Node parent, Bun child)
+        run: pnpm --filter "@procwire/core" exec vitest run test/cross-runtime.test.ts
 
   # ============================================
   # Workspace tooling - dashboard, bench, docs site

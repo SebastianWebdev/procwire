@@ -62,7 +62,7 @@ export type {
   DualCodecMethodConfig,
   SingleCodecMethodConfig,
   TypedEventConfig,
-} from "./schema-types.js";
+} from "@procwire/runtime-core";
 
 // Re-export schema types from @procwire/codecs for convenience
 export type {

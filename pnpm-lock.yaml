@@ -359,6 +359,9 @@ importers:
       '@procwire/codecs':
         specifier: workspace:^
         version: link:../codecs
+      '@procwire/protocol':
+        specifier: workspace:^
+        version: link:../protocol
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

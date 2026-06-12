@@ -29,7 +29,7 @@
  */
 
 export { Client } from "./client.js";
-export { RequestContextImpl } from "./request-context.js";
+export { RequestContextImpl } from "@procwire/runtime-core";
 export { BunDrainWaiter } from "@procwire/protocol";
 export { ProcwireClientError, ClientErrors } from "@procwire/runtime-core";
 export type {

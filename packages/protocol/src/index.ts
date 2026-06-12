@@ -62,3 +62,7 @@ export {
 export { DrainWaiter } from "./drain-waiter.js";
 
 export { BunDrainWaiter, type BunWritableSocket } from "./bun-drain-waiter.js";
+
+export type { FrameTransport } from "./transport.js";
+export { NodeSocketTransport } from "./node-socket-transport.js";
+export { BunSocketTransport, type BunTransportSocket } from "./bun-socket-transport.js";

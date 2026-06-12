@@ -8,7 +8,7 @@ If `.claude/rules/local.md` exists locally, read it and follow its rules with hi
 
 ## Project Overview
 
-This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library. `@procwire/protocol` has zero runtime dependencies; the runtime packages depend only on other `@procwire/*` packages (`@procwire/runtime-core` for shared types/errors/events, `@procwire/codecs` for MessagePack + Arrow).
+This is a **pnpm monorepo** for Node.js/TypeScript IPC (Inter-Process Communication) building blocks under the `@procwire/*` namespace. The project provides a modular, high-performance IPC transport library. `@procwire/protocol` has zero runtime dependencies; the runtime packages depend only on other `@procwire/*` packages (`@procwire/runtime-core` for the shared IPC core, `@procwire/codecs` for MessagePack + Arrow).
 
 The data plane uses a binary protocol (zero JSON); the control plane uses JSON-RPC over stdio.
 
@@ -16,7 +16,7 @@ The data plane uses a binary protocol (zero JSON); the control plane uses JSON-R
 
 - `@procwire/protocol` - Wire format, framing, flags (11-byte header)
 - `@procwire/codecs` - rawCodec, msgpackCodec, arrowCodec
-- `@procwire/runtime-core` - Shared types, errors and events for the four runtime packages (internal plumbing, published)
+- `@procwire/runtime-core` - The shared IPC core: ModuleCore, ClientCore, manager lifecycle policies, types/errors/events. The four runtime packages are thin adapters over it (internal plumbing, published)
 - `@procwire/core` - Parent-side: ModuleManager, Module
 - `@procwire/client` - Child-side: Client, RequestContext
 - `@procwire/bun-core` - Parent-side for Bun.js
