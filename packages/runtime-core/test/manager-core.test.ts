@@ -295,6 +295,50 @@ describe("ManagerCore: crash & restart", () => {
   });
 });
 
+describe("ManagerCore: double-spawn guard", () => {
+  it("D2: spawning an already-ready module rejects instead of orphaning the first child", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker");
+    manager.register(mod);
+
+    await manager.spawn("worker");
+    const firstProcId = mod.process!.id;
+
+    await expect(manager.spawn("worker")).rejects.toThrow(/cannot be spawned/);
+
+    // The live child was untouched and no second process was ever created.
+    expect(mod.state).toBe("ready");
+    expect(mod.process!.id).toBe(firstProcId);
+    expect(manager.nextProcId).toBe(2);
+  });
+
+  it("D2: an explicit spawn during the crash-restart delay cancels the pending restart", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeManager();
+      const mod = makeModule("worker", { restartOnCrash: true });
+      manager.register(mod);
+      manager.on(ManagerEvents.ERROR, () => {});
+
+      await manager.spawn("worker");
+      manager.exitHandlers.get(mod.process!.id)!(1, null); // crash -> restart pending
+      expect(mod.state).toBe("disconnected");
+
+      // The user respawns explicitly while the restart timer is pending.
+      await manager.spawn("worker");
+      expect(mod.state).toBe("ready");
+      const procId = mod.process!.id;
+
+      // The stale restart timer must not fire a third spawn later.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mod.process!.id).toBe(procId);
+      expect(manager.nextProcId).toBe(3); // exactly two processes ever spawned
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("ManagerCore: heartbeat", () => {
   it("pings, accepts pongs, and kills the child when a ping times out", async () => {
     vi.useFakeTimers();

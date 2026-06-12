@@ -119,6 +119,13 @@ export const ManagerErrors = {
   /** Module not registered */
   notRegistered: (name: string) => new ProcwireError(`Module "${name}" not registered`),
 
+  /** Spawn attempted while the module is live or already spawning */
+  spawnNotAllowed: (name: string, state: string) =>
+    new ProcwireError(
+      `Module "${name}" cannot be spawned in state "${state}" ` +
+        `(already running or spawn in progress)`,
+    ),
+
   /** Init timeout */
   initTimeout: (name: string, timeout: number) =>
     new ProcwireError(`Module "${name}" did not send $init within ${timeout}ms`),

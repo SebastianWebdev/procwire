@@ -304,6 +304,18 @@ export abstract class ModuleManagerCore<
       throw ManagerErrors.notRegistered(name);
     }
 
+    // Double-spawn guard: a module that is live (ready) or mid-spawn
+    // (initializing/connecting) must not be spawned again - the second spawn
+    // would replace module.process and orphan the first child (D2).
+    const state = module.state;
+    if (state !== "created" && state !== "closed" && state !== "disconnected") {
+      throw ManagerErrors.spawnNotAllowed(name, state);
+    }
+
+    // An explicit spawn supersedes a pending crash-restart for this module;
+    // without this the stale timer would fire a second, racing spawn (D2).
+    this.cancelRestart(name);
+
     const policy = this.resolveSpawnPolicy(module.spawnPolicyConfig);
     let lastError: Error | null = null;
 
