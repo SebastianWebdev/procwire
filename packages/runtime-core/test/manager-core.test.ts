@@ -44,7 +44,7 @@ class FakeManager extends ModuleManagerCore<FakeProc, TestModule> {
   protected _watchProcessExit(module: TestModule, proc: FakeProc): void {
     this.exitHandlers.set(proc.id, (code, signal) => {
       proc.alive = false;
-      this.handleProcessExit(module, code, signal);
+      this.handleProcessExit(module, proc, code, signal);
     });
   }
 
@@ -233,6 +233,38 @@ describe("ManagerCore: crash & restart", () => {
 
       await vi.advanceTimersByTimeAsync(1500);
       expect(b.state).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("D1: a late exit from a previous (replaced) process must not detach the respawned module", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeManager();
+      const mod = makeModule("worker", { restartOnCrash: true });
+      manager.register(mod);
+      const errors: Error[] = [];
+      manager.on(ManagerEvents.ERROR, (_name: string, err: Error) => errors.push(err));
+
+      await manager.spawn("worker");
+      const firstExit = manager.exitHandlers.get(mod.process!.id)!;
+
+      // Generation 1 crashes; the restart respawns generation 2.
+      firstExit(1, null);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(mod.state).toBe("ready");
+      expect(mod.process!.id).toBe(2);
+
+      // A late/duplicate exit event from the old generation arrives (e.g. a
+      // killed predecessor's exit delivered after the respawn). It must be
+      // ignored: not detach the fresh module, not emit errors, not restart.
+      const errorsBefore = errors.length;
+      firstExit(1, null);
+
+      expect(mod.state).toBe("ready");
+      expect(mod.process!.id).toBe(2);
+      expect(errors.length).toBe(errorsBefore);
     } finally {
       vi.useRealTimers();
     }

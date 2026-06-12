@@ -101,10 +101,10 @@ export class ModuleManager extends ModuleManagerCore<BunSubprocess, Module> {
       stderr: "inherit",
       // Exit wiring is fixed at spawn time in Bun (no attachable event);
       // _watchProcessExit below is therefore a no-op.
-      onExit: (_proc, exitCode, signalCode, _error) => {
+      onExit: (proc, exitCode, signalCode, _error) => {
         const signal = signalCode !== null ? String(signalCode) : null;
         exitResolve?.({ code: exitCode, signal });
-        this.handleProcessExit(module, exitCode, signal);
+        this.handleProcessExit(module, proc as BunSubprocess, exitCode, signal);
       },
     });
 

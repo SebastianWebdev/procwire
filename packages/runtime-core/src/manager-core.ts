@@ -133,7 +133,7 @@ export abstract class ModuleManagerCore<
    * Spawn the child process for `module`. The adapter owns stdio config and
    * any runtime-specific guards (e.g. Node's stdin EPIPE guard). Exit wiring
    * happens in _watchProcessExit (or at spawn time, if the runtime requires
-   * it) and must route into this.handleProcessExit().
+   * it) and must route into this.handleProcessExit() with the exited process.
    */
   protected abstract _spawnProcess(module: TModule): TProcess;
 
@@ -145,9 +145,9 @@ export abstract class ModuleManagerCore<
 
   /**
    * Attach crash detection for the started process, routing exits into
-   * this.handleProcessExit(module, code, signal). Called once the spawn-error
-   * window has passed; runtimes that must wire exit at spawn time (Bun's
-   * onExit option) implement this as a no-op.
+   * this.handleProcessExit(module, proc, code, signal). Called once the
+   * spawn-error window has passed; runtimes that must wire exit at spawn time
+   * (Bun's onExit option) implement this as a no-op.
    */
   protected abstract _watchProcessExit(module: TModule, proc: TProcess): void;
 
@@ -420,9 +420,23 @@ export abstract class ModuleManagerCore<
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Handle child process exit. Runtime adapters route their exit events here.
+   * Handle child process exit. Runtime adapters route their exit events here,
+   * passing the process whose exit fired so stale generations are filtered.
    */
-  protected handleProcessExit(module: TModule, code: number | null, signal: string | null): void {
+  protected handleProcessExit(
+    module: TModule,
+    proc: TProcess,
+    code: number | null,
+    signal: string | null,
+  ): void {
+    // Generation guard: a late exit from a previous (killed/replaced) process
+    // must not detach the module's CURRENT process - it would tear down a
+    // freshly respawned session and stop its heartbeat (D1). The module holds
+    // exactly the process of the live generation; anything else is stale.
+    if (module.process !== proc) {
+      return;
+    }
+
     // The process is gone: stop pinging it.
     this.stopHeartbeat(module.name);
 

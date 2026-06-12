@@ -209,12 +209,16 @@ describe("Bug C10 (bun-core): shutdown must cancel a pending crash-restart", () 
         "spawnModule",
       ).mockImplementation(() => Promise.resolve());
 
-      // Simulate a crash of a ready module -> schedules a restart after a delay.
+      // Simulate a crash of a ready module -> schedules a restart after a
+      // delay. The exit must carry the module's current process (D1 filters
+      // stale generations).
+      const proc = { exitCode: null, kill: () => {} };
+      mod._attachProcess(proc as never);
       (
         manager as unknown as {
-          handleProcessExit: (m: Module, c: number | null, s: string | null) => void;
+          handleProcessExit: (m: Module, p: unknown, c: number | null, s: string | null) => void;
         }
-      ).handleProcessExit(mod, 1, null);
+      ).handleProcessExit(mod, proc, 1, null);
 
       // Shut down while the restart is still pending.
       const shutdownDone = manager.shutdown();
