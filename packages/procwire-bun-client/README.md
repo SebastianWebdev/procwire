@@ -2,7 +2,7 @@
 
 Child-side API for Procwire IPC — **Bun.js optimized**.
 
-Alternative to `@procwire/client` using Bun-native APIs (`Bun.listen()` for named pipe server, Bun socket handlers) for lower overhead and tighter runtime integration. It exposes the same runtime API and speaks the same wire format; the typed schema generics from the Node packages (`Client<S>`, `ExtractSchema`) are not yet available on Bun.
+Alternative to `@procwire/client` using Bun-native APIs (`Bun.listen()` for named pipe server, Bun socket handlers) for lower overhead and tighter runtime integration. It exposes the same runtime API, speaks the same wire format and ships the same typed schema generics (`Client<S>`, `ExtractSchema`) as the Node package — a drop-in replacement.
 
 ## Highlights
 
@@ -210,7 +210,9 @@ ClientErrors.responseAlreadySent(); // Double response
 
 ## Differences from `@procwire/client`
 
-This package has the same runtime API and wire format as `@procwire/client` but uses Bun-native primitives under the hood. One gap: the typed schema generics from the Node package (`Client<S>`, `ExtractSchema`) are not yet available here — handlers are untyped (`unknown`) at compile time.
+This package has the same runtime API, wire format and typed schema generics (`Client<S>`, `ExtractSchema`, handlers receiving a `TypedRequestContext`) as `@procwire/client`; only the primitives under the hood are Bun-native. Since both packages share the IPC core in `@procwire/runtime-core`, the typing is identical by construction and pinned by compile-only type tests.
+
+**Type-safety note** (applies to the Node package too): the typed `handle` overload keeps an untyped string fallback for schema-less usage, so a typo'd method name on a fully typed client still compiles — the handler data resolves to `unknown` instead of failing the build. Prefer method names taken from `keyof ExtractSchema<typeof client>["methods"]` where that matters.
 
 | Concern       | `@procwire/client` (Node.js)               | `@procwire/bun-client` (Bun)                     |
 | ------------- | ------------------------------------------ | ------------------------------------------------ |

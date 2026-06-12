@@ -2,7 +2,7 @@
 
 Parent-side module system for Procwire IPC — **Bun.js optimized**.
 
-Alternative to `@procwire/core` using Bun-native APIs (`Bun.spawn()`, `Bun.listen()`, `Bun.connect()`) for lower overhead and tighter runtime integration. It exposes the same runtime API and speaks the same wire format; the typed schema generics from the Node packages (`Module<S>`, `ExtractSchema`) are not yet available on Bun.
+Alternative to `@procwire/core` using Bun-native APIs (`Bun.spawn()`, `Bun.listen()`, `Bun.connect()`) for lower overhead and tighter runtime integration. It exposes the same runtime API, speaks the same wire format and ships the same typed schema generics (`Module<S>`, `ExtractSchema`) as the Node package — a drop-in replacement.
 
 ## Highlights
 
@@ -273,7 +273,9 @@ module.on(ModuleEvents.DISCONNECTED, () => console.log("Disconnected"));
 
 ## Differences from `@procwire/core`
 
-This package has the same runtime API and wire format as `@procwire/core` but uses Bun-native primitives under the hood. One gap: the typed schema generics from the Node package (`Module<S>`, `ExtractSchema`) are not yet available here — methods are untyped (`unknown`) at compile time.
+This package has the same runtime API, wire format and typed schema generics (`Module<S>`, `ExtractSchema`, `send`/`stream` constrained by the declared response types) as `@procwire/core`; only the primitives under the hood are Bun-native. Since both packages share the IPC core in `@procwire/runtime-core`, the typing is identical by construction and pinned by compile-only type tests.
+
+**Type-safety note** (applies to the Node package too): the typed `send`/`stream`/`handle` overloads keep an untyped string fallback for schema-less usage, so a typo'd method name on a fully typed module still compiles — it resolves to `unknown` instead of failing the build. Prefer method names taken from `keyof ExtractSchema<typeof module>["methods"]` where that matters.
 
 | Concern        | `@procwire/core` (Node.js)                 | `@procwire/bun-core` (Bun)                       |
 | -------------- | ------------------------------------------ | ------------------------------------------------ |
