@@ -803,8 +803,15 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
       return;
     }
 
-    // Event (requestId = 0, from child)
-    if (header.requestId === 0 && hasFlag(header.flags, Flags.DIRECTION_TO_PARENT)) {
+    // Event (requestId = 0, from child). Method and event ids overlap, so a
+    // response/stream frame whose requestId is (wrongly) 0 must be dropped
+    // here - decoding it as the event sharing that id would corrupt the
+    // event stream (D5).
+    if (
+      header.requestId === 0 &&
+      hasFlag(header.flags, Flags.DIRECTION_TO_PARENT) &&
+      !hasFlag(header.flags, Flags.IS_RESPONSE)
+    ) {
       this._handleEvent(frame);
       return;
     }

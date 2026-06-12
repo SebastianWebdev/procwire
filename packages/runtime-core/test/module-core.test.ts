@@ -246,7 +246,7 @@ describe("ModuleCore: streams", () => {
 });
 
 describe("ModuleCore: events", () => {
-  it("dispatches child events to onEvent subscribers", () => {
+  function setupEventModule(): { mod: ModuleCore; seen: unknown[] } {
     const mod = new ModuleCore("worker")
       .executable("node", ["w.js"])
       .method("foo")
@@ -260,6 +260,11 @@ describe("ModuleCore: events", () => {
 
     const seen: unknown[] = [];
     mod.onEvent("progress", (data) => seen.push(data));
+    return { mod, seen };
+  }
+
+  it("dispatches child events to onEvent subscribers", () => {
+    const { mod, seen } = setupEventModule();
 
     mod._handleTransportData(
       buildFrame(
@@ -269,6 +274,39 @@ describe("ModuleCore: events", () => {
     );
 
     expect(seen).toEqual([{ percent: 50 }]);
+  });
+
+  it("D5: a requestId-0 frame with IS_RESPONSE must not be dispatched as an event", () => {
+    const { mod, seen } = setupEventModule();
+
+    // Method ids and event ids live in overlapping number spaces. A response
+    // frame whose requestId is (wrongly) 0 falls through the response branch;
+    // it must be dropped, not decoded as the event sharing that id.
+    mod._handleTransportData(
+      buildFrame(
+        { methodId: 1, flags: Flags.IS_RESPONSE | Flags.DIRECTION_TO_PARENT, requestId: 0 },
+        msgpackCodec.serialize({ percent: 99 }),
+      ),
+    );
+
+    expect(seen).toEqual([]);
+  });
+
+  it("D5: a requestId-0 stream frame must not be dispatched as an event", () => {
+    const { mod, seen } = setupEventModule();
+
+    mod._handleTransportData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.DIRECTION_TO_PARENT,
+          requestId: 0,
+        },
+        msgpackCodec.serialize({ percent: 99 }),
+      ),
+    );
+
+    expect(seen).toEqual([]);
   });
 });
 
