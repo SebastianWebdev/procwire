@@ -154,6 +154,56 @@ describe("FrameBuffer - Batch Mode", () => {
     });
   });
 
+  describe("header validation at the framing layer (D6)", () => {
+    it("D6: rejects a frame whose header sets reserved flag bits (batch mode)", () => {
+      const header = encodeHeader({
+        methodId: 1,
+        flags: 0b1000_0000, // reserved bit 7
+        requestId: 1,
+        payloadLength: 0,
+      });
+
+      expect(() => buffer.push(header)).toThrow(/[Rr]eserved/);
+    });
+
+    it("D6: rejects a frame with methodId 0 (batch mode)", () => {
+      const header = encodeHeader({
+        methodId: 0,
+        flags: 0,
+        requestId: 1,
+        payloadLength: 0,
+      });
+
+      expect(() => buffer.push(header)).toThrow(/[Rr]eserved/);
+    });
+
+    it("D6: surfaces reserved-bit violations via onError in streaming mode", () => {
+      const handler = {
+        onFrameStart: () => {},
+        onPayloadChunk: () => {},
+        onFrameEnd: () => {},
+        errors: [] as Error[],
+        onError(error: Error): void {
+          this.errors.push(error);
+        },
+      };
+      const streamingBuffer = new FrameBuffer();
+      streamingBuffer.setStreamHandler(handler);
+
+      streamingBuffer.push(
+        encodeHeader({
+          methodId: 1,
+          flags: 0b0100_0000, // reserved bit 6
+          requestId: 1,
+          payloadLength: 0,
+        }),
+      );
+
+      expect(handler.errors).toHaveLength(1);
+      expect(handler.errors[0]!.message).toMatch(/[Rr]eserved/);
+    });
+  });
+
   describe("large payload performance", () => {
     it("should reject oversized payload with default limit", () => {
       const header = encodeHeader({

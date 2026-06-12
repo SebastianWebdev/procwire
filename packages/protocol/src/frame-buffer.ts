@@ -18,6 +18,7 @@ import {
   ABSOLUTE_MAX_PAYLOAD_SIZE,
   decodeHeader,
   encodeHeader,
+  validateHeader,
   type FrameHeader,
 } from "./wire-format.js";
 
@@ -412,7 +413,7 @@ export class FrameBuffer {
       // Fast path: entire header in this chunk
       const headerBuffer = chunk.subarray(offset, offset + HEADER_SIZE);
       this.pendingHeader = decodeHeader(headerBuffer);
-      this.validatePayloadSize(this.pendingHeader.payloadLength);
+      this.validateFrameHeader(this.pendingHeader);
       this.streamPayloadOffset = 0;
       this.streamHandler!.onFrameStart(this.pendingHeader);
       return offset + HEADER_SIZE;
@@ -432,7 +433,7 @@ export class FrameBuffer {
     if (this.partialHeaderFilled === HEADER_SIZE) {
       // Header complete
       this.pendingHeader = decodeHeader(this.partialHeaderBytes);
-      this.validatePayloadSize(this.pendingHeader.payloadLength);
+      this.validateFrameHeader(this.pendingHeader);
       this.partialHeaderBytes = null;
       this.partialHeaderFilled = 0;
       this.streamPayloadOffset = 0;
@@ -499,7 +500,7 @@ export class FrameBuffer {
         const headerBytes = this.peekBytes(HEADER_SIZE);
         const header = decodeHeader(headerBytes);
 
-        this.validatePayloadSize(header.payloadLength);
+        this.validateFrameHeader(header);
         this.pendingHeader = header;
       }
 
@@ -526,16 +527,15 @@ export class FrameBuffer {
   }
 
   /**
-   * Validate payload size against configured maximum.
+   * Validate a freshly parsed header (D6).
+   *
+   * Enforces the full wire contract at the framing layer: reserved flag bits
+   * must be zero, methodId 0 is reserved, and the payload must fit the
+   * configured limit. Two extra integer compares per frame - measured to be
+   * within noise of the perf baselines (see *.perf.test.ts).
    */
-  private validatePayloadSize(size: number): void {
-    if (size > this.maxPayloadSize) {
-      throw new Error(
-        `Frame payload too large: ${size} bytes. ` +
-          `Configured max: ${this.maxPayloadSize} bytes. ` +
-          `Possible protocol error or attack.`,
-      );
-    }
+  private validateFrameHeader(header: FrameHeader): void {
+    validateHeader(header, this.maxPayloadSize);
   }
 
   /**

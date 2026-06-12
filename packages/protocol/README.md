@@ -126,7 +126,10 @@ Check if a specific flag is set.
 
 #### `validateHeader(header: FrameHeader, maxPayloadSize?: number): void`
 
-Validate header values. Throws on invalid values.
+Validate header values. Throws on invalid values (reserved `methodId 0`,
+non-zero reserved flag bits, payload over the limit). `FrameBuffer` applies
+this to every parsed header, so malformed frames are rejected at the framing
+layer in both batch and streaming mode.
 
 ### Classes
 
