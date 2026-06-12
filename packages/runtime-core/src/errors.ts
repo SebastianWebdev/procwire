@@ -157,6 +157,13 @@ export const ManagerErrors = {
   dataChannelFailed: (message: string) =>
     new ProcwireError(`Data channel connect failed: ${message}`),
 
+  /** Data channel closed while the child process is still alive */
+  dataChannelLost: (name: string) =>
+    new ProcwireError(
+      `Module "${name}" lost its data channel while the process is still running; ` +
+        `killing the child so the crash/restart policy applies`,
+    ),
+
   /** Module process crashed */
   processCrashed: (name: string, exitCode: number | null, signal: string | null) =>
     new ProcwireError(

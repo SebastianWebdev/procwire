@@ -341,6 +341,54 @@ describe("ModuleCore: events", () => {
   });
 });
 
+describe("ModuleCore: data-channel loss (D3)", () => {
+  it("D3: transport close rejects in-flight requests immediately", async () => {
+    const { mod } = setupReadyModule();
+
+    const pending = mod.send("foo", {});
+    const outcome = pending.then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+
+    mod._handleTransportClose();
+
+    // The rejection must be immediate (driven by the close), not the
+    // request timeout. Race against a short timer to prove it.
+    const result = await Promise.race([
+      outcome,
+      new Promise((resolve) => setTimeout(resolve, 100, "still pending")),
+    ]);
+    expect(result).toContain("disconnected");
+    expect(mod.state).toBe("disconnected");
+  });
+
+  it("D3: transport close errors in-flight streams immediately", async () => {
+    const mod = new ModuleCore("worker")
+      .executable("node", ["w.js"])
+      .method("st", { response: "stream", codec: msgpackCodec }) as ModuleCore;
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+    const transport = new FakeTransport();
+    mod._attachTransport(transport);
+    mod._setState("ready");
+
+    const gen = mod.stream("st", {});
+    const first = gen.next().then(
+      () => "resolved",
+      (err: Error) => err.message,
+    );
+    await vi.waitFor(() => expect(transport.frames.length).toBe(1));
+
+    mod._handleTransportClose();
+
+    const result = await Promise.race([
+      first,
+      new Promise((resolve) => setTimeout(resolve, 100, "still pending")),
+    ]);
+    expect(result).toContain("disconnected");
+  });
+});
+
 describe("ModuleCore: framing errors", () => {
   it("closes the transport instead of throwing out of the data handler", () => {
     const mod = new ModuleCore("worker")

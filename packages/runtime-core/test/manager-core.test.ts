@@ -295,6 +295,74 @@ describe("ManagerCore: crash & restart", () => {
   });
 });
 
+describe("ManagerCore: data-channel loss (D3)", () => {
+  it("D3: data-channel loss while the process lives kills the child and the restart path runs", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeManager();
+      const mod = makeModule("worker", { restartOnCrash: true });
+      manager.register(mod);
+      const errors: Error[] = [];
+      manager.on(ManagerEvents.ERROR, (_name: string, err: Error) => errors.push(err));
+
+      await manager.spawn("worker");
+      const proc = mod.process!;
+
+      // The socket drops while the process is still alive. Today this leaves
+      // the module wedged: nothing rejected, nothing killed, no restart.
+      mod._handleTransportClose();
+
+      expect(errors.some((e) => /data channel/i.test(e.message))).toBe(true);
+      expect(manager.killed).toContain(proc.id);
+
+      // The kill drives the normal exit -> crash -> restart path.
+      manager.exitHandlers.get(proc.id)!(null, "SIGKILL");
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(mod.state).toBe("ready");
+      expect(mod.process!.id).not.toBe(proc.id);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("D3: a data-channel close during that module's own shutdown is not treated as a loss", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker", { restartOnCrash: true });
+    manager.register(mod);
+    const errors: Error[] = [];
+    manager.on(ManagerEvents.ERROR, (_name: string, err: Error) => errors.push(err));
+
+    await manager.spawn("worker");
+    const proc = mod.process!;
+
+    // Stall the shutdown after it sent $shutdown, then let the socket close
+    // arrive in that window (the child tears its server down on $shutdown).
+    let releaseExit: (() => void) | null = null;
+    const waitSpy = vi
+      .spyOn(
+        manager as unknown as { _waitForExitOrKill: () => Promise<void> },
+        "_waitForExitOrKill",
+      )
+      .mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseExit = resolve;
+          }),
+      );
+
+    const shutdownDone = manager.shutdown("worker");
+    mod._handleTransportClose();
+
+    expect(errors).toEqual([]);
+    expect(manager.killed).not.toContain(proc.id);
+
+    releaseExit!();
+    waitSpy.mockRestore();
+    await shutdownDone;
+    expect(mod.state).toBe("closed");
+  });
+});
+
 describe("ManagerCore: double-spawn guard", () => {
   it("D2: spawning an already-ready module rejects instead of orphaning the first child", async () => {
     const manager = new FakeManager();

@@ -26,7 +26,7 @@ import type {
   ResponseType,
 } from "./types.js";
 import { ManagerErrors } from "./errors.js";
-import { ManagerEvents } from "./events.js";
+import { ManagerEvents, ModuleEvents } from "./events.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -85,6 +85,8 @@ export interface ManagedModule<TProcess> {
   readonly executableConfig: ExecutableConfig | null;
   readonly spawnPolicyConfig: SpawnPolicy;
   readonly process: TProcess | null;
+  /** EventEmitter subscription (modules extend EventEmitter). */
+  on(event: string, listener: () => void): unknown;
   _validate(): void;
   _setState(state: ModuleState): void;
   _attachProcess(process: TProcess): void;
@@ -228,6 +230,11 @@ export abstract class ModuleManagerCore<
 
     module._validate();
     this.modules.set(module.name, module);
+
+    // React to a data-channel-only loss (socket gone, process still alive):
+    // without this the module would sit "disconnected" forever with a live
+    // child no path ever restarts (D3).
+    module.on(ModuleEvents.DISCONNECTED, () => this.handleDataChannelLoss(module));
 
     return this;
   }
@@ -465,7 +472,11 @@ export abstract class ModuleManagerCore<
       return;
     }
 
-    const wasReady = module.state === "ready";
+    // "disconnected" with the current process still attached means the data
+    // channel dropped first (a crashed child's socket close can beat its exit
+    // event, and the D3 kill path goes through here too) - the module WAS
+    // ready, so it stays eligible for crash-restart.
+    const wasReady = module.state === "ready" || module.state === "disconnected";
     const error = ManagerErrors.processCrashed(module.name, code, signal);
 
     // Detach module
@@ -497,6 +508,26 @@ export abstract class ModuleManagerCore<
         this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.tooManyRestarts());
       }
     }
+  }
+
+  /**
+   * The module's data channel closed while its process is (presumably) still
+   * alive. In-flight work was already failed by the module core; surface the
+   * loss and kill the child so the normal exit -> crash/restart path decides
+   * what happens next (D3).
+   */
+  private handleDataChannelLoss(module: TModule): void {
+    // A close during this module's own shutdown is the expected teardown.
+    if (this.shuttingDown.has(module.name)) {
+      return;
+    }
+    // No process attached: the exit path already ran (or never spawned).
+    if (module.process === null) {
+      return;
+    }
+
+    this.emit(ManagerEvents.ERROR, module.name, ManagerErrors.dataChannelLost(module.name));
+    this._killProcess(module);
   }
 
   /**
