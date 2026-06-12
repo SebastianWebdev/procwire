@@ -10,6 +10,7 @@
  * @module
  */
 
+import * as fs from "node:fs";
 import { BunSocketTransport } from "@procwire/protocol";
 import type { Schema, EmptySchema } from "@procwire/codecs";
 import { ClientCore } from "@procwire/runtime-core";
@@ -160,6 +161,28 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
   // ═══════════════════════════════════════════════════════════════════════════
   // RUNTIME HOOKS: control plane (stdin)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Write a control line with fs.writeSync instead of the inherited
+   * process.stdout.write: Bun's process.stdout wrapper flips fd 1 into
+   * NON-blocking mode, after which any synchronous stdout write in handler
+   * code (fs.writeSync(1, ...), native print()) fails with EAGAIN once the
+   * 64KB pipe fills - pinned by the bun-core W6 canary. writeSync keeps the
+   * fd blocking and is equally immune to a patched console (D10).
+   */
+  protected override _sendControl(message: unknown): void {
+    const buf = Buffer.from(`${JSON.stringify(message)}\n`, "utf8");
+    let written = 0;
+    while (written < buf.length) {
+      try {
+        written += fs.writeSync(1, buf, written);
+      } catch (err) {
+        // Embedder code may itself have flipped fd 1 non-blocking via
+        // process.stdout: spin until the parent drains the pipe.
+        if ((err as NodeJS.ErrnoException).code !== "EAGAIN") throw err;
+      }
+    }
+  }
 
   protected _startControlReader(): void {
     void this._runControlReader();

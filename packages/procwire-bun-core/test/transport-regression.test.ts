@@ -584,3 +584,46 @@ describe("Canary W6 (bun-core): heavy sync stdout logging must not deadlock the 
     }
   }, 30000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// D10 (bun-client, e2e): the control plane ($init/$pong) must not run through
+// console.log - user code routinely patches/replaces console, which used to
+// silence the handshake entirely. The child fixture patches console.log to a
+// black hole BEFORE starting; spawn + send must still work.
+// ═══════════════════════════════════════════════════════════════════════════
+describe("D10 (bun-core e2e): a child with a patched console.log still handshakes", () => {
+  it("spawns, answers a request, and answers a heartbeat ping", async () => {
+    const { ModuleManager } = await import("../src/index.js");
+
+    const fixture = new URL("./fixtures/patched-console-child.ts", import.meta.url).pathname;
+    const mod = new Module("patched")
+      .executable("bun", [fixture])
+      .method("echo")
+      .requestTimeout(8000)
+      .spawnPolicy({
+        initTimeout: 8000,
+        maxRetries: 0,
+        heartbeat: { intervalMs: 200, timeoutMs: 2000 },
+      });
+
+    const manager = new ModuleManager();
+    manager.register(mod);
+    const errors: Error[] = [];
+    manager.on("module:error", (_name: string, err: Error) => errors.push(err));
+
+    try {
+      await manager.spawn("patched");
+
+      const result = (await mod.send("echo", { ok: 1 })) as { ok: number };
+      expect(result.ok).toBe(1);
+
+      // Let a few heartbeat rounds pass: $pong must flow despite the patched
+      // console, so no heartbeat-timeout kill happens.
+      await new Promise((r) => setTimeout(r, 700));
+      expect(mod.state).toBe("ready");
+      expect(errors.filter((e) => /heartbeat/.test(e.message))).toEqual([]);
+    } finally {
+      await manager.shutdown();
+    }
+  }, 30000);
+});

@@ -132,7 +132,9 @@ export const ManagerErrors = {
 
   /** Invalid init message format */
   invalidInitFormat: (name: string) =>
-    new ProcwireError(`Module "${name}" sent invalid $init format (missing/malformed pipe or schema)`),
+    new ProcwireError(
+      `Module "${name}" sent invalid $init format (missing/malformed pipe or schema)`,
+    ),
 
   /** Nonsensical heartbeat configuration */
   invalidHeartbeatConfig: (name: string, intervalMs: number, timeoutMs: number) =>
