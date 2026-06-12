@@ -52,3 +52,32 @@ export type {
   ResponseType,
   InitMessage,
 } from "@procwire/runtime-core";
+
+export type {
+  AddMethod,
+  AddMethodSymmetric,
+  AddEvent,
+  SendReturn,
+  MethodsWithResponseType,
+  MethodsWithoutResponseType,
+  DualCodecMethodConfig,
+  SingleCodecMethodConfig,
+  TypedEventConfig,
+} from "@procwire/runtime-core";
+
+// Re-export schema types from @procwire/codecs for convenience
+export type {
+  Schema,
+  EmptySchema,
+  ExtractSchema,
+  MethodDescriptor,
+  EventDescriptor,
+  InferCodecInput,
+  InferCodecOutput,
+  ParentRequestType,
+  ParentResponseType,
+  ChildRequestType,
+  ChildResponseType,
+  ParentEventType,
+  ChildEventType,
+} from "@procwire/codecs";
