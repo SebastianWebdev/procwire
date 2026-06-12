@@ -124,6 +124,37 @@ describe("ModuleCore: request/response correlation", () => {
   });
 });
 
+describe("ModuleCore: timeout precedence", () => {
+  it("D4: the parent's explicit method timeout outranks the child schema's timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = new ModuleCore("worker")
+        .executable("node", ["w.js"])
+        .method("foo", { timeout: 25, codec: msgpackCodec }) as ModuleCore;
+      // Child advertises a much longer timeout; the parent's explicit config
+      // must win - the child must not be able to extend the parent's deadline.
+      mod._attachSchema({
+        methods: { foo: { id: 1, response: "result", timeout: 60_000 } },
+        events: {},
+      });
+      mod._attachTransport(new FakeTransport());
+      mod._setState("ready");
+
+      const outcome = mod.send("foo", {}).then(
+        () => null,
+        (err: Error) => err,
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      const err = await outcome;
+
+      expect(err).not.toBeNull();
+      expect(err!.message).toContain("Timeout");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("ModuleCore: abort", () => {
   it("sends an ABORT frame and rejects with AbortError when the signal fires", async () => {
     const { mod, transport } = setupReadyModule({ cancellable: true });

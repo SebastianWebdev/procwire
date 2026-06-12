@@ -139,6 +139,13 @@ export const ManagerErrors = {
   schemaMissingEvent: (name: string, event: string) =>
     new ProcwireError(`Module "${name}": child did not register expected event "${event}"`),
 
+  /** Schema validation failed - response type disagreement */
+  schemaResponseMismatch: (name: string, method: string, expected: string, actual: string) =>
+    new ProcwireError(
+      `Module "${name}": method "${method}" response type mismatch ` +
+        `(parent declared "${expected}", child declared "${actual}")`,
+    ),
+
   /** Data channel connection failed */
   dataChannelFailed: (message: string) =>
     new ProcwireError(`Data channel connect failed: ${message}`),

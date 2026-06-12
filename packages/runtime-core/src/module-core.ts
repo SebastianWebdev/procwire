@@ -489,9 +489,15 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   /**
    * @internal Build expected schema for validation against child.
    */
-  _buildExpectedSchema(): { methods: string[]; events: string[] } {
+  _buildExpectedSchema(): {
+    methods: { name: string; response: ResponseType }[];
+    events: string[];
+  } {
     return {
-      methods: Array.from(this._methods.keys()),
+      methods: Array.from(this._methods.entries()).map(([name, config]) => ({
+        name,
+        response: config.response,
+      })),
       events: Array.from(this._events.keys()),
     };
   }
@@ -578,9 +584,11 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     // Wait for response - MUST register BEFORE sending to avoid race condition
     // where response arrives before we're listening for it
     const responsePromise = new Promise<unknown>((resolve, reject) => {
-      // Precedence: child schema -> method config -> module default.
-      // A resolved value of 0 (or negative) disables the timeout.
-      const timeout = schemaMethod.timeout ?? methodConfig.timeout ?? this._defaultRequestTimeout;
+      // Precedence: parent method config -> child schema -> module default.
+      // The parent's explicit timeout must win - the child must not be able
+      // to extend a deadline the embedder chose (D4). A resolved value of 0
+      // (or negative) disables the timeout.
+      const timeout = methodConfig.timeout ?? schemaMethod.timeout ?? this._defaultRequestTimeout;
       const timer =
         timeout > 0
           ? setTimeout(() => {

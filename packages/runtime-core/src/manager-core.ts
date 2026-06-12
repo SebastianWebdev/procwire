@@ -23,6 +23,7 @@ import type {
   InitMessage,
   RetryDelayConfig,
   HeartbeatConfig,
+  ResponseType,
 } from "./types.js";
 import { ManagerErrors } from "./errors.js";
 import { ManagerEvents } from "./events.js";
@@ -88,7 +89,7 @@ export interface ManagedModule<TProcess> {
   _setState(state: ModuleState): void;
   _attachProcess(process: TProcess): void;
   _attachSchema(schema: ModuleSchema): void;
-  _buildExpectedSchema(): { methods: string[]; events: string[] };
+  _buildExpectedSchema(): { methods: { name: string; response: ResponseType }[]; events: string[] };
   _detach(): void;
 }
 
@@ -389,9 +390,21 @@ export abstract class ModuleManagerCore<
   private validateSchema(module: TModule, childSchema: ModuleSchema): void {
     const expected = module._buildExpectedSchema();
 
-    for (const methodName of expected.methods) {
-      if (!childSchema.methods[methodName]) {
+    for (const { name: methodName, response } of expected.methods) {
+      const childMethod = childSchema.methods[methodName];
+      if (!childMethod) {
         throw ManagerErrors.schemaMissingMethod(module.name, methodName);
+      }
+      // Both sides declare a response type; disagreement (e.g. parent expects
+      // a stream, child answers with a single result) must fail the handshake
+      // instead of surfacing later as a confusing send()/stream() error (D4).
+      if (childMethod.response !== response) {
+        throw ManagerErrors.schemaResponseMismatch(
+          module.name,
+          methodName,
+          response,
+          childMethod.response,
+        );
       }
     }
 

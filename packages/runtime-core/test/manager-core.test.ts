@@ -151,6 +151,21 @@ describe("ManagerCore: spawn flow", () => {
   });
 });
 
+describe("ManagerCore: schema validation", () => {
+  it("D4: handshake fails when the child's declared response type disagrees with the parent's", async () => {
+    const manager = new FakeManager();
+    // FakeManager's $init declares foo as "result"; the parent declares
+    // "stream". Today the mismatch surfaces only later, as a confusing
+    // send()/stream() error - it must fail the handshake instead.
+    const mod = new TestModule("worker").executable("node", ["w.js"]);
+    mod.method("foo", { response: "stream" });
+    mod.spawnPolicy({ maxRetries: 0 });
+    manager.register(mod);
+
+    await expect(manager.spawn("worker")).rejects.toThrow(/response type/);
+  });
+});
+
 describe("ManagerCore: crash & restart", () => {
   it("restarts a crashed ready module after the restart delay", async () => {
     vi.useFakeTimers();
