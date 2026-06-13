@@ -95,6 +95,9 @@ export class ModuleManager extends ModuleManagerCore<BunSubprocess, Module> {
         ...process.env,
         ...exe.env,
         PROCWIRE_MODULE_NAME: module.name,
+        // Data-plane auth token (only when spawnPolicy.auth is enabled); the
+        // child reads it to require a matching AUTH frame before adopting.
+        ...(module.authToken !== null ? { PROCWIRE_TOKEN: module.authToken } : {}),
       },
       stdin: "pipe",
       stdout: "pipe",

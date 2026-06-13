@@ -52,6 +52,18 @@ export const ABSOLUTE_MAX_PAYLOAD_SIZE = 2 * 1024 * 1024 * 1024 - 1; // 2GB - 1
 export const ABORT_METHOD_ID = 0xffff;
 
 /**
+ * Reserved method ID for the data-plane authentication handshake.
+ *
+ * When the parent enables auth, it sends exactly one AUTH frame
+ * (methodId = this, requestId = 0, payload = the shared token bytes) as the
+ * FIRST frame on the data plane; the child must validate it before adopting
+ * the connection. Like {@link ABORT_METHOD_ID}, it cannot be used for a
+ * regular method. External clients implementing this protocol must reserve it
+ * too - see docs/rust-client-compatibility.md.
+ */
+export const AUTH_METHOD_ID = 0xfffe;
+
+/**
  * Default size of header ring buffer pool.
  * Used for allocation-free header encoding in high-throughput scenarios.
  */

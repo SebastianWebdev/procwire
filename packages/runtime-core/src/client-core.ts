@@ -15,6 +15,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   FrameBuffer,
   type Frame,
@@ -23,6 +24,7 @@ import {
   encodeHeaderInto,
   HEADER_SIZE,
   ABORT_METHOD_ID,
+  AUTH_METHOD_ID,
 } from "@procwire/protocol";
 import { msgpackCodec, type Codec, type Schema, type EmptySchema } from "@procwire/codecs";
 import { codecDeserialize } from "@procwire/codecs";
@@ -83,12 +85,24 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
   private _activeContexts = new Map<number, RequestContextImpl>();
   private _started = false;
 
+  // Data-plane authentication (opt-in). When _authToken is set, an accepted
+  // connection is held "pending" (_authPending) until its FIRST frame proves
+  // the token; only then is it _adopted (and the listener closed). A non-auth
+  // setup adopts on accept. _adopted gates the disconnect teardown so a dropped
+  // pending connection doesn't fire a spurious "disconnected".
+  private readonly _authToken: string | null;
+  private _authPending = false;
+  private _adopted = false;
+
   constructor(options?: ClientOptions) {
     super();
     this._defaultCodec = options?.defaultCodec ?? msgpackCodec;
     if (options?.maxPayloadSize !== undefined) {
       this._maxPayloadSize = options.maxPayloadSize;
     }
+    // The parent sets PROCWIRE_TOKEN when it enables auth; an explicit option
+    // wins for embedders that wire the token themselves.
+    this._authToken = options?.authToken ?? process.env.PROCWIRE_TOKEN ?? null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -121,6 +135,16 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
    * Stop the pipe server.
    */
   protected abstract _closeServer(): void;
+
+  /**
+   * Called once a connection is ADOPTED (auth passed, or accepted when auth is
+   * disabled). Adapters override this to stop the listener after the single
+   * parent has connected, so no stray client can connect afterwards. Default:
+   * nothing (the connection is simply kept).
+   */
+  protected _onConnectionAdopted(): void {
+    // Default: no listener teardown.
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILDER API
@@ -339,7 +363,38 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     this._frameBuffer = new FrameBuffer(
       this._maxPayloadSize !== undefined ? { maxPayloadSize: this._maxPayloadSize } : {},
     );
+    if (this._authToken !== null) {
+      // Hold the connection pending until the first frame proves the token.
+      this._authPending = true;
+    } else {
+      this._adopt();
+    }
     return true;
+  }
+
+  /**
+   * Mark the active connection as the adopted single-parent session and let
+   * the adapter stop listening for further connections.
+   */
+  private _adopt(): void {
+    this._adopted = true;
+    this._authPending = false;
+    this._onConnectionAdopted();
+  }
+
+  /**
+   * Drop an un-adopted (auth-pending) connection without firing the
+   * adopted-session teardown: nothing was in flight and the parent never
+   * authenticated, so there is no "disconnected" session to report. The
+   * listener was NOT closed (adoption never happened), so the real parent can
+   * still connect.
+   */
+  private _dropUnauthenticated(): void {
+    const transport = this._transport;
+    this._transport = null;
+    this._frameBuffer = null;
+    this._authPending = false;
+    transport?.close();
   }
 
   /**
@@ -387,6 +442,18 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
    * kill queries), and drop all references so nothing leaks.
    */
   protected _handleDisconnect(): void {
+    // An un-adopted connection (auth still pending, or already dropped) has no
+    // session to tear down and never emitted "connected" - reset quietly so a
+    // freshly-listening server can accept the real parent.
+    if (!this._adopted) {
+      this._transport?.close();
+      this._transport = null;
+      this._frameBuffer = null;
+      this._authPending = false;
+      return;
+    }
+    this._adopted = false;
+
     // Reject any sender suspended on backpressure against the dead socket.
     this._transport?.close();
 
@@ -452,10 +519,22 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
   // ═══════════════════════════════════════════════════════════════════════════
 
   protected _generatePipePath(): string {
-    const id = Math.random().toString(36).slice(2, 10);
-    return process.platform === "win32"
-      ? `\\\\.\\pipe\\procwire-${process.pid}-${id}`
-      : `/tmp/procwire-${process.pid}-${id}.sock`;
+    // crypto.randomBytes (not Math.random): the socket path is the only thing
+    // standing between an attacker and the data plane on a shared host, so it
+    // must be unguessable, not merely unique.
+    const id = randomBytes(16).toString("hex");
+    if (process.platform === "win32") {
+      // Windows named-pipe namespace is private per session; the path is not a
+      // filesystem entry, so the per-user-dir logic below does not apply.
+      return `\\\\.\\pipe\\procwire-${process.pid}-${id}`;
+    }
+    // Prefer a per-user runtime dir (mode 0700 on systemd hosts) over the
+    // world-writable /tmp; honor XDG_RUNTIME_DIR, then TMPDIR, then /tmp.
+    const baseDir = (process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || "/tmp").replace(
+      /\/+$/,
+      "",
+    );
+    return `${baseDir}/procwire-${process.pid}-${id}.sock`;
   }
 
   private _sendInit(pipePath: string): void {
@@ -497,6 +576,20 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
 
   private _handleFrame(frame: Frame): void {
     const { header } = frame;
+
+    // Auth gate: while a connection is pending, the ONLY acceptable frame is a
+    // matching AUTH frame. Anything else (including a valid-looking request)
+    // drops the connection - the parent must authenticate first.
+    if (this._authPending) {
+      this._handleAuthFrame(frame);
+      return;
+    }
+
+    // A stray AUTH frame on an already-adopted connection is a no-op: auth is a
+    // one-time gate, never a regular method.
+    if (header.methodId === AUTH_METHOD_ID) {
+      return;
+    }
 
     // Abort signal (reserved methodId)
     if (header.methodId === ABORT_METHOD_ID) {
@@ -563,6 +656,28 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
       }
       this._activeContexts.delete(header.requestId);
     }
+  }
+
+  /**
+   * Validate the first frame of a pending connection. A matching AUTH frame
+   * adopts the connection; anything else drops it (the listener stays open for
+   * the real parent).
+   */
+  private _handleAuthFrame(frame: Frame): void {
+    if (frame.header.methodId === AUTH_METHOD_ID && this._authMatches(frame.payload)) {
+      this._adopt();
+      return;
+    }
+    this._dropUnauthenticated();
+  }
+
+  /** Constant-time comparison of an AUTH payload against the expected token. */
+  private _authMatches(payload: Buffer): boolean {
+    if (this._authToken === null) return true;
+    const expected = Buffer.from(this._authToken, "utf8");
+    // timingSafeEqual requires equal lengths; a length mismatch is a mismatch.
+    if (payload.length !== expected.length) return false;
+    return timingSafeEqual(payload, expected);
   }
 
   private _handleAbort(requestId: number): void {

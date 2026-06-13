@@ -12,6 +12,7 @@
 
 import { createServer, type Server, type Socket } from "node:net";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
+import { unlinkSync } from "node:fs";
 import { NodeSocketTransport } from "@procwire/protocol";
 import type { Schema, EmptySchema } from "@procwire/codecs";
 import { ClientCore } from "@procwire/runtime-core";
@@ -42,6 +43,7 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
   private _server: Server | null = null;
   private _socket: Socket | null = null;
   private _controlReader: ReadlineInterface | null = null;
+  private _pipePath: string | null = null;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RUNTIME HOOKS: pipe server
@@ -49,6 +51,11 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
 
   protected _createPipeServer(pipePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      this._pipePath = pipePath;
+      // Remove a stale socket file left by a crashed predecessor; otherwise
+      // listen() fails with EADDRINUSE on a path that no longer has a listener.
+      this._unlinkPipe();
+
       this._server = createServer((socket) => this._handleConnection(socket));
 
       this._server.on("error", reject);
@@ -79,10 +86,32 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
     });
   }
 
+  /**
+   * The single parent has been adopted: stop accepting further connections so
+   * no stray client can connect to the data plane afterwards. The established
+   * socket is kept (server.close() only stops the listener).
+   */
+  protected override _onConnectionAdopted(): void {
+    this._server?.close();
+    this._server = null;
+  }
+
   protected _closeServer(): void {
     this._server?.close();
     this._server = null;
     this._socket = null;
+    // Remove the socket file so a crash doesn't leave a stale .sock behind.
+    this._unlinkPipe();
+  }
+
+  /** Best-effort removal of the unix socket file (no-op on Windows pipes). */
+  private _unlinkPipe(): void {
+    if (this._pipePath === null || process.platform === "win32") return;
+    try {
+      unlinkSync(this._pipePath);
+    } catch {
+      // Already gone (never created, or removed by a previous close) - fine.
+    }
   }
 
   /**

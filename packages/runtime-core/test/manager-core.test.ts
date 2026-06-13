@@ -6,6 +6,7 @@
  * previously used a global flag), and the heartbeat state machine.
  */
 import { describe, it, expect, vi } from "vitest";
+import { AUTH_METHOD_ID } from "@procwire/protocol";
 import type { EmptySchema } from "@procwire/codecs";
 import type { InitMessage, SpawnPolicy } from "../src/types.js";
 import { ModuleCore } from "../src/module-core.js";
@@ -34,8 +35,13 @@ class FakeManager extends ModuleManagerCore<FakeProc, TestModule> {
   controlMessages: { name: string; message: string }[] = [];
   killed: number[] = [];
   exitHandlers = new Map<number, (code: number | null, signal: string | null) => void>();
+  /** The module.authToken observed by each _spawnProcess call (env injection). */
+  spawnTokens: (string | null)[] = [];
+  /** The fake transport handed to the last _connectDataChannel. */
+  lastTransport: FakeTransport | null = null;
 
-  protected _spawnProcess(_module: TestModule): FakeProc {
+  protected _spawnProcess(module: TestModule): FakeProc {
+    this.spawnTokens.push(module.authToken);
     return { id: this.nextProcId++, alive: true };
   }
 
@@ -76,7 +82,9 @@ class FakeManager extends ModuleManagerCore<FakeProc, TestModule> {
   }
 
   protected _connectDataChannel(module: TestModule): Promise<void> {
-    module._attachDataChannel(new FakeTransport());
+    const transport = new FakeTransport();
+    this.lastTransport = transport;
+    module._attachDataChannel(transport);
     return Promise.resolve();
   }
 
@@ -451,6 +459,58 @@ describe("ManagerCore: double-spawn guard", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("ManagerCore: data-plane auth (Workstream C)", () => {
+  it("does not generate a token or send an AUTH frame when auth is disabled (default)", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker");
+    manager.register(mod);
+
+    await manager.spawn("worker");
+
+    // No token reached the spawn env, and the data plane saw no AUTH frame.
+    expect(manager.spawnTokens).toEqual([null]);
+    expect(mod.authToken).toBeNull();
+    expect(manager.lastTransport!.frames).toHaveLength(0);
+  });
+
+  it("generates a per-spawn token, exposes it before spawn, and sends it as the first AUTH frame", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker", { auth: true });
+    manager.register(mod);
+
+    await manager.spawn("worker");
+
+    // The token was available at spawn time (so the adapter can pass it via
+    // PROCWIRE_TOKEN) and is a 32-byte hex string.
+    const token = manager.spawnTokens[0];
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(mod.authToken).toBe(token);
+
+    // The FIRST data-plane frame is the AUTH frame carrying exactly that token.
+    const frames = manager.lastTransport!.frames;
+    expect(frames).toHaveLength(1);
+    expect(frames[0]!.header.methodId).toBe(AUTH_METHOD_ID);
+    expect(frames[0]!.header.requestId).toBe(0);
+    expect(frames[0]!.payload.toString("utf8")).toBe(token);
+  });
+
+  it("issues a fresh token on each spawn", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker", { auth: true, restartOnCrash: false });
+    manager.register(mod);
+
+    await manager.spawn("worker");
+    const first = mod.authToken;
+    await manager.shutdown("worker");
+
+    await manager.spawn("worker");
+    const second = mod.authToken;
+
+    expect(first).not.toBe(second);
+    expect(manager.spawnTokens).toEqual([first, second]);
   });
 });
 

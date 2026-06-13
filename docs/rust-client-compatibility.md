@@ -79,12 +79,14 @@ Lifecycle:
 | 4   | 0x10  | STREAM_END          | 1 = final stream chunk (empty payload) |
 | 5   | 0x20  | IS_ACK              | 1 = ack only (no full result)          |
 
-**Constants:** `ABORT_METHOD_ID = 0xFFFF`, `DEFAULT_MAX_PAYLOAD_SIZE = 1 GiB`,
-`ABSOLUTE_MAX_PAYLOAD_SIZE = 2 GiB − 1`.
+**Constants:** `ABORT_METHOD_ID = 0xFFFF`, `AUTH_METHOD_ID = 0xFFFE`,
+`DEFAULT_MAX_PAYLOAD_SIZE = 1 GiB`, `ABSOLUTE_MAX_PAYLOAD_SIZE = 2 GiB − 1`.
 
-> None of the framing, flags, codecs (raw / msgpack / arrow), or `ABORT_METHOD_ID`
-> changed in this work. If the Rust client already speaks this, no change needed
-> here — but **§4.4** adds a _receive-side size guard_ you should confirm exists.
+> The framing, flags, codecs (raw / msgpack / arrow), and `ABORT_METHOD_ID` are
+> unchanged. Two additions to confirm: **§4.4** adds a _receive-side size guard_,
+> and **§4.9** reserves `AUTH_METHOD_ID = 0xFFFE` for an **opt-in** data-plane
+> authentication frame. A Rust client that doesn't speak auth still interoperates
+> with a non-auth parent; it only needs §4.9 to be used with `spawnPolicy({ auth: true })`.
 
 ---
 
@@ -308,6 +310,64 @@ timeout after ~30 s (previously it hung forever).
 **Reference:** `packages/core/src/module.ts` (default request timeout), regression
 Bug C2.
 
+### 4.9 — Data-plane authentication (AUTH frame) — **REQUIRED if `auth: true`**
+
+**What changed:** the parent gained an **opt-in** data-plane authentication
+handshake (Workstream C). When an app configures `spawnPolicy({ auth: true })`,
+the parent:
+
+1. generates a per-spawn crypto-random token,
+2. passes it to the child via the **`PROCWIRE_TOKEN` environment variable**, and
+3. sends it as the **FIRST data-plane frame** — an **AUTH frame** — immediately
+   after connecting, before any request/stream frame.
+
+The child requires that first frame to be a matching AUTH frame before it
+**adopts** the connection; a missing/mismatched token ⇒ it **drops the
+connection**. This, together with the unguessable crypto-random socket path, is
+defense-in-depth against a stray local process hijacking the data plane.
+
+**AUTH frame shape** (standard 11-byte header, no codec — the payload is the raw
+token bytes):
+
+```
+methodId      = 0xFFFE (AUTH_METHOD_ID)
+flags         = 0x00   (to child, not a response; bits 6–7 reserved = 0)
+requestId     = 0
+payloadLength = token byte length
+payload       = the token, raw UTF-8 bytes (no codec framing)
+```
+
+The token the parent sends equals the value of `PROCWIRE_TOKEN` in the child's
+environment (a 64-char lowercase-hex string, i.e. 32 random bytes).
+
+**Action for Rust (only needed to support `auth: true` parents):**
+
+- **As a child (the usual Rust role):** on startup read `PROCWIRE_TOKEN` from the
+  environment. If it is **set**, require the first data-plane frame on an accepted
+  connection to be an AUTH frame (`methodId == 0xFFFE`) whose payload **equals**
+  the env value (use a constant-time comparison); only then adopt the connection
+  and process subsequent frames. If the first frame is anything else, or the token
+  mismatches, **close the connection** (keep listening for the real parent). If
+  `PROCWIRE_TOKEN` is **unset**, behave exactly as before (adopt on accept) —
+  this keeps you compatible with non-auth parents.
+- **As a parent (if the Rust side spawns children):** generate a random token, set
+  `PROCWIRE_TOKEN` in the child env, and write the AUTH frame above as the first
+  data-plane frame before any request.
+
+**Why it matters:** against an auth-enabled parent, a Rust child that ignores the
+AUTH frame would try to dispatch `methodId 0xFFFE` as a normal method and never
+authenticate; against the Node/Bun child, an external parent that doesn't send the
+AUTH frame (while `PROCWIRE_TOKEN` is set) is dropped.
+
+**Acceptance:** with `spawnPolicy({ auth: true })`, the Rust child reaches `ready`
+and round-trips a request; with a deliberately wrong token the connection is
+dropped and the handshake never completes.
+**Reference:** `packages/runtime-core/src/client-core.ts`
+(`_acceptConnection`/`_handleAuthFrame`/`_authMatches`), parent send in
+`packages/runtime-core/src/module-core.ts` (`_sendAuth`) and
+`packages/runtime-core/src/manager-core.ts` (token generation),
+`packages/protocol/src/wire-format.ts` (`AUTH_METHOD_ID`).
+
 ---
 
 ## 5. How to verify the Rust client (interop against this repo)
@@ -333,6 +393,9 @@ Checklist:
 5. **Backpressure (§4.3):** stream a few hundred MB to a slow consumer → the Rust
    child's RSS stays bounded.
 6. **requestId wrap (§4.5):** exercise a request with `requestId = 0xFFFFFFFF`.
+7. **Auth (§4.9):** register with `spawnPolicy({ auth: true })`; the Rust child
+   (reading `PROCWIRE_TOKEN`) must reach `ready` and round-trip a request. With a
+   tampered token the connection must be dropped and the handshake must fail.
 
 The Node/Bun **regression tests** are executable specifications — read them to see
 exact expected behaviour: `packages/client/test/regression.test.ts`,
@@ -355,13 +418,18 @@ exact expected behaviour: `packages/client/test/regression.test.ts`,
 
 ## 7. Priority summary
 
-| #   | Item                                                              | Priority     | Type                     |
-| --- | ----------------------------------------------------------------- | ------------ | ------------------------ |
-| 4.1 | Answer `$ping` with `$pong`                                       | **REQUIRED** | control-plane (new)      |
-| 4.4 | Bound incoming `payloadLength`                                    | **REQUIRED** | data-plane (robustness)  |
-| 4.2 | Act on `$shutdown`, don't block exit                              | RECOMMENDED  | control-plane            |
-| 4.3 | Honour send-side write backpressure                               | RECOMMENDED  | data-plane (correctness) |
-| 4.7 | Single connection / disconnect cleanup / no crash on socket error | RECOMMENDED  | behaviour                |
-| 4.5 | `requestId` opaque `u32`, wraps, skip `0`                         | CHECK        | data-plane               |
-| 4.6 | Optionally send structured error objects                          | OPTIONAL     | data-plane               |
-| 4.8 | Default request timeout (only if Rust is caller)                  | INFO         | behaviour                |
+| #   | Item                                                              | Priority       | Type                     |
+| --- | ----------------------------------------------------------------- | -------------- | ------------------------ |
+| 4.1 | Answer `$ping` with `$pong`                                       | **REQUIRED**   | control-plane (new)      |
+| 4.4 | Bound incoming `payloadLength`                                    | **REQUIRED**   | data-plane (robustness)  |
+| 4.9 | AUTH frame (`0xFFFE`) + `PROCWIRE_TOKEN` when `auth: true`        | **REQUIRED\*** | data-plane (new, opt-in) |
+| 4.2 | Act on `$shutdown`, don't block exit                              | RECOMMENDED    | control-plane            |
+| 4.3 | Honour send-side write backpressure                               | RECOMMENDED    | data-plane (correctness) |
+| 4.7 | Single connection / disconnect cleanup / no crash on socket error | RECOMMENDED    | behaviour                |
+| 4.5 | `requestId` opaque `u32`, wraps, skip `0`                         | CHECK          | data-plane               |
+| 4.6 | Optionally send structured error objects                          | OPTIONAL       | data-plane               |
+| 4.8 | Default request timeout (only if Rust is caller)                  | INFO           | behaviour                |
+
+> **\*4.9** is REQUIRED only to interoperate with an **auth-enabled** parent
+> (`spawnPolicy({ auth: true })`). With auth off (the default) `PROCWIRE_TOKEN` is
+> absent and no AUTH frame is sent, so a client that ignores it is fully compatible.

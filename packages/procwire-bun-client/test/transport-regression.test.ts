@@ -5,7 +5,7 @@
  * PASS once the fix is applied.
  */
 import { describe, it, expect } from "bun:test";
-import { unlinkSync } from "node:fs";
+import { unlinkSync, existsSync } from "node:fs";
 import { FrameBuffer, buildFrame, Flags, hasFlag } from "@procwire/protocol";
 import type { Frame } from "@procwire/protocol";
 import { rawCodec, msgpackCodec } from "@procwire/codecs";
@@ -111,16 +111,14 @@ describe("Bug W1 (bun-client): partial socket writes must not drop response tail
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Bug X1 (bun-client): Bun.listen uses ONE shared handler object for every
-// connection, and the close/data/error handlers ignored WHICH socket fired.
-// The client rejects a second (stray) connection with socket.end() - but the
-// stray socket's close event then ran _onConnectionClose() against the ACTIVE
-// session: _socket nulled, all in-flight contexts aborted, "disconnected"
-// emitted. Any stray connect+close on the unix socket killed the live parent
-// session.
+// Workstream C.3 (bun-client): the data-plane listener is closed once the
+// single parent is adopted (server.stop + socket-file unlink). This supersedes
+// the old Bug X1/X2 hazard - Bun.listen shared ONE handler object across
+// connections, so a stray connect+close could tear down the live session - by
+// making a second connection impossible at the socket level.
 // ═══════════════════════════════════════════════════════════════════════════
-describe("Bug X1 (bun-client): a stray connection must not tear down the active session", () => {
-  it("keeps the active parent session working after a stray connect/close", async () => {
+describe("bun-client: the listener closes after adopting the single parent (Workstream C.3)", () => {
+  it("refuses a second connection once the parent is adopted, and keeps the session working", async () => {
     const path = tmpSock();
 
     const client = new Client().handle("echo", async (data, ctx) => {
@@ -131,6 +129,7 @@ describe("Bug X1 (bun-client): a stray connection must not tear down the active 
       _methodNameToId: Map<string, number>;
       _methodIdToName: Map<number, string>;
       _createPipeServer(pipePath: string): Promise<void>;
+      _closeServer(): void;
       _socket: unknown;
       _server: { stop(force?: boolean): void } | null;
     };
@@ -148,7 +147,6 @@ describe("Bug X1 (bun-client): a stray connection must not tear down the active 
 
     const responses: Frame[] = [];
     const parentBuffer = new FrameBuffer();
-    let strayClosed = false;
 
     const parent = await Bun.connect({
       unix: path,
@@ -165,29 +163,30 @@ describe("Bug X1 (bun-client): a stray connection must not tear down the active 
     try {
       // The parent connection is adopted as the active session.
       expect(await waitFor(() => internals._socket !== null, 2000)).toBe(true);
-
-      // A stray client connects; the Client rejects it with end(). Its close
-      // event must NOT tear down the active parent session.
-      await Bun.connect({
-        unix: path,
-        socket: {
-          data() {},
-          error() {},
-          close() {
-            strayClosed = true;
-          },
-          drain() {},
-        },
-      });
-
-      await waitFor(() => strayClosed, 2000);
-      // Give the server-side close handler time to run.
+      // Let the adopt hook (server.stop) run.
       await new Promise((r) => setTimeout(r, 150));
 
+      // The listener is closed once the parent is adopted: a second client can
+      // no longer be accepted, so the old stray-connection hazard is gone. The
+      // socket file is still present (it's removed on shutdown, not on adopt),
+      // so the stray connect is refused with ECONNREFUSED rather than ENOENT.
+      expect(internals._server).toBeNull();
+      let strayRejected = false;
+      try {
+        const stray = await Bun.connect({
+          unix: path,
+          socket: { data() {}, error() {}, close() {}, drain() {} },
+        });
+        stray.end();
+      } catch {
+        strayRejected = true;
+      }
+      expect(strayRejected).toBe(true);
+
+      // The active session was untouched and still works end-to-end.
       expect(disconnectedCount).toBe(0);
       expect(internals._socket).not.toBeNull();
 
-      // The active session must still work end-to-end.
       const request = buildFrame(
         { methodId: 1, flags: 0, requestId: 77 },
         msgpackCodec.serialize({ hello: "world" }),
@@ -199,87 +198,10 @@ describe("Bug X1 (bun-client): a stray connection must not tear down the active 
       expect(response.header.requestId).toBe(77);
       expect(hasFlag(response.header.flags, Flags.IS_RESPONSE)).toBe(true);
       expect(msgpackCodec.deserialize(response.payload)).toEqual({ hello: "world" });
-    } finally {
-      parent.end();
-      internals._server?.stop(true);
-      try {
-        unlinkSync(path);
-      } catch {
-        /* already removed */
-      }
-    }
-  }, 15000);
 
-  it("ignores stray-socket data so it cannot poison the active session's framing", async () => {
-    const path = tmpSock();
-
-    const client = new Client().handle("echo", async (data, ctx) => {
-      await ctx.respond(data);
-    });
-
-    const internals = client as unknown as {
-      _methodNameToId: Map<string, number>;
-      _methodIdToName: Map<number, string>;
-      _createPipeServer(pipePath: string): Promise<void>;
-      _socket: unknown;
-      _server: { stop(force?: boolean): void } | null;
-    };
-
-    internals._methodNameToId.set("echo", 1);
-    internals._methodIdToName.set(1, "echo");
-    await internals._createPipeServer(path);
-
-    const responses: Frame[] = [];
-    const parentBuffer = new FrameBuffer();
-
-    const parent = await Bun.connect({
-      unix: path,
-      socket: {
-        data(_socket, data: Buffer) {
-          responses.push(...parentBuffer.push(Buffer.from(data)));
-        },
-        error() {},
-        close() {},
-        drain() {},
-      },
-    });
-
-    try {
-      expect(await waitFor(() => internals._socket !== null, 2000)).toBe(true);
-
-      // The stray connection races garbage bytes against the server's end().
-      // Identity checks must keep those bytes out of the active FrameBuffer.
-      const stray = await Bun.connect({
-        unix: path,
-        socket: {
-          open(socket) {
-            // Half a header: if this reaches the active session's
-            // FrameBuffer, all subsequent parsing desyncs.
-            (socket as unknown as { write(d: Buffer): number }).write(
-              Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
-            );
-          },
-          data() {},
-          error() {},
-          close() {},
-          drain() {},
-        },
-      });
-
-      await new Promise((r) => setTimeout(r, 150));
-
-      // The active session must still round-trip cleanly.
-      const request = buildFrame(
-        { methodId: 1, flags: 0, requestId: 88 },
-        msgpackCodec.serialize({ ping: 1 }),
-      );
-      parent.write(request);
-
-      expect(await waitFor(() => responses.length > 0, 2000)).toBe(true);
-      expect(responses[0]!.header.requestId).toBe(88);
-      expect(msgpackCodec.deserialize(responses[0]!.payload)).toEqual({ ping: 1 });
-
-      stray.end();
+      // Shutdown removes the socket file (no stale .sock left behind).
+      internals._closeServer();
+      expect(existsSync(path)).toBe(false);
     } finally {
       parent.end();
       internals._server?.stop(true);

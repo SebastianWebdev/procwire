@@ -432,4 +432,22 @@ describe("End-to-End Integration", { retry: 2 }, () => {
       }
     }, 30000);
   });
+
+  describe("Data-plane auth (Workstream C)", () => {
+    it("completes the handshake and echoes over an authenticated data plane", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("echo", { response: "result" })
+        .spawnPolicy({ auth: true });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      // Reaching "ready" means the parent's AUTH frame round-tripped: the child
+      // (which reads PROCWIRE_TOKEN from its env) adopted the connection.
+      expect(module.state).toBe("ready");
+      const result = await module.send("echo", { hello: "auth" });
+      expect(result).toEqual({ hello: "auth" });
+    });
+  });
 });

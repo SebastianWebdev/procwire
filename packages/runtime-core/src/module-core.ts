@@ -26,6 +26,7 @@ import {
   Flags,
   HEADER_SIZE,
   ABORT_METHOD_ID,
+  AUTH_METHOD_ID,
   encodeHeaderInto,
 } from "@procwire/protocol";
 import {
@@ -135,6 +136,11 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   private _transport: FrameTransport | null = null;
   private _frameBuffer: FrameBuffer | null = null;
   private _childSchema: ModuleSchema | null = null;
+
+  // Per-spawn data-plane auth token. Set by the manager core before spawn (so
+  // the adapter can pass it to the child via PROCWIRE_TOKEN) and sent as the
+  // first data-plane frame once connected. null = auth disabled.
+  private _authToken: string | null = null;
 
   // Request tracking
   private _nextRequestId = 1;
@@ -337,6 +343,24 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
    */
   _attachProcess(process: TProcess): void {
     this._process = process;
+  }
+
+  /**
+   * @internal The data-plane auth token for the current spawn, or null when
+   * auth is disabled. The adapter reads this to inject `PROCWIRE_TOKEN` into
+   * the child's environment.
+   */
+  get authToken(): string | null {
+    return this._authToken;
+  }
+
+  /**
+   * @internal Set (or clear) the data-plane auth token before spawning. Called
+   * by the manager core; must run before `_spawnProcess` so the adapter can
+   * pass it to the child.
+   */
+  _setAuthToken(token: string | null): void {
+    this._authToken = token;
   }
 
   /**
@@ -1027,6 +1051,29 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     });
 
     await this._transport!.writeFrame(headerBuf, EMPTY_PAYLOAD);
+  }
+
+  /**
+   * @internal Send the AUTH frame as the FIRST data-plane frame, carrying the
+   * shared token the child validates before adopting the connection. No-op when
+   * auth is disabled (no token) or there is no transport. The manager core
+   * awaits this right after connecting and before marking the module ready, so
+   * it always precedes any request/stream frame.
+   */
+  async _sendAuth(): Promise<void> {
+    if (this._authToken === null || !this._transport) return;
+
+    const payload = Buffer.from(this._authToken, "utf8");
+    const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
+
+    encodeHeaderInto(headerBuf, {
+      methodId: AUTH_METHOD_ID,
+      flags: 0,
+      requestId: 0,
+      payloadLength: payload.length,
+    });
+
+    await this._transport.writeFrame(headerBuf, payload);
   }
 
   private _cleanupRequest(requestId: number): void {
