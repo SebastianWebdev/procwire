@@ -1,6 +1,6 @@
 {
   "name": "@procwire/runtime-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Shared runtime-agnostic types, errors and events for Procwire runtime packages.",
   "keywords": [
     "ipc",
