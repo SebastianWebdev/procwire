@@ -69,6 +69,12 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
    * Single-parent model: the shared core accepts exactly one connection;
    * any extra or stray connection is destroyed rather than overwriting (and
    * corrupting) the active connection's in-flight state.
+   *
+   * The per-socket handlers are identity-scoped (`socket === this._socket`):
+   * with auth enabled, a rejected pre-auth connection's `_transport` is cleared
+   * so the real parent can connect before that socket's async `close` fires.
+   * Without the guard, the stale `close` would run `_handleDisconnect()` against
+   * the freshly adopted parent and tear it down.
    */
   private _handleConnection(socket: Socket): void {
     if (!this._acceptConnection(new NodeSocketTransport(socket))) {
@@ -78,9 +84,14 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
 
     this._socket = socket;
 
-    socket.on("data", (chunk: Buffer) => this._handleTransportData(chunk));
-    socket.on("error", (err) => this._handleTransportError(err));
+    socket.on("data", (chunk: Buffer) => {
+      if (socket === this._socket) this._handleTransportData(chunk);
+    });
+    socket.on("error", (err) => {
+      if (socket === this._socket) this._handleTransportError(err);
+    });
     socket.on("close", () => {
+      if (socket !== this._socket) return;
       this._socket = null;
       this._handleDisconnect();
     });
