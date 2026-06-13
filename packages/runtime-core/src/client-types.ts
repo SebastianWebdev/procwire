@@ -46,6 +46,17 @@ export interface ClientOptions {
    * or buggy parent exhausting memory). Defaults to the FrameBuffer default.
    */
   maxPayloadSize?: number;
+
+  /**
+   * Shared data-plane authentication token. When set, the child requires the
+   * FIRST frame on an accepted connection to be an AUTH frame carrying this
+   * exact token before adopting the connection; a missing or mismatched token
+   * drops the connection. Defaults to `process.env.PROCWIRE_TOKEN` (the parent
+   * sets that env var when it enables auth), so embedders normally never set
+   * this explicitly. When neither is present, auth is disabled and connections
+   * are adopted on accept (backward compatible).
+   */
+  authToken?: string;
 }
 
 /**

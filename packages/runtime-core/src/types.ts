@@ -127,6 +127,23 @@ export interface SpawnPolicy {
    * @example 4 * 1024 * 1024 // 4MB for large Arrow transfers
    */
   socketBufferSize?: number;
+
+  /**
+   * Authenticate the data-plane connection (opt-in; default false).
+   *
+   * When true, the manager generates a per-spawn crypto-random token, passes
+   * it to the child via the `PROCWIRE_TOKEN` environment variable, and sends it
+   * as the first data-plane frame (an AUTH frame). The child requires that
+   * frame to match before adopting the connection, so a stray process that
+   * connects to the socket before the parent is rejected. Combined with the
+   * unguessable socket path this is defense-in-depth on shared hosts.
+   *
+   * External data-plane clients must implement the AUTH frame to be used with
+   * `auth: true` - see docs/rust-client-compatibility.md.
+   *
+   * @default false
+   */
+  auth?: boolean;
 }
 
 /**

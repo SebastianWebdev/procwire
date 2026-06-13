@@ -117,6 +117,7 @@ module.spawnPolicy({
   restartOnCrash: true, // Auto-restart on unexpected exit
   restartLimit: { maxRestarts: 5, windowMs: 60000 },
   heartbeat: { intervalMs: 5000, timeoutMs: 15000 }, // Liveness check (off by default)
+  auth: true, // Authenticate the data-plane connection (off by default)
 });
 ```
 
@@ -133,6 +134,14 @@ module.spawnPolicy({
   restartOnCrash: true,
   heartbeat: { intervalMs: 5000, timeoutMs: 15000 },
 });
+```
+
+##### Data-plane authentication
+
+The data-plane socket already uses a crypto-random, unguessable path in a per-user runtime directory (`XDG_RUNTIME_DIR` → `TMPDIR` → `/tmp`), and the child stops listening as soon as the parent connects. For defense-in-depth on shared hosts, `auth: true` adds a handshake token: the manager generates a per-spawn crypto-random token, passes it to the child via the `PROCWIRE_TOKEN` environment variable, and sends it as the first data-plane frame. The child requires that token before adopting the connection, so a stray local process that connects to the socket first is rejected. Disabled by default; the bundled `@procwire/bun-client` child enforces it automatically when `PROCWIRE_TOKEN` is present (external/non-Bun data-plane clients must implement the AUTH frame — see `docs/rust-client-compatibility.md`).
+
+```typescript
+module.spawnPolicy({ auth: true });
 ```
 
 #### `.requestTimeout(ms)`

@@ -59,6 +59,7 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
   private _socket: BunSocket | null = null;
   private _activeTransport: BunSocketTransport | null = null;
   private _controlReaderStopped = false;
+  private _pipePath: string | null = null;
 
   /** Active stdin reader, kept so shutdown() can cancel the pending read. */
   private _stdinReader: StdinReader | null = null;
@@ -70,6 +71,11 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
   protected _createPipeServer(pipePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        this._pipePath = pipePath;
+        // Remove a stale socket file left by a crashed predecessor; otherwise
+        // Bun.listen fails binding a path that no longer has a listener.
+        this._unlinkPipe();
+
         // Create server using Bun.listen with unix socket
         // Bun.listen shares ONE handler object across ALL connections, so
         // every handler must check WHICH socket fired. Without the identity
@@ -151,11 +157,33 @@ export class Client<S extends Schema = EmptySchema> extends ClientCore<S> {
     this._handleDisconnect();
   }
 
+  /**
+   * The single parent has been adopted: stop accepting further connections so
+   * no stray client can connect to the data plane afterwards. stop(false) keeps
+   * the established connection alive.
+   */
+  protected override _onConnectionAdopted(): void {
+    this._server?.stop(false);
+    this._server = null;
+  }
+
   protected _closeServer(): void {
     this._server?.stop(true);
     this._server = null;
     this._socket = null;
     this._activeTransport = null;
+    // Remove the socket file so a crash doesn't leave a stale .sock behind.
+    this._unlinkPipe();
+  }
+
+  /** Best-effort removal of the unix socket file (no-op on Windows pipes). */
+  private _unlinkPipe(): void {
+    if (this._pipePath === null || process.platform === "win32") return;
+    try {
+      fs.unlinkSync(this._pipePath);
+    } catch {
+      // Already gone (never created, or removed by a previous close) - fine.
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

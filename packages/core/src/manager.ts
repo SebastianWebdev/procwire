@@ -62,14 +62,26 @@ export class ModuleManager extends ModuleManagerCore<ChildProcess, Module> {
   protected _spawnProcess(module: Module): ChildProcess {
     const exe = module.executableConfig!;
 
+    // Build the child env, then make PROCWIRE_TOKEN reflect THIS spawn's auth
+    // decision exactly: set it when auth is on, and delete any inherited/ambient
+    // value when off. Otherwise a stray PROCWIRE_TOKEN in the parent env (nested
+    // worker, CI) would leak through `...process.env` and make an auth-off child
+    // demand an AUTH frame the parent never sends.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...exe.env,
+      PROCWIRE_MODULE_NAME: module.name,
+    };
+    if (module.authToken !== null) {
+      env.PROCWIRE_TOKEN = module.authToken;
+    } else {
+      delete env.PROCWIRE_TOKEN;
+    }
+
     const childProcess = spawn(exe.command, exe.args, {
       stdio: ["pipe", "pipe", "inherit"],
       cwd: exe.cwd,
-      env: {
-        ...process.env,
-        ...exe.env,
-        PROCWIRE_MODULE_NAME: module.name,
-      },
+      env,
     });
 
     // The child's stdin can emit "error" (EPIPE) when the child dies between

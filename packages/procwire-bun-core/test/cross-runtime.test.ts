@@ -64,6 +64,29 @@ describe.skipIf(!nodeAvailable)("Cross-runtime E2E: Bun parent <-> Node child", 
     }
   }, 30_000);
 
+  it("handshakes and echoes over an authenticated data plane (Workstream C)", async () => {
+    const mod = new Module("node-child")
+      .executable(NODE_BIN!, ["--import", TSX_LOADER, FIXTURE_PATH])
+      .method("echo")
+      .requestTimeout(10_000)
+      .spawnPolicy({ auth: true }) as Module;
+    const manager = new ModuleManager();
+    manager.register(mod);
+
+    try {
+      // A Bun parent injects PROCWIRE_TOKEN and sends the AUTH frame over a Bun
+      // socket; the Node child validates it before adopting. Reaching "ready"
+      // and echoing proves the auth handshake round-trips across runtimes.
+      await manager.spawn("node-child");
+      expect(mod.state).toBe("ready");
+
+      const echoed = await mod.send("echo", { hello: "authed", n: 7 });
+      expect(echoed).toEqual({ hello: "authed", n: 7 });
+    } finally {
+      await manager.shutdown();
+    }
+  }, 30_000);
+
   it("receives child events emitted by the Node client", async () => {
     const mod = makeModule();
     const manager = new ModuleManager();

@@ -15,6 +15,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { randomBytes } from "node:crypto";
 import type {
   ModuleState,
   ExecutableConfig,
@@ -43,6 +44,7 @@ const DEFAULT_SPAWN_POLICY: Required<SpawnPolicy> = {
   restartLimit: { maxRestarts: 5, windowMs: 60_000 },
   socketBufferSize: undefined as unknown as number, // undefined = use OS default
   heartbeat: null, // disabled by default
+  auth: false, // data-plane authentication disabled by default (opt-in)
 };
 
 /** Delay before attempting to restart a crashed module (ms) */
@@ -85,6 +87,8 @@ export interface ManagedModule<TProcess> {
   readonly executableConfig: ExecutableConfig | null;
   readonly spawnPolicyConfig: SpawnPolicy;
   readonly process: TProcess | null;
+  /** Per-spawn data-plane auth token (null = auth disabled). */
+  readonly authToken: string | null;
   /** EventEmitter subscription (modules extend EventEmitter). */
   on(event: string, listener: () => void): unknown;
   _validate(): void;
@@ -93,6 +97,10 @@ export interface ManagedModule<TProcess> {
   _attachSchema(schema: ModuleSchema): void;
   _buildExpectedSchema(): { methods: { name: string; response: ResponseType }[]; events: string[] };
   _detach(): void;
+  /** Set (or clear) the auth token before spawn; must run before _spawnProcess. */
+  _setAuthToken(token: string | null): void;
+  /** Send the AUTH frame as the first data-plane frame (no-op when no token). */
+  _sendAuth(): Promise<void>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -382,6 +390,12 @@ export abstract class ModuleManagerCore<
     // 1. Spawn process
     module._setState("initializing");
 
+    // Generate the per-spawn auth token (or clear a stale one from a previous
+    // attempt) BEFORE spawning, so the adapter can pass it to the child via
+    // PROCWIRE_TOKEN. A fresh token per spawn means a leaked token from a dead
+    // generation can't authenticate against the new one.
+    module._setAuthToken(policy.auth ? randomBytes(32).toString("hex") : null);
+
     const proc = this._spawnProcess(module);
     module._attachProcess(proc);
 
@@ -409,6 +423,11 @@ export abstract class ModuleManagerCore<
     // 4. Connect data channel
     module._setState("connecting");
     await this._connectDataChannel(module, initMessage.params.pipe, policy);
+
+    // 4b. Authenticate: send the AUTH frame as the FIRST data-plane frame so
+    // the child adopts the connection before any request flows. No-op when auth
+    // is disabled. Awaited before "ready" so embedder send()s can't race ahead.
+    await module._sendAuth();
 
     // 5. Ready!
     module._setState("ready");
@@ -773,6 +792,7 @@ export abstract class ModuleManagerCore<
       restartLimit: policy.restartLimit ?? DEFAULT_SPAWN_POLICY.restartLimit,
       socketBufferSize: policy.socketBufferSize ?? DEFAULT_SPAWN_POLICY.socketBufferSize,
       heartbeat: policy.heartbeat ?? DEFAULT_SPAWN_POLICY.heartbeat,
+      auth: policy.auth ?? DEFAULT_SPAWN_POLICY.auth,
     };
   }
 

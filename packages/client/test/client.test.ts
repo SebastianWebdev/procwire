@@ -432,12 +432,14 @@ describe("Client", () => {
     it("should throw if emitting unknown event", async () => {
       const client = new Client().event("progress");
 
-      // Mock as connected (the shared core checks the transport)
+      // Mock as connected: the shared core checks the transport AND adoption.
       const clientAny = client as unknown as {
         _transport: NodeSocketTransport | null;
+        _adopted: boolean;
         _eventNameToId: Map<string, number>;
       };
       clientAny._transport = new NodeSocketTransport(createMockSocket() as unknown as Socket);
+      clientAny._adopted = true;
       clientAny._eventNameToId.set("progress", 1);
 
       await expect(client.emitEvent("unknown", {})).rejects.toThrow("Unknown event: unknown");
@@ -456,14 +458,18 @@ describe("Client", () => {
 
       expect(client.connected).toBe(false);
 
-      // Mock socket + transport (adapter checks the socket, the core checks the transport)
+      // Mock socket + transport (adapter checks the socket, the core checks the
+      // transport + adoption: a "connected" client is one whose connection was
+      // adopted, i.e. accepted with auth off or after a successful AUTH frame).
       const clientAny = client as unknown as {
         _socket: Socket | null;
         _transport: NodeSocketTransport | null;
+        _adopted: boolean;
       };
       const mockSocket = createMockSocket();
       clientAny._socket = mockSocket as unknown as Socket;
       clientAny._transport = new NodeSocketTransport(mockSocket as unknown as Socket);
+      clientAny._adopted = true;
 
       expect(client.connected).toBe(true);
 
