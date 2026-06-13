@@ -7,7 +7,8 @@
  * @example
  * ```typescript
  * import { Module } from '@procwire/bun-core';
- * import { msgpackCodec, arrowCodec } from '@procwire/codecs';
+ * import { msgpackCodec } from '@procwire/codecs';
+ * import { arrowCodec } from '@procwire/codecs/arrow'; // opt-in; requires `apache-arrow`
  *
  * // Define a module
  * const worker = new Module('worker')

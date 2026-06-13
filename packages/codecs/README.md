@@ -7,7 +7,7 @@ Serialization codecs for Procwire binary protocol.
 - **rawCodec** - Buffer passthrough (zero serialization overhead)
 - **rawChunksCodec** - Zero-copy `Buffer[]` for large payloads
 - **msgpackCodec** - Compact binary with Date/Buffer extension types
-- **arrowCodec** - Columnar data for ML embeddings and analytics
+- **arrowCodec** - Columnar data for ML embeddings and analytics (opt-in `@procwire/codecs/arrow` subpath)
 
 ## Codec Comparison
 
@@ -28,10 +28,21 @@ npm install @procwire/codecs
 
 **Peer dependencies:** `@procwire/protocol`
 
+**Optional peer dependency:** `apache-arrow` — required only for the Arrow codec,
+imported via the `@procwire/codecs/arrow` subpath. It is _not_ installed by
+`@procwire/codecs`, so raw/MsgPack-only consumers stay free of Arrow's multi-MB
+footprint:
+
+```bash
+npm install @procwire/codecs apache-arrow
+```
+
 ## Quick Start
 
 ```typescript
-import { rawCodec, rawChunksCodec, msgpackCodec, arrowCodec } from "@procwire/codecs";
+import { rawCodec, rawChunksCodec, msgpackCodec } from "@procwire/codecs";
+// Arrow is an opt-in subpath (requires the `apache-arrow` peer dependency):
+import { arrowCodec } from "@procwire/codecs/arrow";
 
 // For small/medium payloads - returns Buffer
 const data = rawCodec.deserialize(payload);
@@ -115,10 +126,12 @@ const deserialized = msgpackCodec.deserialize(serialized);
 
 ### arrowCodec
 
-Apache Arrow IPC codec for columnar data.
+Apache Arrow IPC codec for columnar data. Imported via the opt-in
+`@procwire/codecs/arrow` subpath; install the `apache-arrow` peer dependency
+alongside `@procwire/codecs` to use it.
 
 ```typescript
-import { arrowCodec } from "@procwire/codecs";
+import { arrowCodec } from "@procwire/codecs/arrow";
 import { tableFromArrays } from "apache-arrow";
 
 // From simple object

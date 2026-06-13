@@ -15,7 +15,7 @@ The data plane uses a binary protocol (zero JSON); the control plane uses JSON-R
 ### Packages
 
 - `@procwire/protocol` - Wire format, framing, flags (11-byte header)
-- `@procwire/codecs` - rawCodec, msgpackCodec, arrowCodec
+- `@procwire/codecs` - rawCodec, msgpackCodec, arrowCodec (the last via the opt-in `@procwire/codecs/arrow` subpath)
 - `@procwire/runtime-core` - The shared IPC core: ModuleCore, ClientCore, manager lifecycle policies, types/errors/events. The four runtime packages are thin adapters over it (internal plumbing, published)
 - `@procwire/core` - Parent-side: ModuleManager, Module
 - `@procwire/client` - Child-side: Client, RequestContext
@@ -158,4 +158,4 @@ Uses Changesets for version management.
 
 - Uses **pnpm workspaces** with workspace protocol (`workspace:*`, `workspace:^`)
 - All packages share dev dependencies (hoisted to root)
-- `@procwire/codecs` ships `@msgpack/msgpack` and `apache-arrow` as regular dependencies; `core` and `client` pull them in via `@procwire/codecs`
+- `@procwire/codecs` ships `@msgpack/msgpack` as a regular dependency; `apache-arrow` is an **optional peer dependency** used only by the `@procwire/codecs/arrow` subpath, so raw/MsgPack-only consumers (incl. `core`/`client`) don't pull it in. Install `apache-arrow` alongside `@procwire/codecs` to use the Arrow codec.

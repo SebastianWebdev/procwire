@@ -48,7 +48,8 @@
     "@procwire/codecs": "workspace:*",
     "@procwire/core": "workspace:*",
     "@procwire/bun-client": "workspace:*",
-    "@procwire/bun-core": "workspace:*"
+    "@procwire/bun-core": "workspace:*",
+    "apache-arrow": "^21.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
