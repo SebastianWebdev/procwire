@@ -102,9 +102,18 @@ jobs:
   # Bun packages - ubuntu only
   # ============================================
   bun-test:
-    name: Bun Packages
-    runs-on: ubuntu-latest
+    name: Bun Packages (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: lint
+    # The Windows leg exercises Bun named pipes (\\.\pipe\procwire-*), which the
+    # Linux leg never touches. Bun's Windows named-pipe support is newer, so we
+    # let that leg fail without blocking CI while we build confidence — the Node
+    # side of named pipes is already covered by build-and-test on windows-latest.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
