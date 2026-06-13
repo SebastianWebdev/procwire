@@ -247,4 +247,26 @@ describe("ClientCore: data-plane auth gate (Workstream C.2)", () => {
     expect(client.adoptCount).toBe(1);
     expect(msgpackCodec.deserialize(transport.frames[0]!.payload)).toEqual({ y: 2 });
   });
+
+  it("is not 'connected' and refuses emitEvent until the connection is adopted", async () => {
+    const client = (await started(
+      new TestClient({ authToken: "s3cret-token" })
+        .event("progress")
+        .handle("echo", () => {}) as TestClient,
+    )) as TestClient;
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    // Auth pending: the transport exists but the peer is unverified - the child
+    // must not look connected nor leak event frames to it.
+    expect(client.connected).toBe(false);
+    await expect(client.emitEvent("progress", { p: 1 })).rejects.toThrow();
+    expect(transport.frames).toHaveLength(0);
+
+    // After a valid AUTH frame the session is adopted: connected, emit works.
+    client.data(authFrame("s3cret-token"));
+    expect(client.connected).toBe(true);
+    await client.emitEvent("progress", { p: 2 });
+    expect(transport.frames).toHaveLength(1);
+  });
 });

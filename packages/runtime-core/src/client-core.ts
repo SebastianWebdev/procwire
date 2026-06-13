@@ -312,7 +312,10 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
   ): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void>;
   async emitEvent(eventName: string, data: unknown): Promise<void> {
-    if (!this._transport) {
+    // Gate on adoption, not just _transport: while a connection is auth-pending
+    // its transport is set but the peer has NOT authenticated, so emitting an
+    // event would leak child->parent frames to an unverified peer.
+    if (!this._adopted || !this._transport) {
       throw ClientErrors.notConnected();
     }
 
@@ -335,13 +338,20 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     this._transport?.close();
     this._closeServer();
     this._transport = null;
+    this._frameBuffer = null;
+    this._adopted = false;
+    this._authPending = false;
   }
 
   /**
    * Whether client is connected to parent.
+   *
+   * True only once a connection is ADOPTED (auth passed, or accepted when auth
+   * is disabled). An auth-pending connection holds the transport but is NOT yet
+   * connected from the embedder's point of view.
    */
   get connected(): boolean {
-    return this._transport !== null;
+    return this._adopted && this._transport !== null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
