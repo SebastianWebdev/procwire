@@ -14,7 +14,9 @@ import { RequestContextImpl } from "@procwire/runtime-core";
 import { BunDrainWaiter, BunSocketTransport, type BunTransportSocket } from "@procwire/protocol";
 
 function tmpSock(): string {
-  return `/tmp/procwire-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}.sock`;
+  const id = `procwire-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  // Windows has no AF_UNIX path under /tmp; Bun.listen needs a named pipe there.
+  return process.platform === "win32" ? `\\\\.\\pipe\\${id}` : `/tmp/${id}.sock`;
 }
 
 async function waitFor(cond: () => boolean, timeoutMs: number): Promise<boolean> {
