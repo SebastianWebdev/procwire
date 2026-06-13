@@ -173,17 +173,26 @@ describe("bun-client: the listener closes after adopting the single parent (Work
       // socket file is still present (it's removed on shutdown, not on adopt),
       // so the stray connect is refused with ECONNREFUSED rather than ENOENT.
       expect(internals._server).toBeNull();
-      let strayRejected = false;
-      try {
-        const stray = await Bun.connect({
-          unix: path,
-          socket: { data() {}, error() {}, close() {}, drain() {} },
-        });
-        stray.end();
-      } catch {
-        strayRejected = true;
+
+      // The stray-connection refusal relies on POSIX AF_UNIX ECONNREFUSED
+      // semantics. On Windows named pipes, a connect to a pipe whose server has
+      // stopped blocks (the connect never settles) instead of failing fast, so
+      // we assert the listener is closed (_server === null, above) but skip the
+      // live stray-connect probe there. The named-pipe data plane itself is
+      // covered by the other (Windows-green) bun tests.
+      if (process.platform !== "win32") {
+        let strayRejected = false;
+        try {
+          const stray = await Bun.connect({
+            unix: path,
+            socket: { data() {}, error() {}, close() {}, drain() {} },
+          });
+          stray.end();
+        } catch {
+          strayRejected = true;
+        }
+        expect(strayRejected).toBe(true);
       }
-      expect(strayRejected).toBe(true);
 
       // The active session was untouched and still works end-to-end.
       expect(disconnectedCount).toBe(0);
