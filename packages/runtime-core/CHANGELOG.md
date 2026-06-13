@@ -1,13 +1,8 @@
-# @procwire/protocol
+# @procwire/runtime-core
 
 ## 1.1.0
 
 ### Minor Changes
-
-- [#54](https://github.com/SebastianWebdev/procwire/pull/54) [`7542585`](https://github.com/SebastianWebdev/procwire/commit/7542585d6f4e52c546de9104b397f6050ec26eee) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Phase 4 / A1: deduplicate the runtime packages (first step of the shared-core extraction).
-  - `BunDrainWaiter` (incl. `writeAll`) moved from `@procwire/bun-core` / `@procwire/bun-client` into `@procwire/protocol` (new exports: `BunDrainWaiter`, `BunWritableSocket`). Both Bun packages keep re-exporting `BunDrainWaiter`, so existing imports continue to work.
-  - D7 fix: `BunDrainWaiter.clear()` now REJECTS pending drain waiters (matching Node's `DrainWaiter`) instead of resolving them — a sender suspended on backpressure no longer "succeeds" against a dead socket. The dead `markClosed()` method was removed.
-  - The duplicated `types` / `errors` / `events` modules of all four runtime packages now live exactly once in the new `@procwire/runtime-core` package and are re-exported unchanged; public APIs are unaffected.
 
 - [#56](https://github.com/SebastianWebdev/procwire/pull/56) [`936585f`](https://github.com/SebastianWebdev/procwire/commit/936585f4f94407a2661ab8107e0de6befbdabd15) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Phase 4 / A2: extract the shared IPC core behind a `FrameTransport` seam.
   - `@procwire/protocol` gains the transport seam and both socket adapters: `FrameTransport`, `NodeSocketTransport` (zero-copy cork/uncork writes + `DrainWaiter`) and `BunSocketTransport` (single-`write()` concat path + `BunDrainWaiter`).
@@ -35,27 +30,6 @@
   - **D9 (runtime-core, bun-core):** heartbeat config is validated at spawn (`intervalMs`/`timeoutMs` must be > 0; `intervalMs: 0` previously meant ~1 ms ping spam); a malformed `$init` now fails the spawn with `invalid $init format` instead of a confusing `TypeError`; `socketBufferSize` is documented as Node-only (accepted but ignored on Bun, which has no socket buffer sizing API). The dead `_draining` field was already removed by the shared-core extraction.
   - **D10 (runtime-core, client, bun-client):** control-plane writes (`$init`, `$pong`) go through `process.stdout.write` instead of `console.log`, so a user-patched console can no longer break or spoof the control plane. The embedder contract ("stdout is the control plane — don't print bare JSON-RPC lines") is documented in both client READMEs.
 
-## 1.0.2
-
-### Patch Changes
-
-- [#49](https://github.com/SebastianWebdev/procwire/pull/49) [`c54b2e8`](https://github.com/SebastianWebdev/procwire/commit/c54b2e85dc7836da24cb3fccea14bc7832979f26) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Fix streaming-mode `FrameBuffer` corrupting every frame whose 11-byte header straddles a chunk boundary. Header fill progress was derived from the pre-allocated buffer's `.length` (always 11), so after a partial header the next chunk decoded a zero-padded half-header: wrong `requestId`, `payloadLength` 0, and permanent desync of all subsequent frames. The fill count is now tracked explicitly, verified by byte-level regression tests covering every split point plus a 500-frame random-chunking fuzz.
-
-  Hardening in the same area:
-  - `setStreamHandler()` now throws when switching handlers mid-frame (previously it silently corrupted subsequent parsing).
-  - After a streaming protocol error (`onError`), the buffer rejects further `push()` calls until `clear()` instead of parsing against poisoned state.
-  - `hasPartialFrame` now reports `true` for an in-progress streamed frame (header or payload outstanding), not just buffered batch bytes.
-
-- [#51](https://github.com/SebastianWebdev/procwire/pull/51) [`8846afc`](https://github.com/SebastianWebdev/procwire/commit/8846afce107317cfb578ffff11be9a9628d3f0ca) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Publishing hygiene and documentation accuracy:
-  - **LICENSE is now actually included in every published tarball.** The `files` entry pointed at a LICENSE file that did not exist in the package directories, so npm silently dropped it. A new CI check (`scripts/check-publish-artifacts.mjs`) verifies tarball contents (LICENSE, README, dist entrypoints) for all publishable packages.
-  - **Internal dependency ranges publish as caret ranges.** `workspace:*` rewrites to an exact version pin on publish, which causes needless peer/dedup conflicts for consumers; `workspace:^` keeps published ranges caret-compatible. Enforced by the same CI check.
-  - **`@procwire/codecs` no longer declares an unused peer dependency on `@procwire/protocol`** - the codec interfaces are structurally typed and never import it, so consumers were forced to install protocol for nothing.
-  - READMEs now document the v1.2 behavior: the 30s default request timeout (`requestTimeout()`), the `spawnPolicy.heartbeat` liveness option, graceful `$shutdown`, and automatic child shutdown on stdin EOF (parent death). The Bun package READMEs state explicitly that typed schema generics are currently Node-only.
-  - The "zero runtime dependencies" claim is now scoped truthfully to `@procwire/protocol` (core/client depend on `@procwire/codecs`, which ships MessagePack and Arrow).
-  - Stale source comments fixed: the ~2GB cap in `wire-format.ts` is a deliberate conservative limit (not a Node Buffer limitation on Node >= 22), and the msgpack Buffer ext encoder no longer claims to be zero-copy (it copies on encode).
-
-## 1.0.1
-
-### Patch Changes
-
-- [#37](https://github.com/SebastianWebdev/procwire/pull/37) [`05547df`](https://github.com/SebastianWebdev/procwire/commit/05547dfd69303b5e1da55edbac4bbcf5cbe97a6d) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Add README.md files to all published packages and fix @module JSDoc tags for better documentation sidebar names.
+- Updated dependencies [[`7542585`](https://github.com/SebastianWebdev/procwire/commit/7542585d6f4e52c546de9104b397f6050ec26eee), [`936585f`](https://github.com/SebastianWebdev/procwire/commit/936585f4f94407a2661ab8107e0de6befbdabd15), [`c5e0c27`](https://github.com/SebastianWebdev/procwire/commit/c5e0c2783222f9f82d4b53e3d829200f2ad2151d), [`79c5f7e`](https://github.com/SebastianWebdev/procwire/commit/79c5f7e77073000c522ffdad82ae71f97eed2aab)]:
+  - @procwire/protocol@1.1.0
+  - @procwire/codecs@1.1.1
