@@ -11,13 +11,12 @@ import {
   msgpack,
   msgpackCodec,
   rawCodec,
-  arrowCodec,
   type MsgPackCodec,
-  type ArrowCodec,
   type ExtractSchema,
   type InferCodecInput,
   type InferCodecOutput,
 } from "@procwire/codecs";
+import { arrowCodec, type ArrowCodec } from "@procwire/codecs/arrow";
 import type { SendReturn } from "@procwire/runtime-core";
 
 // ═══════════════════════════════════════════════════════════════════════════

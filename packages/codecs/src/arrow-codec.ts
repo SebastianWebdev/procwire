@@ -122,7 +122,7 @@ export class ArrowCodec implements Codec<ArrowSerializable, Table> {
     const columns: Record<string, Vector> = {};
 
     for (const [name, values] of Object.entries(obj)) {
-      columns[name] = this.arrayToVector(values);
+      columns[name] = this.arrayToVector(name, values);
     }
 
     return new Table(columns);
@@ -130,23 +130,49 @@ export class ArrowCodec implements Codec<ArrowSerializable, Table> {
 
   /**
    * Convert array to Arrow Vector with appropriate type.
+   *
+   * Plain arrays must be homogeneous: every non-null element shares the same
+   * JS type (all `number` or all `string`). Mixed or unsupported element types
+   * are rejected with a clear, column-named error instead of being silently
+   * coerced by Arrow (which turns `[1, "x"]` into `[1, NaN]`). `null`/`undefined`
+   * are tolerated as Arrow nulls. Empty (and all-null) columns default to a
+   * stable `Float64`, so an empty numeric column shares the schema of a filled
+   * one — an empty string column needs a typed input (`Utf8`) or a `Table`.
    */
   private arrayToVector(
+    name: string,
     arr: number[] | string[] | Float32Array | Float64Array | Int32Array,
   ): Vector {
     // TypedArrays use makeVector (infers type automatically)
     if (arr instanceof Float32Array || arr instanceof Float64Array || arr instanceof Int32Array) {
       return makeVector(arr);
     }
-    // Regular arrays use vectorFromArray
-    if (arr.length === 0) {
-      // Default to float64 for empty arrays
-      return vectorFromArray([], new Float64());
+
+    // Plain array: validate homogeneity, ignoring null/undefined (Arrow nulls).
+    let elemType: "number" | "string" | undefined;
+    for (const value of arr) {
+      if (value === null || value === undefined) continue;
+      const t = typeof value;
+      if (t !== "number" && t !== "string") {
+        throw new TypeError(
+          `ArrowCodec: column "${name}" has an unsupported element type "${t}"; ` +
+            `object columns must be number[] or string[] (or a TypedArray).`,
+        );
+      }
+      if (elemType === undefined) {
+        elemType = t;
+      } else if (elemType !== t) {
+        throw new TypeError(
+          `ArrowCodec: column "${name}" is a mixed-type array (found both ` +
+            `${elemType} and ${t}); each column must be homogeneous.`,
+        );
+      }
     }
-    if (typeof arr[0] === "string") {
+
+    if (elemType === "string") {
       return vectorFromArray(arr as string[], new Utf8());
     }
-    // Default: number[] as Float64
+    // number, empty, or all-null → stable Float64.
     return vectorFromArray(arr as number[], new Float64());
   }
 }

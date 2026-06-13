@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import { Module } from "../src/module.js";
-import { msgpackCodec, arrowCodec } from "@procwire/codecs";
+import { msgpackCodec } from "@procwire/codecs";
+import { arrowCodec } from "@procwire/codecs/arrow";
 import { buildFrame, Flags } from "@procwire/protocol";
 
 describe("Module", () => {

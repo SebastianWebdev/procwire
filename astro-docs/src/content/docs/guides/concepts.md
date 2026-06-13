@@ -64,7 +64,7 @@ Codecs turn values into payload bytes (and back). Each method and event picks it
 
 - **`rawCodec`** — Buffer pass-through, no serialization. `RawChunksCodec` additionally returns the received chunks as `Buffer[]` for true zero-copy handling of large binary payloads.
 - **`msgpackCodec`** — the default. MessagePack for structured objects, with `Buffer` and `Date` supported as extension types.
-- **`arrowCodec`** — Apache Arrow IPC format for columnar/numeric data (embeddings, query results). Zero-copy reads and cross-language compatible (Python, Rust, ...).
+- **`arrowCodec`** — Apache Arrow IPC format for columnar/numeric data (embeddings, query results). Zero-copy reads and cross-language compatible (Python, Rust, ...). Imported from the opt-in `@procwire/codecs/arrow` subpath, which needs the `apache-arrow` peer dependency installed (`npm install apache-arrow`); raw/MsgPack-only setups stay free of its footprint.
 
 ## Lifecycle & Restart Policy
 

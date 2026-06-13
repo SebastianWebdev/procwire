@@ -34,21 +34,22 @@
     "clean": "rimraf dist results \"*.tsbuildinfo\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "bench": "tsx src/index.ts",
-    "bench:quick": "tsx src/index.ts --quick",
-    "bench:bun": "bun run src/index.ts --runtime bun",
-    "bench:bun:quick": "bun run src/index.ts --runtime bun --quick",
-    "bench:compare": "tsx src/index.ts && bun run src/index.ts --runtime bun",
-    "bench:lifecycle": "tsx src/lifecycle.ts",
-    "bench:heartbeat": "tsx src/heartbeat.ts",
-    "bench:backpressure": "tsx src/backpressure.ts"
+    "bench": "tsx --expose-gc src/index.ts",
+    "bench:quick": "tsx --expose-gc src/index.ts --quick",
+    "bench:bun": "bun --expose-gc run src/index.ts --runtime bun",
+    "bench:bun:quick": "bun --expose-gc run src/index.ts --runtime bun --quick",
+    "bench:compare": "tsx --expose-gc src/index.ts && bun --expose-gc run src/index.ts --runtime bun",
+    "bench:lifecycle": "tsx --expose-gc src/lifecycle.ts",
+    "bench:heartbeat": "tsx --expose-gc src/heartbeat.ts",
+    "bench:backpressure": "tsx --expose-gc src/backpressure.ts"
   },
   "dependencies": {
     "@procwire/client": "workspace:*",
     "@procwire/codecs": "workspace:*",
     "@procwire/core": "workspace:*",
     "@procwire/bun-client": "workspace:*",
-    "@procwire/bun-core": "workspace:*"
+    "@procwire/bun-core": "workspace:*",
+    "apache-arrow": "^21.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

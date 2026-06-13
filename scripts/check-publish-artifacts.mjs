@@ -68,6 +68,26 @@ for (const dir of PACKAGES) {
       );
     }
   }
+
+  // 3. codecs-specific: apache-arrow must stay an OPTIONAL peer (not a hard
+  //    dependency) so raw/msgpack-only installs don't pull Arrow's multi-MB
+  //    footprint, and the opt-in `@procwire/codecs/arrow` subpath must ship.
+  if (manifest.name === "@procwire/codecs") {
+    report(
+      manifest.name,
+      !("apache-arrow" in (manifest.dependencies ?? {})),
+      "apache-arrow is NOT a hard dependency (optional peer only)",
+    );
+    report(
+      manifest.name,
+      "apache-arrow" in (manifest.peerDependencies ?? {}) &&
+        manifest.peerDependenciesMeta?.["apache-arrow"]?.optional === true,
+      "apache-arrow is declared as an optional peerDependency",
+    );
+    for (const f of ["dist/arrow.js", "dist/arrow.d.ts"]) {
+      report(manifest.name, packedFiles.includes(f), `tarball contains ${f} (arrow subpath)`);
+    }
+  }
 }
 
 console.log("");

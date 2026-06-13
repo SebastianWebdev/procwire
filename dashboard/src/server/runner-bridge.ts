@@ -8,11 +8,19 @@
 import type { FastifyInstance } from "fastify";
 import {
   BenchmarkRunner,
+  DEFAULT_SCENARIOS,
   type BenchmarkScenario,
   type ScenarioResult,
   type TestCategory,
 } from "@procwire/bench";
 import type { ScenarioInfo } from "./types.js";
+
+/**
+ * Execution knobs (iterations, warmup, concurrency, measureMode, ...) live in
+ * the bench catalog, not in the dashboard's presentational ScenarioInfo. Index
+ * the catalog by id so a selected scenario runs with its real settings.
+ */
+const BENCH_SCENARIOS_BY_ID = new Map(DEFAULT_SCENARIOS.map((s) => [s.id, s]));
 
 /**
  * Validates and converts category string to TestCategory.
@@ -28,6 +36,23 @@ function toTestCategory(category: string | undefined): TestCategory {
  * Converts dashboard ScenarioInfo to BenchmarkScenario.
  */
 function toBenchmarkScenario(info: ScenarioInfo): BenchmarkScenario {
+  const canonical = BENCH_SCENARIOS_BY_ID.get(info.id);
+  if (canonical) {
+    // Keep every execution knob (iterations/warmup/concurrency/measureMode/...)
+    // from the bench catalog so scenarios like `max-rps` and
+    // `pipelined-throughput` run as defined instead of a short sequential
+    // default; let the dashboard override only the presentational selection.
+    return {
+      ...canonical,
+      name: info.name,
+      description: info.description,
+      sizes: info.sizes,
+      codecs: info.codecs,
+      modes: info.modes,
+      category: toTestCategory(info.category),
+    };
+  }
+  // Unknown id (a custom scenario not in the bench catalog): quick-mode defaults.
   return {
     id: info.id,
     name: info.name,
@@ -35,7 +60,6 @@ function toBenchmarkScenario(info: ScenarioInfo): BenchmarkScenario {
     sizes: info.sizes,
     codecs: info.codecs,
     modes: info.modes,
-    // Use quick-mode defaults for dashboard tests
     iterations: 100,
     warmup: 10,
     category: toTestCategory(info.category),

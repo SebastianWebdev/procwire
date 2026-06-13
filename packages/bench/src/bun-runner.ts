@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import os from "node:os";
 import { ModuleManager, Module } from "@procwire/bun-core";
-import { rawCodec, msgpackCodec, arrowCodec, type Codec } from "@procwire/codecs";
+import { rawCodec, msgpackCodec, type Codec } from "@procwire/codecs";
+import { arrowCodec } from "@procwire/codecs/arrow";
 
 import type {
   BenchmarkScenario,
