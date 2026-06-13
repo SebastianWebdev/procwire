@@ -449,5 +449,26 @@ describe("End-to-End Integration", { retry: 2 }, () => {
       const result = await module.send("echo", { hello: "auth" });
       expect(result).toEqual({ hello: "auth" });
     });
+
+    it("an ambient PROCWIRE_TOKEN in the parent env does not force auth on an auth-off child", async () => {
+      // A stray token in the parent env (nested worker / CI) must not leak into
+      // an auth-off child and make it demand an AUTH frame the parent never sends.
+      const prev = process.env.PROCWIRE_TOKEN;
+      process.env.PROCWIRE_TOKEN = "ambient-should-be-stripped";
+      try {
+        const module = new Module("echo")
+          .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+          .method("echo", { response: "result" });
+
+        manager.register(module);
+        await manager.spawn("echo");
+
+        expect(module.state).toBe("ready");
+        expect(await module.send("echo", { ambient: true })).toEqual({ ambient: true });
+      } finally {
+        if (prev === undefined) delete process.env.PROCWIRE_TOKEN;
+        else process.env.PROCWIRE_TOKEN = prev;
+      }
+    });
   });
 });

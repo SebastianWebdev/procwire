@@ -418,6 +418,12 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     }
     for (const frame of frames) {
       this._handleFrame(frame);
+      // A frame may have torn the connection down mid-batch: a failed-auth drop
+      // (_dropUnauthenticated) or a disconnect nils _frameBuffer. Stop feeding
+      // the rest of THIS chunk's frames into a dead/unauthenticated session -
+      // otherwise a peer could pack [bad-auth][valid-request] in one packet and
+      // have the request dispatched without ever authenticating.
+      if (!this._frameBuffer) break;
     }
   }
 

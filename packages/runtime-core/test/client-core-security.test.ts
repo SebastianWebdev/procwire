@@ -207,4 +207,44 @@ describe("ClientCore: data-plane auth gate (Workstream C.2)", () => {
       else process.env.PROCWIRE_TOKEN = prev;
     }
   });
+
+  it("does not dispatch a request batched after a failed-auth frame in the same chunk", async () => {
+    let handled = false;
+    const client = (await started(
+      new TestClient({ authToken: "s3cret-token" }).handle("echo", async (data, ctx) => {
+        handled = true;
+        await ctx.respond(data);
+      }) as TestClient,
+    )) as TestClient;
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    // One packet: a bad-auth frame followed by a valid request. The drop must
+    // halt processing of the rest of the batch, so the request never runs.
+    client.data(Buffer.concat([authFrame("wrong"), requestFrame(1, 5, { x: 1 })]));
+
+    expect(handled).toBe(false);
+    expect(client.adoptCount).toBe(0);
+    expect(transport.closeCount).toBe(1);
+  });
+
+  it("still processes a request batched after a VALID auth frame in the same chunk", async () => {
+    let handled = false;
+    const client = (await started(
+      new TestClient({ authToken: "s3cret-token" }).handle("echo", async (data, ctx) => {
+        handled = true;
+        await ctx.respond(data);
+      }) as TestClient,
+    )) as TestClient;
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    // The legit fast path: AUTH + first request in one packet -> adopt AND serve.
+    client.data(Buffer.concat([authFrame("s3cret-token"), requestFrame(1, 6, { y: 2 })]));
+
+    await vi.waitFor(() => expect(transport.frames).toHaveLength(1));
+    expect(handled).toBe(true);
+    expect(client.adoptCount).toBe(1);
+    expect(msgpackCodec.deserialize(transport.frames[0]!.payload)).toEqual({ y: 2 });
+  });
 });
