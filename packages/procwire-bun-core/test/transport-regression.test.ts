@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { FrameBuffer } from "@procwire/protocol";
 import { rawCodec, msgpackCodec } from "@procwire/codecs";
 import { Module } from "../src/index.js";
@@ -20,7 +21,9 @@ interface SendInternals {
 }
 
 function tmpSock(): string {
-  return `/tmp/procwire-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}.sock`;
+  const id = `procwire-test-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  // Windows has no AF_UNIX path under /tmp; Bun.listen needs a named pipe there.
+  return process.platform === "win32" ? `\\\\.\\pipe\\${id}` : `/tmp/${id}.sock`;
 }
 
 async function waitFor(cond: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -565,7 +568,7 @@ describe("Canary W6 (bun-core): heavy sync stdout logging must not deadlock the 
   it("a child that logs heavily can still respond (no pipe deadlock)", async () => {
     const { ModuleManager } = await import("../src/index.js");
 
-    const fixture = new URL("./fixtures/flood-child.ts", import.meta.url).pathname;
+    const fixture = fileURLToPath(new URL("./fixtures/flood-child.ts", import.meta.url));
     const mod = new Module("flooder")
       .executable("bun", [fixture])
       .method("flood")
@@ -595,7 +598,7 @@ describe("D10 (bun-core e2e): a child with a patched console.log still handshake
   it("spawns, answers a request, and answers a heartbeat ping", async () => {
     const { ModuleManager } = await import("../src/index.js");
 
-    const fixture = new URL("./fixtures/patched-console-child.ts", import.meta.url).pathname;
+    const fixture = fileURLToPath(new URL("./fixtures/patched-console-child.ts", import.meta.url));
     const mod = new Module("patched")
       .executable("bun", [fixture])
       .method("echo")

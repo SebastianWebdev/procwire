@@ -82,6 +82,8 @@ export interface MemoryStats {
 
 export interface PerformanceTarget {
   size: PayloadSize;
+  // Optional: runs stored before schema v2 have no per-target execution mode.
+  executionMode?: ExecutionMode;
   targetMBps: number;
   actualMBps: number;
   passed: boolean;
@@ -111,6 +113,7 @@ export interface ScenarioResult {
   latency: LatencyStats;
   memory: MemoryStats;
   errors: number;
+  executionMode: ExecutionMode;
 }
 
 export interface RunDetailResponse extends RunSummary {

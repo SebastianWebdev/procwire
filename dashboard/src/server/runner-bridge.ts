@@ -8,11 +8,52 @@
 import type { FastifyInstance } from "fastify";
 import {
   BenchmarkRunner,
+  DEFAULT_SCENARIOS,
+  QUICK_SCENARIOS,
   type BenchmarkScenario,
   type ScenarioResult,
   type TestCategory,
 } from "@procwire/bench";
 import type { ScenarioInfo } from "./types.js";
+
+/**
+ * Execution knobs (iterations, warmup, concurrency, measureMode, ...) live in
+ * the bench catalog, not in the dashboard's presentational ScenarioInfo. Index
+ * the catalog by id so a selected scenario runs with its real settings.
+ */
+const BENCH_SCENARIOS_BY_ID = new Map(DEFAULT_SCENARIOS.map((s) => [s.id, s]));
+
+/**
+ * Quick-mode catalog: the same scenarios with reduced iterations/warmups (and
+ * unchanged concurrency/measureMode). Used when the dashboard requests
+ * `options.quick` so the Quick Mode toggle keeps built-in scenarios short.
+ */
+const QUICK_SCENARIOS_BY_ID = new Map(QUICK_SCENARIOS.map((s) => [s.id, s]));
+
+/**
+ * Resolves the effective run-level concurrency for a set of selected scenarios.
+ *
+ * A scenario's own `concurrency` (e.g. `max-rps` at 32) wins over the run-level
+ * option, so the runner executes it pipelined regardless of the option. We take
+ * the peak effective concurrency across the selected scenarios so the run is
+ * recorded/shown as pipelined (instead of a misleading sequential/1) whenever it
+ * contains pipelined work. Per-result `executionMode` carries the precise detail.
+ */
+export function resolveRunConcurrency(
+  scenarioInfos: ScenarioInfo[],
+  optionConcurrency?: number,
+): number {
+  const runConcurrency = optionConcurrency ?? 1;
+  let effective = runConcurrency;
+  for (const info of scenarioInfos) {
+    const canonical = BENCH_SCENARIOS_BY_ID.get(info.id);
+    const scenarioConcurrency = canonical?.concurrency ?? runConcurrency;
+    if (scenarioConcurrency > effective) {
+      effective = scenarioConcurrency;
+    }
+  }
+  return effective;
+}
 
 /**
  * Validates and converts category string to TestCategory.
@@ -26,8 +67,31 @@ function toTestCategory(category: string | undefined): TestCategory {
 
 /**
  * Converts dashboard ScenarioInfo to BenchmarkScenario.
+ *
+ * When `quick` is requested, built-in scenarios are sourced from the reduced
+ * quick-mode catalog so the dashboard's Quick Mode toggle keeps runs short
+ * (otherwise canonical scenarios like `latency-baseline` would run their full
+ * 10,000 iterations regardless of the toggle).
  */
-function toBenchmarkScenario(info: ScenarioInfo): BenchmarkScenario {
+export function toBenchmarkScenario(info: ScenarioInfo, quick: boolean): BenchmarkScenario {
+  const catalog = quick ? QUICK_SCENARIOS_BY_ID : BENCH_SCENARIOS_BY_ID;
+  const canonical = catalog.get(info.id);
+  if (canonical) {
+    // Keep every execution knob (iterations/warmup/concurrency/measureMode/...)
+    // from the bench catalog so scenarios like `max-rps` and
+    // `pipelined-throughput` run as defined instead of a short sequential
+    // default; let the dashboard override only the presentational selection.
+    return {
+      ...canonical,
+      name: info.name,
+      description: info.description,
+      sizes: info.sizes,
+      codecs: info.codecs,
+      modes: info.modes,
+      category: toTestCategory(info.category),
+    };
+  }
+  // Unknown id (a custom scenario not in the bench catalog): quick-mode defaults.
   return {
     id: info.id,
     name: info.name,
@@ -35,7 +99,6 @@ function toBenchmarkScenario(info: ScenarioInfo): BenchmarkScenario {
     sizes: info.sizes,
     codecs: info.codecs,
     modes: info.modes,
-    // Use quick-mode defaults for dashboard tests
     iterations: 100,
     warmup: 10,
     category: toTestCategory(info.category),
@@ -122,10 +185,11 @@ export async function runBenchmarkWithBroadcast(
   fastify: FastifyInstance,
   runId: number,
   scenarioInfos: ScenarioInfo[],
-  options: { concurrency?: number } = {},
+  options: { concurrency?: number; quick?: boolean } = {},
 ): Promise<void> {
-  // Convert ScenarioInfo to BenchmarkScenario
-  const scenarios = scenarioInfos.map(toBenchmarkScenario);
+  // Convert ScenarioInfo to BenchmarkScenario (quick mode swaps in the
+  // reduced-iteration catalog for built-in scenarios).
+  const scenarios = scenarioInfos.map((info) => toBenchmarkScenario(info, options.quick ?? false));
 
   // Broadcast run start
   fastify.broadcast({

@@ -3,60 +3,26 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { DEFAULT_SCENARIOS } from "@procwire/bench";
 import type { ScenariosResponse, ScenarioInfo } from "../types.js";
 
 /**
  * Available benchmark scenarios.
  *
- * These match the scenarios defined in packages/bench/src/scenarios.ts
+ * Derived from the single source of truth in @procwire/bench
+ * (packages/bench/src/scenarios.ts) so this catalog can never drift from the
+ * scenarios the runner actually executes. Only the presentational subset
+ * (no iteration/warmup/concurrency knobs) is exposed to the API.
  */
-const SCENARIOS: ScenarioInfo[] = [
-  {
-    id: "full-matrix",
-    name: "Full Matrix",
-    description: "Tests all codec×size×mode combinations",
-    sizes: ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"],
-    codecs: ["raw", "msgpack", "arrow"],
-    modes: ["result", "stream", "ack"],
-    category: "benchmark",
-  },
-  {
-    id: "latency-baseline",
-    name: "Latency Baseline",
-    description: "Small payloads focused on latency measurement",
-    sizes: ["1KB", "10KB"],
-    codecs: ["raw", "msgpack"],
-    modes: ["result"],
-    category: "benchmark",
-  },
-  {
-    id: "throughput-focus",
-    name: "Throughput Focus",
-    description: "Large payloads for maximum throughput",
-    sizes: ["1MB", "10MB", "100MB"],
-    codecs: ["raw"],
-    modes: ["result", "ack"],
-    category: "benchmark",
-  },
-  {
-    id: "codec-comparison",
-    name: "Codec Comparison",
-    description: "Compare serialization overhead across codecs",
-    sizes: ["10KB", "100KB", "1MB"],
-    codecs: ["raw", "msgpack", "arrow"],
-    modes: ["result"],
-    category: "benchmark",
-  },
-  {
-    id: "pipelined-throughput",
-    name: "Pipelined Throughput",
-    description: "High concurrency test for maximum throughput",
-    sizes: ["1KB", "10KB", "100KB"],
-    codecs: ["raw"],
-    modes: ["result"],
-    category: "benchmark",
-  },
-];
+const SCENARIOS: ScenarioInfo[] = DEFAULT_SCENARIOS.map((scenario) => ({
+  id: scenario.id,
+  name: scenario.name,
+  description: scenario.description,
+  sizes: scenario.sizes,
+  codecs: scenario.codecs,
+  modes: scenario.modes,
+  category: scenario.category ?? "benchmark",
+}));
 
 export async function scenariosRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{

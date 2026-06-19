@@ -337,12 +337,12 @@ function generatePerformanceTargetsSection(results: BenchmarkResults): string {
     return "No performance targets measured.\n";
   }
 
-  let section = "| Size | Target | Actual | Status | Margin |\n";
-  section += "|------|--------|--------|--------|--------|\n";
+  let section = "| Size | Mode | Target | Actual | Status | Margin |\n";
+  section += "|------|------|--------|--------|--------|--------|\n";
 
   for (const target of targets) {
     const status = target.passed ? "PASS" : "**FAIL**";
-    section += `| ${target.size} | ${target.targetMBps} MB/s | ${target.actualMBps.toFixed(0)} MB/s | ${status} | ${target.margin} |\n`;
+    section += `| ${target.size} | ${target.executionMode} | ${target.targetMBps} MB/s | ${target.actualMBps.toFixed(0)} MB/s | ${status} | ${target.margin} |\n`;
   }
 
   return section;

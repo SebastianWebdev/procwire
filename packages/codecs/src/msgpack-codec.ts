@@ -10,7 +10,7 @@
  * @module
  */
 
-import { encode, decode, ExtensionCodec } from "@msgpack/msgpack";
+import { Decoder, Encoder, ExtensionCodec } from "@msgpack/msgpack";
 import type { Codec } from "./types.js";
 
 const extensionCodec = new ExtensionCodec();
@@ -80,16 +80,27 @@ extensionCodec.register({
 export class MsgPackCodec<TIn = unknown, TOut = TIn> implements Codec<TIn, TOut> {
   readonly name = "msgpack";
 
+  // Reusable encoder/decoder held per codec instance. The functional
+  // encode()/decode() allocate a fresh Encoder (and its ≥2KB internal buffer)
+  // on every call; pooling amortizes that across messages. We use
+  // Encoder#encode() (which returns a COPY of the internal buffer), NOT
+  // encodeSharedRef() (a view reused on the next encode): ModuleCore can hold a
+  // serialize() result across the backpressure-induced await before the socket
+  // write, so the bytes must be independent of the encoder's scratch buffer.
+  private readonly encoder = new Encoder({ extensionCodec });
+  private readonly decoder = new Decoder({ extensionCodec });
+
   /**
    * Serialize object to MsgPack binary format.
    *
-   * ⚡️ OPTIMIZATION: Uses Buffer.from(view) instead of copying data.
+   * The Buffer EXT type is copied on encode (decode aliases the input — see the
+   * extension registration above), so mutating a source Buffer after serialize()
+   * never changes the bytes already handed to the transport.
    */
   serialize(data: TIn): Buffer {
-    const encoded = encode(data, { extensionCodec });
+    const encoded = this.encoder.encode(data);
 
-    // ⚡️ Create Buffer VIEW over the Uint8Array's underlying ArrayBuffer
-    // This avoids copying the data!
+    // Create a Buffer VIEW over the encoded copy's ArrayBuffer (no second copy).
     return Buffer.from(encoded.buffer, encoded.byteOffset, encoded.byteLength);
   }
 
@@ -97,7 +108,7 @@ export class MsgPackCodec<TIn = unknown, TOut = TIn> implements Codec<TIn, TOut>
    * Deserialize MsgPack binary to object.
    */
   deserialize(buffer: Buffer): TOut {
-    return decode(buffer, { extensionCodec }) as TOut;
+    return this.decoder.decode(buffer) as TOut;
   }
 }
 

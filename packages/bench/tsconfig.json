@@ -4,5 +4,5 @@
     "outDir": "./dist",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "workers/**/*.ts"]
+  "include": ["src/**/*.ts", "workers/**/*.ts", "test/**/*.ts"]
 }

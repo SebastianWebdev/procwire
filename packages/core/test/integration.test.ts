@@ -25,11 +25,15 @@ const TSX_LOADER = pathToFileURL(
 // Use node with tsx loader
 const NODE_BIN = process.execPath; // Current Node.js binary
 
-// These tests spawn real child processes over OS pipes, so they are inherently
-// timing-sensitive and occasionally flake on shared/slow CI runners. Retry a
-// couple of times so a transient hiccup doesn't fail the whole run. Deterministic
-// failures still fail (all attempts fail); only genuinely transient ones recover.
-describe("End-to-End Integration", { retry: 2 }, () => {
+// These tests spawn real child processes (Node + tsx transpile) over OS pipes,
+// so startup/IO latency varies on shared/slow CI runners. We allow a generous
+// per-test timeout instead of retrying: `retry` re-runs assertion failures too,
+// masking real regressions, whereas a generous timeout only tolerates slowness —
+// a wrong result still fails on the first attempt. The heavy backpressure cases
+// keep their own larger explicit timeouts. The lifecycle races this suite used
+// to flake on (W4/D1/D2) now have deterministic coverage in
+// @procwire/runtime-core's manager-core tests against fake hooks.
+describe("End-to-End Integration", { timeout: 30000 }, () => {
   let manager: ModuleManager;
 
   beforeEach(() => {

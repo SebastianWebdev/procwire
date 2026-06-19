@@ -233,6 +233,77 @@ describe("ArrowCodec", () => {
     });
   });
 
+  describe("object-input validation (E4)", () => {
+    // Mixed/unsupported element types are outside the declared ArrowObjectInput
+    // type but reachable at runtime, so the inputs are cast to exercise the guard.
+    it("should reject a mixed number/string column with a clear error", () => {
+      const codec = new ArrowCodec();
+      expect(() => codec.serialize({ values: [1, "two", 3] as unknown as number[] })).toThrow(
+        /mixed-type/i,
+      );
+    });
+
+    it("should reject a mixed string/number column with a clear error", () => {
+      const codec = new ArrowCodec();
+      expect(() => codec.serialize({ values: ["one", 2, "three"] as unknown as string[] })).toThrow(
+        /mixed-type/i,
+      );
+    });
+
+    it("should name the offending column in the error", () => {
+      const codec = new ArrowCodec();
+      expect(() => codec.serialize({ scores: [1, "x"] as unknown as number[] })).toThrow(/scores/);
+    });
+
+    it("should reject unsupported element types (boolean) instead of silently coercing", () => {
+      const codec = new ArrowCodec();
+      expect(() => codec.serialize({ flags: [true, false] as unknown as number[] })).toThrow(
+        /unsupported element type/i,
+      );
+    });
+
+    it("should produce the same schema for an empty and a non-empty numeric column", () => {
+      const codec = new ArrowCodec();
+
+      const empty = codec.deserialize(codec.serialize({ x: [] }));
+      const filled = codec.deserialize(codec.serialize({ x: [1, 2, 3] }));
+
+      expect(empty.schema.fields[0]!.type.toString()).toBe(
+        filled.schema.fields[0]!.type.toString(),
+      );
+    });
+
+    it("should tolerate nulls inside an otherwise-numeric column", () => {
+      const codec = new ArrowCodec();
+      const table = codec.deserialize(codec.serialize({ x: [1, null as unknown as number, 3] }));
+      expect(table.numRows).toBe(3);
+    });
+
+    it("should map undefined (like null) to Arrow nulls, not NaN/empty string", () => {
+      const codec = new ArrowCodec();
+      const table = codec.deserialize(
+        codec.serialize({
+          scores: [1, undefined as unknown as number, null as unknown as number, 4],
+          names: ["a", undefined as unknown as string, null as unknown as string, "d"],
+        }),
+      );
+
+      const scores = table.getChild("scores")!;
+      const names = table.getChild("names")!;
+      // undefined and null both become real Arrow nulls (nullCount = 2) instead
+      // of being coerced to NaN (numeric) or "" (string).
+      expect(scores.nullCount).toBe(2);
+      expect(scores.get(0)).toBe(1);
+      expect(scores.isValid(1)).toBe(false); // undefined → null
+      expect(scores.isValid(2)).toBe(false); // null → null
+      expect(scores.get(3)).toBe(4);
+      expect(names.nullCount).toBe(2);
+      expect(names.get(0)).toBe("a");
+      expect(names.isValid(1)).toBe(false); // undefined → null
+      expect(names.get(3)).toBe("d");
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle single row", () => {
       const codec = new ArrowCodec();

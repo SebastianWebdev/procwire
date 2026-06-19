@@ -252,12 +252,12 @@ export class BenchmarkDbService {
   saveResult(runId: number, result: ScenarioResult): void {
     const stmt = this.db.prepare(`
       INSERT INTO results (
-        run_id, scenario_id, codec, size, mode,
+        run_id, scenario_id, codec, size, mode, execution_mode,
         throughput_mbps, total_bytes, duration_ms,
         request_count, requests_per_second, errors,
         latency, memory
       ) VALUES (
-        @run_id, @scenario_id, @codec, @size, @mode,
+        @run_id, @scenario_id, @codec, @size, @mode, @execution_mode,
         @throughput_mbps, @total_bytes, @duration_ms,
         @request_count, @requests_per_second, @errors,
         @latency, @memory
@@ -270,6 +270,7 @@ export class BenchmarkDbService {
       codec: result.codec,
       size: result.size,
       mode: result.mode,
+      execution_mode: result.executionMode,
       throughput_mbps: result.throughputMBps,
       total_bytes: result.totalBytes,
       duration_ms: result.durationMs,
@@ -287,12 +288,12 @@ export class BenchmarkDbService {
   saveResults(runId: number, results: ScenarioResult[]): void {
     const stmt = this.db.prepare(`
       INSERT INTO results (
-        run_id, scenario_id, codec, size, mode,
+        run_id, scenario_id, codec, size, mode, execution_mode,
         throughput_mbps, total_bytes, duration_ms,
         request_count, requests_per_second, errors,
         latency, memory
       ) VALUES (
-        @run_id, @scenario_id, @codec, @size, @mode,
+        @run_id, @scenario_id, @codec, @size, @mode, @execution_mode,
         @throughput_mbps, @total_bytes, @duration_ms,
         @request_count, @requests_per_second, @errors,
         @latency, @memory
@@ -307,6 +308,7 @@ export class BenchmarkDbService {
           codec: result.codec,
           size: result.size,
           mode: result.mode,
+          execution_mode: result.executionMode,
           throughput_mbps: result.throughputMBps,
           total_bytes: result.totalBytes,
           duration_ms: result.durationMs,
@@ -345,6 +347,7 @@ export class BenchmarkDbService {
       codec: row.codec,
       size: row.size,
       mode: row.mode,
+      executionMode: row.execution_mode,
       throughputMBps: row.throughput_mbps,
       totalBytes: row.total_bytes,
       durationMs: row.duration_ms,

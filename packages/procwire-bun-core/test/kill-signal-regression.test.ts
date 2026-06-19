@@ -11,11 +11,12 @@
  * Written to FAIL against the buggy code and PASS once the fix is applied.
  */
 import { describe, it, expect } from "bun:test";
+import { fileURLToPath } from "node:url";
 import { Module, ModuleManager } from "../src/index.js";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
-const FIXTURE = new URL("./fixtures/sigterm-trap-child.ts", import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL("./fixtures/sigterm-trap-child.ts", import.meta.url));
 
 function isAlive(pid: number): boolean {
   try {
@@ -68,7 +69,11 @@ function forceReap(proc: BunSubprocess): void {
   }
 }
 
-describe("D8 (bun-core): force kills must use SIGKILL", () => {
+// POSIX-only: these pin that a child which TRAPS SIGTERM is still force-killed
+// via SIGKILL. Windows has no POSIX signal trapping (kill() maps to
+// TerminateProcess regardless), so the "survives SIGTERM" premise can't hold —
+// skip there. The Bun named-pipe data plane itself is still exercised on Windows.
+describe.skipIf(process.platform === "win32")("D8 (bun-core): force kills must use SIGKILL", () => {
   it("_killProcess terminates a child that traps SIGTERM", async () => {
     const proc = await spawnTrapChild();
     try {

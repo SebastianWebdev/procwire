@@ -6,7 +6,8 @@
  */
 
 import { Client } from "@procwire/client";
-import { rawCodec, msgpackCodec, arrowCodec } from "@procwire/codecs";
+import { rawCodec, msgpackCodec } from "@procwire/codecs";
+import { arrowCodec } from "@procwire/codecs/arrow";
 
 const STREAM_CHUNK_COUNT = 10;
 

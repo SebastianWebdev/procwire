@@ -26,6 +26,7 @@ describe("Dashboard API", () => {
     codec: "raw",
     size: "1KB",
     mode: "result",
+    executionMode: "sequential",
     throughputMBps: 25.5,
     totalBytes: 1024000,
     durationMs: 1000,

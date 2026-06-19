@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { rawCodec, rawChunksCodec, msgpackCodec, arrowCodec } from '@procwire/codecs';
+ * import { rawCodec, rawChunksCodec, msgpackCodec } from '@procwire/codecs';
  *
  * // For small/medium payloads - returns Buffer
  * const data = rawCodec.deserialize(payload);
@@ -17,8 +17,9 @@
  * // For objects with Date/Buffer support
  * const obj = msgpackCodec.deserialize(payload);
  *
- * // For columnar data (ML embeddings, query results)
- * const table = arrowCodec.deserialize(payload);
+ * // For columnar data (ML embeddings, query results), import the opt-in
+ * // subpath (requires the `apache-arrow` peer dependency):
+ * //   import { arrowCodec } from '@procwire/codecs/arrow';
  * ```
  *
  * @module @procwire/codecs
@@ -32,12 +33,9 @@ export { RawCodec, rawCodec, RawChunksCodec, rawChunksCodec } from "./raw-codec.
 
 export { MsgPackCodec, msgpackCodec, msgpack } from "./msgpack-codec.js";
 
-export {
-  ArrowCodec,
-  arrowCodec,
-  type ArrowSerializable,
-  type ArrowObjectInput,
-} from "./arrow-codec.js";
+// NOTE: the Arrow codec is intentionally NOT re-exported here. It lives behind
+// the opt-in `@procwire/codecs/arrow` subpath so that importing this package
+// never eagerly loads `apache-arrow` (an optional peer dependency). See arrow.ts.
 
 export type {
   InferCodecInput,

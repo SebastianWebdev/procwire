@@ -4,7 +4,7 @@
 
 import type Database from "better-sqlite3";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * Initialize the database schema, running any pending migrations.
@@ -17,8 +17,17 @@ export function initializeSchema(db: Database.Database): void {
   const versionRow = db.pragma("user_version", { simple: true }) as number;
 
   if (versionRow < SCHEMA_VERSION) {
-    runMigrations(db, versionRow);
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    // Run the migrations and bump user_version atomically. DDL is transactional
+    // in SQLite, so a crash mid-upgrade rolls back BOTH the schema change and
+    // the version bump together. Without this, a process killed after an
+    // ALTER TABLE but before the version bump would re-enter runMigrations on
+    // the next start and re-run the same `ADD COLUMN`, throwing
+    // "duplicate column name" and bricking startup.
+    const migrate = db.transaction(() => {
+      runMigrations(db, versionRow);
+      db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    });
+    migrate();
   }
 }
 
@@ -29,8 +38,9 @@ function runMigrations(db: Database.Database, fromVersion: number): void {
   if (fromVersion < 1) {
     db.exec(MIGRATION_001);
   }
-  // Future migrations would go here:
-  // if (fromVersion < 2) { db.exec(MIGRATION_002); }
+  if (fromVersion < 2) {
+    db.exec(MIGRATION_002);
+  }
 }
 
 /**
@@ -86,6 +96,20 @@ const MIGRATION_001 = `
   CREATE INDEX IF NOT EXISTS idx_results_run_id ON results(run_id);
   CREATE INDEX IF NOT EXISTS idx_results_scenario ON results(scenario_id);
   CREATE INDEX IF NOT EXISTS idx_results_lookup ON results(codec, size, mode);
+`;
+
+/**
+ * Migration 002: Per-result execution mode.
+ *
+ * Records whether each result was produced sequentially or pipelined, so the
+ * dashboard can grade a result against the target set matching its own
+ * concurrency (scenarios like `pipelined-throughput` carry their own
+ * concurrency and run pipelined even when the run-level option is sequential).
+ * Existing rows predate pipelined scenarios and default to 'sequential'.
+ */
+const MIGRATION_002 = `
+  ALTER TABLE results ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'sequential'
+    CHECK (execution_mode IN ('sequential', 'pipelined'));
 `;
 
 /**

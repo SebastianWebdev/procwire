@@ -221,6 +221,37 @@ describe("MsgPackCodec", () => {
     });
   });
 
+  describe("encode copy semantics (E2/E3)", () => {
+    it("copies Buffer payloads on encode (post-serialize mutation never changes the bytes)", () => {
+      const codec = new MsgPackCodec<{ data: Buffer }>();
+      const src = Buffer.from([1, 2, 3, 4]);
+
+      const serialized = codec.serialize({ data: src });
+      const snapshot = Buffer.from(serialized); // independent copy of the wire bytes
+      src.fill(0xff); // mutate the SOURCE after serialize()
+
+      // Wire bytes are unaffected, and they still decode to the original value.
+      expect(Buffer.compare(serialized, snapshot)).toBe(0);
+      expect(Buffer.compare(codec.deserialize(serialized).data, Buffer.from([1, 2, 3, 4]))).toBe(0);
+    });
+
+    it("keeps an earlier serialize() result valid after many later calls (pooled encoder is copy-safe)", () => {
+      const codec = new MsgPackCodec<{ id: number; tag: string }>();
+
+      const first = codec.serialize({ id: 1, tag: "first" });
+      const snapshot = Buffer.from(first);
+
+      // Subsequent encodes reuse (and grow) the encoder's internal buffer; if we
+      // returned a shared ref instead of a copy, `first` would be corrupted here.
+      for (let i = 0; i < 200; i++) {
+        codec.serialize({ id: i, tag: "x".repeat(i) });
+      }
+
+      expect(Buffer.compare(first, snapshot)).toBe(0);
+      expect(codec.deserialize(first)).toEqual({ id: 1, tag: "first" });
+    });
+  });
+
   describe("performance", () => {
     it("should be compact for typical payloads", () => {
       const codec = new MsgPackCodec();

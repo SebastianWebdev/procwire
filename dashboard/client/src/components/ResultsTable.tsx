@@ -27,6 +27,9 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
 
   const targetMap = useMemo(() => {
     const map = new Map<string, PerformanceTarget>();
+    // One target per size: performance targets are graded against the whole-run
+    // execution mode (see packages/bench/src/targets.ts), so each result is
+    // matched to its size's target regardless of the mode the row itself ran in.
     targets?.forEach((t) => {
       map.set(t.size, t);
     });
