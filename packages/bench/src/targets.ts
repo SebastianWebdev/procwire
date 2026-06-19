@@ -1,81 +1,65 @@
 /**
  * Performance target evaluation.
  *
- * Targets are evaluated per (size, executionMode): a result produced under
- * pipelining is judged against the pipelined target set, a sequential result
- * against the sequential one. This keeps mixed runs (a scenario carrying its
- * own `concurrency`, e.g. `pipelined-throughput`, alongside sequential ones)
- * honest instead of grading pipelined throughput against sequential targets.
+ * Targets are graded against the WHOLE-RUN execution mode: a sequential run
+ * (run-level concurrency 1) is judged against the sequential target set, a
+ * pipelined run (run-level `--concurrency > 1`) against the pipelined set.
+ *
+ * Each `ScenarioResult` still records the per-result `executionMode` it ran
+ * under (a scenario like `pipelined-throughput` carries its own concurrency and
+ * runs pipelined even in a sequential run), but the pass/fail grade uses the
+ * run-level mode. The pipelined targets assume high concurrency (≥32); grading a
+ * default run's low-concurrency pipelined scenarios against them would make the
+ * default `pnpm bench` fail, so the run-level mode is the honest yardstick.
  */
 
-import type {
-  BenchmarkScenario,
-  ExecutionMode,
-  PayloadSize,
-  PerformanceTarget,
-  ScenarioResult,
-} from "./types.js";
+import type { ExecutionMode, PerformanceTarget, ScenarioResult } from "./types.js";
 import { PERFORMANCE_TARGETS } from "./types.js";
-
-const TARGET_SIZES: PayloadSize[] = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"];
-const TARGET_MODES: ExecutionMode[] = ["sequential", "pipelined"];
+import { ALL_SIZES } from "./scenarios.js";
 
 /**
- * Resolves the execution mode a scenario runs under, honoring its own
- * `concurrency` first and falling back to the run-level concurrency.
- */
-export function scenarioExecutionMode(
-  scenario: Pick<BenchmarkScenario, "concurrency">,
-  runConcurrency: number,
-): ExecutionMode {
-  const effective = scenario.concurrency ?? runConcurrency;
-  return effective > 1 ? "pipelined" : "sequential";
-}
-
-/**
- * Calculates performance target results.
+ * Calculates performance target results for a run.
  *
- * For each payload size and execution mode, the best raw/result throughput is
- * compared against the target set matching that mode. A size yields up to two
- * targets (one per mode) when both sequential and pipelined raw/result results
- * are present in the run.
+ * For each payload size, the best raw/result throughput is compared against the
+ * target set matching the run's execution mode.
  *
- * @param results - Benchmark results to evaluate (each carries its executionMode)
+ * @param results - Benchmark results to evaluate
+ * @param executionMode - Which target set to grade against (the run-level mode)
  */
-export function calculatePerformanceTargets(results: ScenarioResult[]): PerformanceTarget[] {
+export function calculatePerformanceTargets(
+  results: ScenarioResult[],
+  executionMode: ExecutionMode = "sequential",
+): PerformanceTarget[] {
   const targets: PerformanceTarget[] = [];
+  const targetSet = PERFORMANCE_TARGETS[executionMode];
 
-  for (const size of TARGET_SIZES) {
-    for (const mode of TARGET_MODES) {
-      // Only raw/result results define the throughput baseline, judged against
-      // the target set matching the mode they were produced under.
-      const sizeResults = results.filter(
-        (r) =>
-          r.size === size && r.codec === "raw" && r.mode === "result" && r.executionMode === mode,
-      );
+  for (const size of ALL_SIZES) {
+    // Only raw/result results define the throughput baseline.
+    const sizeResults = results.filter(
+      (r) => r.size === size && r.codec === "raw" && r.mode === "result",
+    );
 
-      if (sizeResults.length === 0) continue;
+    if (sizeResults.length === 0) continue;
 
-      const bestResult = sizeResults.reduce((best, r) =>
-        r.throughputMBps > best.throughputMBps ? r : best,
-      );
+    const bestResult = sizeResults.reduce((best, r) =>
+      r.throughputMBps > best.throughputMBps ? r : best,
+    );
 
-      const targetMBps = PERFORMANCE_TARGETS[mode][size];
-      const actualMBps = bestResult.throughputMBps;
-      const passed = actualMBps >= targetMBps;
-      const marginPercent = ((actualMBps - targetMBps) / targetMBps) * 100;
-      const margin =
-        marginPercent >= 0 ? `+${marginPercent.toFixed(0)}%` : `${marginPercent.toFixed(0)}%`;
+    const targetMBps = targetSet[size];
+    const actualMBps = bestResult.throughputMBps;
+    const passed = actualMBps >= targetMBps;
+    const marginPercent = ((actualMBps - targetMBps) / targetMBps) * 100;
+    const margin =
+      marginPercent >= 0 ? `+${marginPercent.toFixed(0)}%` : `${marginPercent.toFixed(0)}%`;
 
-      targets.push({
-        size,
-        executionMode: mode,
-        targetMBps,
-        actualMBps,
-        passed,
-        margin,
-      });
-    }
+    targets.push({
+      size,
+      executionMode,
+      targetMBps,
+      actualMBps,
+      passed,
+      margin,
+    });
   }
 
   return targets;

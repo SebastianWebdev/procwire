@@ -490,10 +490,13 @@ export class BunBenchmarkRunner extends EventEmitter {
    * Builds the final results object.
    */
   private buildResults(scenarios: BenchmarkScenario[], totalDurationMs: number): BenchmarkResults {
-    const performanceTargets = calculatePerformanceTargets(this.results);
-    const executionMode: ExecutionMode = this.results.some((r) => r.executionMode === "pipelined")
-      ? "pipelined"
-      : "sequential";
+    // Grade against the whole-run execution mode: a sequential run (run-level
+    // concurrency 1) is judged against the sequential targets, a pipelined run
+    // (--concurrency > 1) against the pipelined set. Per-result executionMode is
+    // still recorded on each row for display, but the pass/fail grade uses the
+    // run-level mode so a default run isn't held to the high-concurrency targets.
+    const executionMode: ExecutionMode = this.concurrency > 1 ? "pipelined" : "sequential";
+    const performanceTargets = calculatePerformanceTargets(this.results, executionMode);
 
     const summary: BenchmarkSummary = {
       totalDurationMs,

@@ -278,6 +278,30 @@ describe("ArrowCodec", () => {
       const table = codec.deserialize(codec.serialize({ x: [1, null as unknown as number, 3] }));
       expect(table.numRows).toBe(3);
     });
+
+    it("should map undefined (like null) to Arrow nulls, not NaN/empty string", () => {
+      const codec = new ArrowCodec();
+      const table = codec.deserialize(
+        codec.serialize({
+          scores: [1, undefined as unknown as number, null as unknown as number, 4],
+          names: ["a", undefined as unknown as string, null as unknown as string, "d"],
+        }),
+      );
+
+      const scores = table.getChild("scores")!;
+      const names = table.getChild("names")!;
+      // undefined and null both become real Arrow nulls (nullCount = 2) instead
+      // of being coerced to NaN (numeric) or "" (string).
+      expect(scores.nullCount).toBe(2);
+      expect(scores.get(0)).toBe(1);
+      expect(scores.isValid(1)).toBe(false); // undefined → null
+      expect(scores.isValid(2)).toBe(false); // null → null
+      expect(scores.get(3)).toBe(4);
+      expect(names.nullCount).toBe(2);
+      expect(names.get(0)).toBe("a");
+      expect(names.isValid(1)).toBe(false); // undefined → null
+      expect(names.get(3)).toBe("d");
+    });
   });
 
   describe("edge cases", () => {

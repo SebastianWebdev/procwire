@@ -201,6 +201,9 @@ jobs:
       - name: Typecheck bench
         run: pnpm --filter "@procwire/bench" --if-present typecheck
 
+      - name: Test bench
+        run: pnpm --filter "@procwire/bench" --if-present test
+
       - name: Typecheck dashboard
         run: pnpm --filter "procwire-dashboard" --filter "procwire-dashboard-client" --if-present typecheck
 

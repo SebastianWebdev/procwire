@@ -150,8 +150,12 @@ export class ArrowCodec implements Codec<ArrowSerializable, Table> {
 
     // Plain array: validate homogeneity, ignoring null/undefined (Arrow nulls).
     let elemType: "number" | "string" | undefined;
+    let hasUndefined = false;
     for (const value of arr) {
-      if (value === null || value === undefined) continue;
+      if (value === null || value === undefined) {
+        if (value === undefined) hasUndefined = true;
+        continue;
+      }
       const t = typeof value;
       if (t !== "number" && t !== "string") {
         throw new TypeError(
@@ -169,11 +173,18 @@ export class ArrowCodec implements Codec<ArrowSerializable, Table> {
       }
     }
 
+    // `vectorFromArray` maps `null` to an Arrow null but coerces `undefined` to
+    // NaN (numeric) or "" (string); normalize undefined → null first so the
+    // documented "null/undefined are tolerated as Arrow nulls" contract holds.
+    const values = hasUndefined
+      ? (arr as (number | string | null)[]).map((v) => (v === undefined ? null : v))
+      : arr;
+
     if (elemType === "string") {
-      return vectorFromArray(arr as string[], new Utf8());
+      return vectorFromArray(values as (string | null)[], new Utf8());
     }
     // number, empty, or all-null → stable Float64.
-    return vectorFromArray(arr as number[], new Float64());
+    return vectorFromArray(values as (number | null)[], new Float64());
   }
 }
 

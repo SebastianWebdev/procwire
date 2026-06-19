@@ -58,14 +58,14 @@ for (const dir of PACKAGES) {
     report(manifest.name, packedFiles.includes(required), `tarball contains ${required}`);
   }
 
-  // 2. No exact-pinning workspace:* in published dependency ranges
+  // 2. Published workspace deps must use a caret-compatible range. changesets
+  //    rewrites `workspace:^` to `^x.y.z`, but `workspace:*` (exact pin),
+  //    `workspace:~` (tilde) and bare `workspace:<version>` become non-caret
+  //    ranges on publish. Non-workspace ranges (e.g. "^21.0.0") are left as-is.
   for (const field of ["dependencies", "peerDependencies"]) {
     for (const [dep, range] of Object.entries(manifest[field] ?? {})) {
-      report(
-        manifest.name,
-        range !== "workspace:*",
-        `${field}.${dep} uses a caret-compatible range (got "${range}")`,
-      );
+      const ok = !range.startsWith("workspace:") || range.startsWith("workspace:^");
+      report(manifest.name, ok, `${field}.${dep} uses a caret-compatible range (got "${range}")`);
     }
   }
 

@@ -17,8 +17,17 @@ export function initializeSchema(db: Database.Database): void {
   const versionRow = db.pragma("user_version", { simple: true }) as number;
 
   if (versionRow < SCHEMA_VERSION) {
-    runMigrations(db, versionRow);
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    // Run the migrations and bump user_version atomically. DDL is transactional
+    // in SQLite, so a crash mid-upgrade rolls back BOTH the schema change and
+    // the version bump together. Without this, a process killed after an
+    // ALTER TABLE but before the version bump would re-enter runMigrations on
+    // the next start and re-run the same `ADD COLUMN`, throwing
+    // "duplicate column name" and bricking startup.
+    const migrate = db.transaction(() => {
+      runMigrations(db, versionRow);
+      db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    });
+    migrate();
   }
 }
 

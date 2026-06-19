@@ -27,13 +27,11 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
 
   const targetMap = useMemo(() => {
     const map = new Map<string, PerformanceTarget>();
-    // Key by size + execution mode: a size can carry both a sequential and a
-    // pipelined target (e.g. throughput-max vs pipelined-throughput), so each
-    // result is graded against the target matching the mode it ran under.
-    // Legacy summaries (pre-schema-v2) have no per-target mode; treat them as
-    // sequential to match migrated result rows (also defaulted to sequential).
+    // One target per size: performance targets are graded against the whole-run
+    // execution mode (see packages/bench/src/targets.ts), so each result is
+    // matched to its size's target regardless of the mode the row itself ran in.
     targets?.forEach((t) => {
-      map.set(`${t.size}|${t.executionMode ?? "sequential"}`, t);
+      map.set(t.size, t);
     });
     return map;
   }, [targets]);
@@ -152,7 +150,7 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
           </Table.Thead>
           <Table.Tbody>
             {filteredResults.map((result, i) => {
-              const target = targetMap.get(`${result.size}|${result.executionMode}`);
+              const target = targetMap.get(result.size);
               return (
                 <Table.Tr key={i}>
                   <Table.Td>

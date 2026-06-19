@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { calculatePerformanceTargets, scenarioExecutionMode } from "../src/targets.js";
+import { calculatePerformanceTargets } from "../src/targets.js";
 import { PERFORMANCE_TARGETS } from "../src/types.js";
 import type { ScenarioResult } from "../src/types.js";
 
@@ -37,68 +37,62 @@ function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
   };
 }
 
-describe("scenarioExecutionMode", () => {
-  it("honors the scenario's own concurrency over the run-level value", () => {
-    expect(scenarioExecutionMode({ concurrency: 32 }, 1)).toBe("pipelined");
-    expect(scenarioExecutionMode({ concurrency: 4 }, 1)).toBe("pipelined");
-  });
-
-  it("falls back to the run-level concurrency when the scenario has none", () => {
-    expect(scenarioExecutionMode({}, 1)).toBe("sequential");
-    expect(scenarioExecutionMode({}, 8)).toBe("pipelined");
-  });
-
-  it("treats concurrency 1 as sequential regardless of the run-level value", () => {
-    expect(scenarioExecutionMode({ concurrency: 1 }, 16)).toBe("sequential");
-  });
-});
-
 describe("calculatePerformanceTargets", () => {
-  it("grades a pipelined result against the pipelined target set", () => {
+  it("defaults to the sequential target set", () => {
     const targets = calculatePerformanceTargets([
-      makeResult({ size: "1MB", throughputMBps: 1000, executionMode: "pipelined" }),
+      makeResult({ size: "1MB", throughputMBps: 1000 }),
     ]);
 
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
       size: "1MB",
-      executionMode: "pipelined",
-      targetMBps: PERFORMANCE_TARGETS.pipelined["1MB"], // 1500
-      actualMBps: 1000,
-      passed: false, // 1000 < 1500
-    });
-  });
-
-  it("grades the same throughput as passing under the sequential target set", () => {
-    const targets = calculatePerformanceTargets([
-      makeResult({ size: "1MB", throughputMBps: 1000, executionMode: "sequential" }),
-    ]);
-
-    expect(targets[0]).toMatchObject({
       executionMode: "sequential",
       targetMBps: PERFORMANCE_TARGETS.sequential["1MB"], // 800
+      actualMBps: 1000,
       passed: true, // 1000 >= 800
     });
   });
 
-  it("emits a separate target per (size, mode) for mixed runs", () => {
-    const targets = calculatePerformanceTargets([
-      makeResult({ size: "10MB", throughputMBps: 1300, executionMode: "sequential" }),
-      makeResult({ size: "10MB", throughputMBps: 1400, executionMode: "pipelined" }),
-    ]);
+  it("grades against the pipelined target set when the run is pipelined", () => {
+    const targets = calculatePerformanceTargets(
+      [makeResult({ size: "1MB", throughputMBps: 1000 })],
+      "pipelined",
+    );
 
-    expect(targets).toHaveLength(2);
-    const seq = targets.find((t) => t.executionMode === "sequential");
-    const pipe = targets.find((t) => t.executionMode === "pipelined");
-    expect(seq?.passed).toBe(true); // 1300 >= 1200 (sequential 10MB)
-    expect(pipe?.passed).toBe(false); // 1400 < 2000 (pipelined 10MB)
+    expect(targets[0]).toMatchObject({
+      executionMode: "pipelined",
+      targetMBps: PERFORMANCE_TARGETS.pipelined["1MB"], // 1500
+      passed: false, // 1000 < 1500
+    });
   });
 
-  it("picks the best throughput within a (size, mode) group", () => {
-    const targets = calculatePerformanceTargets([
-      makeResult({ size: "1MB", throughputMBps: 900, executionMode: "pipelined" }),
-      makeResult({ size: "1MB", throughputMBps: 1600, executionMode: "pipelined" }),
-    ]);
+  it("grades every size against the whole-run mode regardless of per-result executionMode", () => {
+    // A default (sequential) run may contain rows that individually ran
+    // pipelined (e.g. pipelined-throughput @ c=4); they are still graded
+    // against the sequential targets, not held to the high-concurrency set.
+    const targets = calculatePerformanceTargets(
+      [
+        makeResult({ size: "1MB", throughputMBps: 1000, executionMode: "pipelined" }),
+        makeResult({ size: "10MB", throughputMBps: 1300, executionMode: "sequential" }),
+      ],
+      "sequential",
+    );
+
+    expect(targets).toHaveLength(2);
+    const oneMb = targets.find((t) => t.size === "1MB");
+    const tenMb = targets.find((t) => t.size === "10MB");
+    expect(oneMb).toMatchObject({ executionMode: "sequential", passed: true }); // 1000 >= 800
+    expect(tenMb).toMatchObject({ executionMode: "sequential", passed: true }); // 1300 >= 1200
+  });
+
+  it("picks the best throughput for a size", () => {
+    const targets = calculatePerformanceTargets(
+      [
+        makeResult({ size: "1MB", throughputMBps: 900 }),
+        makeResult({ size: "1MB", throughputMBps: 1600 }),
+      ],
+      "pipelined",
+    );
 
     expect(targets).toHaveLength(1);
     expect(targets[0]?.actualMBps).toBe(1600);
@@ -107,13 +101,8 @@ describe("calculatePerformanceTargets", () => {
 
   it("only considers raw/result rows", () => {
     const targets = calculatePerformanceTargets([
-      makeResult({
-        size: "1MB",
-        throughputMBps: 5000,
-        executionMode: "pipelined",
-        codec: "msgpack",
-      }),
-      makeResult({ size: "1MB", throughputMBps: 5000, executionMode: "pipelined", mode: "ack" }),
+      makeResult({ size: "1MB", throughputMBps: 5000, codec: "msgpack" }),
+      makeResult({ size: "1MB", throughputMBps: 5000, mode: "ack" }),
     ]);
 
     expect(targets).toHaveLength(0);
