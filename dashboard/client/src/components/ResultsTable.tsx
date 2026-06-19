@@ -30,8 +30,10 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
     // Key by size + execution mode: a size can carry both a sequential and a
     // pipelined target (e.g. throughput-max vs pipelined-throughput), so each
     // result is graded against the target matching the mode it ran under.
+    // Legacy summaries (pre-schema-v2) have no per-target mode; treat them as
+    // sequential to match migrated result rows (also defaulted to sequential).
     targets?.forEach((t) => {
-      map.set(`${t.size}|${t.executionMode}`, t);
+      map.set(`${t.size}|${t.executionMode ?? "sequential"}`, t);
     });
     return map;
   }, [targets]);

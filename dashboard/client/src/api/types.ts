@@ -82,7 +82,8 @@ export interface MemoryStats {
 
 export interface PerformanceTarget {
   size: PayloadSize;
-  executionMode: ExecutionMode;
+  // Optional: runs stored before schema v2 have no per-target execution mode.
+  executionMode?: ExecutionMode;
   targetMBps: number;
   actualMBps: number;
   passed: boolean;
