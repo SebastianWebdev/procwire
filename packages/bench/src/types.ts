@@ -114,6 +114,8 @@ export interface ScenarioResult {
   memory: MemoryStats;
   /** Number of errors encountered */
   errors: number;
+  /** Execution mode this result was produced under (sequential or pipelined) */
+  executionMode: ExecutionMode;
 }
 
 /**
@@ -122,6 +124,8 @@ export interface ScenarioResult {
 export interface PerformanceTarget {
   /** Payload size */
   size: PayloadSize;
+  /** Execution mode whose target set this result was graded against */
+  executionMode: ExecutionMode;
   /** Target throughput in MB/s */
   targetMBps: number;
   /** Actual measured throughput in MB/s */

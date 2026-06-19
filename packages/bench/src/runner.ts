@@ -20,13 +20,13 @@ import type {
   PayloadSize,
   CodecType,
   ResponseMode,
-  PerformanceTarget,
   SaturationResult,
   ConcurrencyLevelResult,
   RuntimeType,
+  ExecutionMode,
 } from "./types.js";
-import { PERFORMANCE_TARGETS, type ExecutionMode } from "./types.js";
 import { MetricsCollector } from "./metrics.js";
+import { calculatePerformanceTargets } from "./targets.js";
 import { generatePayload, getPayloadByteSize } from "./payload.js";
 import { getIterationsForSize } from "./scenarios.js";
 
@@ -104,50 +104,6 @@ function getSystemMeta(runtime?: RuntimeType): SystemMeta {
 }
 
 /**
- * Calculates performance target results.
- * @param results - Benchmark results to evaluate
- * @param executionMode - Which target set to use (sequential or pipelined)
- */
-function calculatePerformanceTargets(
-  results: ScenarioResult[],
-  executionMode: ExecutionMode = "sequential",
-): PerformanceTarget[] {
-  const targets: PerformanceTarget[] = [];
-  const sizes: PayloadSize[] = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB"];
-  const targetSet = PERFORMANCE_TARGETS[executionMode];
-
-  for (const size of sizes) {
-    // Find best throughput for this size (raw codec, result mode)
-    const sizeResults = results.filter(
-      (r) => r.size === size && r.codec === "raw" && r.mode === "result",
-    );
-
-    if (sizeResults.length === 0) continue;
-
-    const bestResult = sizeResults.reduce((best, r) =>
-      r.throughputMBps > best.throughputMBps ? r : best,
-    );
-
-    const targetMBps = targetSet[size];
-    const actualMBps = bestResult.throughputMBps;
-    const passed = actualMBps >= targetMBps;
-    const marginPercent = ((actualMBps - targetMBps) / targetMBps) * 100;
-    const margin =
-      marginPercent >= 0 ? `+${marginPercent.toFixed(0)}%` : `${marginPercent.toFixed(0)}%`;
-
-    targets.push({
-      size,
-      targetMBps,
-      actualMBps,
-      passed,
-      margin,
-    });
-  }
-
-  return targets;
-}
-
-/**
  * Runner options for controlling execution mode.
  */
 export interface RunnerOptions {
@@ -193,8 +149,6 @@ export class BenchmarkRunner extends EventEmitter {
     this.concurrency = options.concurrency ?? 1;
     this.runtime = options.runtime ?? detectRuntime();
 
-    const executionMode: ExecutionMode = this.concurrency > 1 ? "pipelined" : "sequential";
-
     this.emit("benchmark:start");
 
     for (const scenario of scenarios) {
@@ -209,7 +163,7 @@ export class BenchmarkRunner extends EventEmitter {
     }
 
     const totalDurationMs = Date.now() - startTime;
-    const benchmarkResults = this.buildResults(scenarios, totalDurationMs, executionMode);
+    const benchmarkResults = this.buildResults(scenarios, totalDurationMs);
 
     this.emit("benchmark:complete", benchmarkResults);
 
@@ -331,7 +285,7 @@ export class BenchmarkRunner extends EventEmitter {
 
     collector.stop();
 
-    return collector.buildResult(scenario.id, codec, size, mode);
+    return collector.buildResult(scenario.id, codec, size, mode, "sequential");
   }
 
   /**
@@ -424,7 +378,7 @@ export class BenchmarkRunner extends EventEmitter {
 
     collector.stop();
 
-    return collector.buildResult(scenario.id, codec, size, mode);
+    return collector.buildResult(scenario.id, codec, size, mode, "pipelined");
   }
 
   /**
@@ -485,6 +439,7 @@ export class BenchmarkRunner extends EventEmitter {
                 codec,
                 size,
                 mode,
+                executionMode: "sequential",
                 throughputMBps: baselineLevel.throughputMBps,
                 totalBytes: 0, // Not tracked in saturation
                 durationMs: 0, // Not tracked separately
@@ -596,12 +551,11 @@ export class BenchmarkRunner extends EventEmitter {
   /**
    * Builds the final results object.
    */
-  private buildResults(
-    scenarios: BenchmarkScenario[],
-    totalDurationMs: number,
-    executionMode: ExecutionMode = "sequential",
-  ): BenchmarkResults {
-    const performanceTargets = calculatePerformanceTargets(this.results, executionMode);
+  private buildResults(scenarios: BenchmarkScenario[], totalDurationMs: number): BenchmarkResults {
+    const performanceTargets = calculatePerformanceTargets(this.results);
+    const executionMode: ExecutionMode = this.results.some((r) => r.executionMode === "pipelined")
+      ? "pipelined"
+      : "sequential";
 
     const summary: BenchmarkSummary = {
       totalDurationMs,
@@ -612,7 +566,10 @@ export class BenchmarkRunner extends EventEmitter {
       passed: performanceTargets.every((t) => t.passed),
       failedTargets: performanceTargets
         .filter((t) => !t.passed)
-        .map((t) => `${t.size}: ${t.actualMBps.toFixed(0)} MB/s < ${t.targetMBps} MB/s target`),
+        .map(
+          (t) =>
+            `${t.size} (${t.executionMode}): ${t.actualMBps.toFixed(0)} MB/s < ${t.targetMBps} MB/s target`,
+        ),
     };
 
     const benchmarkResults: BenchmarkResults = {

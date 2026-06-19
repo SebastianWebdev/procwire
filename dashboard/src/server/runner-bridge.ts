@@ -23,6 +23,31 @@ import type { ScenarioInfo } from "./types.js";
 const BENCH_SCENARIOS_BY_ID = new Map(DEFAULT_SCENARIOS.map((s) => [s.id, s]));
 
 /**
+ * Resolves the effective run-level concurrency for a set of selected scenarios.
+ *
+ * A scenario's own `concurrency` (e.g. `max-rps` at 32) wins over the run-level
+ * option, so the runner executes it pipelined regardless of the option. We take
+ * the peak effective concurrency across the selected scenarios so the run is
+ * recorded/shown as pipelined (instead of a misleading sequential/1) whenever it
+ * contains pipelined work. Per-result `executionMode` carries the precise detail.
+ */
+export function resolveRunConcurrency(
+  scenarioInfos: ScenarioInfo[],
+  optionConcurrency?: number,
+): number {
+  const runConcurrency = optionConcurrency ?? 1;
+  let effective = runConcurrency;
+  for (const info of scenarioInfos) {
+    const canonical = BENCH_SCENARIOS_BY_ID.get(info.id);
+    const scenarioConcurrency = canonical?.concurrency ?? runConcurrency;
+    if (scenarioConcurrency > effective) {
+      effective = scenarioConcurrency;
+    }
+  }
+  return effective;
+}
+
+/**
  * Validates and converts category string to TestCategory.
  */
 function toTestCategory(category: string | undefined): TestCategory {

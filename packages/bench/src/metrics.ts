@@ -12,6 +12,7 @@ import type {
   PayloadSize,
   CodecType,
   ResponseMode,
+  ExecutionMode,
 } from "./types.js";
 
 /**
@@ -163,6 +164,7 @@ export class MetricsCollector {
     codec: CodecType,
     size: PayloadSize,
     mode: ResponseMode,
+    executionMode: ExecutionMode,
   ): ScenarioResult {
     const durationNs = this.endTime - this.startTime;
     const durationMs = nsToMs(durationNs);
@@ -187,6 +189,7 @@ export class MetricsCollector {
       latency: this.getLatencyStats(),
       memory: this.getMemoryStats(),
       errors: this.errorCount,
+      executionMode,
     };
   }
 }

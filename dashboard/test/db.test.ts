@@ -25,6 +25,7 @@ describe("BenchmarkDbService", () => {
     codec: "raw",
     size: "1KB",
     mode: "result",
+    executionMode: "sequential",
     throughputMBps: 25.5,
     totalBytes: 1024000,
     durationMs: 1000,
@@ -258,6 +259,19 @@ describe("BenchmarkDbService", () => {
       const results = db.getResults(run.id);
       expect(results.length).toBe(1);
       expect(results[0].throughputMBps).toBe(25.5);
+    });
+
+    it("should round-trip the per-result execution mode", () => {
+      const run = db.createRun(mockMeta, ["pipelined-throughput"]);
+      db.saveResults(run.id, [
+        { ...mockResult, executionMode: "sequential" },
+        { ...mockResult, codec: "msgpack", executionMode: "pipelined" },
+      ]);
+
+      const retrieved = db.getResults(run.id);
+      const byCodec = new Map(retrieved.map((r) => [r.codec, r.executionMode]));
+      expect(byCodec.get("raw")).toBe("sequential");
+      expect(byCodec.get("msgpack")).toBe("pipelined");
     });
 
     it("should save multiple results in batch", () => {

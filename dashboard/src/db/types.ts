@@ -57,6 +57,7 @@ export interface SystemMeta {
  */
 export interface PerformanceTarget {
   size: PayloadSize;
+  executionMode: ExecutionMode;
   targetMBps: number;
   actualMBps: number;
   passed: boolean;
@@ -92,6 +93,7 @@ export interface ScenarioResult {
   latency: LatencyStats;
   memory: MemoryStats;
   errors: number;
+  executionMode: ExecutionMode;
 }
 
 // ============================================================================
@@ -128,6 +130,7 @@ export interface DbResult {
   codec: CodecType;
   size: PayloadSize;
   mode: ResponseMode;
+  execution_mode: ExecutionMode;
   throughput_mbps: number;
   total_bytes: number;
   duration_ms: number;

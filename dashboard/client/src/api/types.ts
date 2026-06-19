@@ -82,6 +82,7 @@ export interface MemoryStats {
 
 export interface PerformanceTarget {
   size: PayloadSize;
+  executionMode: ExecutionMode;
   targetMBps: number;
   actualMBps: number;
   passed: boolean;
@@ -111,6 +112,7 @@ export interface ScenarioResult {
   latency: LatencyStats;
   memory: MemoryStats;
   errors: number;
+  executionMode: ExecutionMode;
 }
 
 export interface RunDetailResponse extends RunSummary {

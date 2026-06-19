@@ -27,8 +27,11 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
 
   const targetMap = useMemo(() => {
     const map = new Map<string, PerformanceTarget>();
+    // Key by size + execution mode: a size can carry both a sequential and a
+    // pipelined target (e.g. throughput-max vs pipelined-throughput), so each
+    // result is graded against the target matching the mode it ran under.
     targets?.forEach((t) => {
-      map.set(t.size, t);
+      map.set(`${t.size}|${t.executionMode}`, t);
     });
     return map;
   }, [targets]);
@@ -147,7 +150,7 @@ function ResultsTable({ results, targets }: ResultsTableProps) {
           </Table.Thead>
           <Table.Tbody>
             {filteredResults.map((result, i) => {
-              const target = targetMap.get(result.size);
+              const target = targetMap.get(`${result.size}|${result.executionMode}`);
               return (
                 <Table.Tr key={i}>
                   <Table.Td>

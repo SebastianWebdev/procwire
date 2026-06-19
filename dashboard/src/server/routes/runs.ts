@@ -17,7 +17,7 @@ import type {
   SystemMeta,
 } from "../types.js";
 import { getScenariosByIds } from "./scenarios.js";
-import { runBenchmarkWithBroadcast } from "../runner-bridge.js";
+import { runBenchmarkWithBroadcast, resolveRunConcurrency } from "../runner-bridge.js";
 import os from "os";
 
 /**
@@ -148,9 +148,12 @@ export async function runsRoutes(fastify: FastifyInstance): Promise<void> {
     // Collect system metadata
     const meta = collectSystemMeta();
 
-    // Create run record
+    // Create run record. A selected scenario's own concurrency (e.g. max-rps,
+    // pipelined-throughput) makes the runner pipeline it even when the request
+    // omits options.concurrency, so record the effective run concurrency here to
+    // avoid labeling such runs as sequential/1.
     const run = fastify.db.createRun(meta, scenarioIds, {
-      concurrency: options.concurrency ?? 1,
+      concurrency: resolveRunConcurrency(validScenarios, options.concurrency),
       name: metadata.name,
       notes: metadata.notes,
     });
