@@ -10,6 +10,8 @@
     "../packages/protocol/src/index.ts",
     "../packages/codecs/src/index.ts",
     "../packages/core/src/index.ts",
-    "../packages/client/src/index.ts"
+    "../packages/client/src/index.ts",
+    "../packages/procwire-bun-core/src/index.ts",
+    "../packages/procwire-bun-client/src/index.ts"
   ]
 }

@@ -38,9 +38,10 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
   defines the contract.
 </Card>
 
-<Card title="Zero Dependencies" icon="puzzle">
-  Core packages have zero runtime dependencies. Optional codec packages for MessagePack, Arrow, and
-  more.
+<Card title="Lean Dependencies" icon="puzzle">
+  `@procwire/protocol` has zero runtime dependencies, and the parent/child runtime packages depend
+  only on other `@procwire/*` packages. MessagePack ships built into `@procwire/codecs`; Apache
+  Arrow is an opt-in peer via the `@procwire/codecs/arrow` subpath.
 </Card>
 
 <Card title="Cross-Platform" icon="laptop">

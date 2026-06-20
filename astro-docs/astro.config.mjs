@@ -40,6 +40,8 @@ export default defineConfig({
             "../packages/codecs/src/index.ts",
             "../packages/core/src/index.ts",
             "../packages/client/src/index.ts",
+            "../packages/procwire-bun-core/src/index.ts",
+            "../packages/procwire-bun-client/src/index.ts",
           ],
           tsconfig: "./tsconfig.typedoc.json",
 
@@ -58,12 +60,12 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: "Procwire",
           description:
-            "Documentation for Procwire - high-performance binary IPC for Node.js (Protocol, Core, Client, Codecs).",
+            "Documentation for Procwire - high-performance binary IPC for Node.js and Bun (Protocol, Codecs, Core, Client, and Bun variants).",
           details: `
 Key Architectural Concepts:
 - Procwire uses dual-channel architecture: Control Plane (JSON-RPC via stdio) + Data Plane (binary protocol via named pipes).
 - Data Plane achieves ~2.5 GB/s throughput with zero JSON overhead.
-- Four main packages: @procwire/protocol (wire format), @procwire/codecs (serialization), @procwire/core (parent-side), @procwire/client (child-side).
+- Node.js packages: @procwire/protocol (wire format), @procwire/codecs (serialization), @procwire/core (parent-side), @procwire/client (child-side). Bun packages: @procwire/bun-core and @procwire/bun-client (same API and wire format). All runtime packages are thin adapters over @procwire/runtime-core, the internal runtime-agnostic IPC engine.
 - Response types: none, ack, result, stream.
 - All examples use TypeScript.
           `,
