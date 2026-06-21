@@ -29,6 +29,8 @@ npm i @procwire/client @procwire/codecs
 
 On Bun, use `@procwire/bun-core` / `@procwire/bun-client` instead — same runtime API and wire format (the typed schema generics from the Node packages are not yet available on Bun).
 
+All four runtime packages (`core`, `client`, `bun-core`, `bun-client`) are thin adapters over `@procwire/runtime-core`, the shared runtime-agnostic IPC engine. It is pulled in automatically as a transitive dependency, so you never install it directly.
+
 ## Quick Start
 
 **Child** (the worker — `@procwire/client`):
