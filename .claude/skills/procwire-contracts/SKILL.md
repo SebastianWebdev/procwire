@@ -23,7 +23,7 @@ It connects a **parent** process to **child** worker processes over a
   (11-byte header). User data, high throughput.
 
 > **CRITICAL INVARIANT:** Data plane = binary protocol = **zero JSON**. JSON-RPC
-> never carries user data. Method *names* never travel on the data plane — only
+> never carries user data. Method _names_ never travel on the data plane — only
 > the numeric IDs exchanged in the handshake.
 
 ## The golden rule
@@ -36,18 +36,18 @@ read it. The runtime packages (`core`, `client`, `bun-*`) are **thin adapters**
 
 ## Package map
 
-| Package | Role | Key source files |
-| --- | --- | --- |
-| `@procwire/protocol` | Wire format, 11-byte header, flags, framing, transport, backpressure. **Zero runtime deps.** | `src/wire-format.ts`, `src/frame-buffer.ts`, `src/transport.ts`, `src/drain-waiter.ts` |
-| `@procwire/codecs` | `rawCodec`, `rawChunksCodec`, `msgpackCodec`, `arrowCodec` (opt-in subpath), `Codec` interface, schema type helpers | `src/types.ts`, `src/raw-codec.ts`, `src/msgpack-codec.ts`, `src/arrow-codec.ts`, `src/schema-types.ts` |
+| Package                  | Role                                                                                                                                        | Key source files                                                                                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@procwire/protocol`     | Wire format, 11-byte header, flags, framing, transport, backpressure. **Zero runtime deps.**                                                | `src/wire-format.ts`, `src/frame-buffer.ts`, `src/transport.ts`, `src/drain-waiter.ts`                                                                                                                              |
+| `@procwire/codecs`       | `rawCodec`, `rawChunksCodec`, `msgpackCodec`, `arrowCodec` (opt-in subpath), `Codec` interface, schema type helpers                         | `src/types.ts`, `src/raw-codec.ts`, `src/msgpack-codec.ts`, `src/arrow-codec.ts`, `src/schema-types.ts`                                                                                                             |
 | `@procwire/runtime-core` | **The shared IPC engine.** ModuleCore, ClientCore, manager lifecycle policies, RequestContext, types/errors/events. Internal but published. | `src/module-core.ts`, `src/client-core.ts`, `src/manager-core.ts`, `src/request-context.ts`, `src/types.ts`, `src/client-types.ts`, `src/schema-types.ts`, `src/errors.ts`, `src/client-errors.ts`, `src/events.ts` |
-| `@procwire/core` | Parent side (Node): `Module`, `ModuleManager` | `src/module.ts`, `src/manager.ts`, `src/index.ts` |
-| `@procwire/client` | Child side (Node): `Client`, `RequestContext` | `src/client.ts`, `src/index.ts` |
-| `@procwire/bun-core` | Parent side (Bun) — same API & wire format | `packages/procwire-bun-core/src/*` |
-| `@procwire/bun-client` | Child side (Bun) — same API & wire format | `packages/procwire-bun-client/src/*` |
-| `packages/bench` | Benchmarks + runnable example workers (not published) | `workers/benchmark-worker.ts`, `src/lifecycle.ts` |
-| `astro-docs/` | Starlight docs site + `llms.txt` + TypeDoc API reference | `src/content/docs/guides/*` |
-| `docs/` | Long-form docs incl. cross-language compat | `docs/rust-client-compatibility.md` |
+| `@procwire/core`         | Parent side (Node): `Module`, `ModuleManager`                                                                                               | `src/module.ts`, `src/manager.ts`, `src/index.ts`                                                                                                                                                                   |
+| `@procwire/client`       | Child side (Node): `Client`, `RequestContext`                                                                                               | `src/client.ts`, `src/index.ts`                                                                                                                                                                                     |
+| `@procwire/bun-core`     | Parent side (Bun) — same API & wire format                                                                                                  | `packages/procwire-bun-core/src/*`                                                                                                                                                                                  |
+| `@procwire/bun-client`   | Child side (Bun) — same API & wire format                                                                                                   | `packages/procwire-bun-client/src/*`                                                                                                                                                                                |
+| `packages/bench`         | Benchmarks + runnable example workers (not published)                                                                                       | `workers/benchmark-worker.ts`, `src/lifecycle.ts`                                                                                                                                                                   |
+| `astro-docs/`            | Starlight docs site + `llms.txt` + TypeDoc API reference                                                                                    | `src/content/docs/guides/*`                                                                                                                                                                                         |
+| `docs/`                  | Long-form docs incl. cross-language compat                                                                                                  | `docs/rust-client-compatibility.md`                                                                                                                                                                                 |
 
 ### Official clients (child role)
 
@@ -59,7 +59,7 @@ format against a `@procwire/core` / `@procwire/bun-core` parent:
 - **Rust:** [`procwire-client`](https://crates.io/crates/procwire-client) — a
   **separate published crate** (repo `SebastianWebdev/procwire-rust`, docs at
   <https://docs.rs/procwire-client>), not part of this monorepo. It is the
-  reference cross-language implementation. For *using* it, see the
+  reference cross-language implementation. For _using_ it, see the
   `procwire-patterns` skill; `docs/rust-client-compatibility.md` is the
   wire-compat spec for maintaining it or porting to a third language.
 
@@ -67,32 +67,32 @@ format against a `@procwire/core` / `@procwire/bun-core` parent:
 
 Open the file in the right-hand column.
 
-| If you need to know… | Read |
-| --- | --- |
-| Header layout, endianness, `encodeHeader`/`decodeHeader`, `validateHeader`, constants | `packages/protocol/src/wire-format.ts` (+ `packages/protocol/README.md`) |
-| Flag bits and their meaning | `packages/protocol/src/wire-format.ts` (`Flags`), README "Flags Byte" table |
-| How bytes accumulate into frames / batch vs streaming / oversized-frame guard | `packages/protocol/src/frame-buffer.ts` |
-| Send-side backpressure / drain | `packages/protocol/src/drain-waiter.ts`, `src/*-socket-transport.ts` |
-| Codec interface + which codec for which data | `packages/codecs/src/types.ts`, `packages/codecs/README.md` |
-| MsgPack extension types (Buffer, Date), typed `msgpack<T>()` factory | `packages/codecs/src/msgpack-codec.ts` |
-| Arrow codec (columnar) — opt-in `@procwire/codecs/arrow` subpath | `packages/codecs/src/arrow-codec.ts`, `src/arrow.ts` |
-| Parent builder + `send`/`stream`/`onEvent` semantics, request-id allocation, timeout precedence, stream backpressure HWM/LWM | `packages/runtime-core/src/module-core.ts` |
-| Child builder + `handle`/`event`/`emitEvent`/`start`, frame dispatch, auth gate, `$ping`/`$shutdown` handling, `$init` shape | `packages/runtime-core/src/client-core.ts` |
-| `ctx.respond/ack/chunk/end/error` semantics, one-shot guard, empty-payload rules | `packages/runtime-core/src/request-context.ts` |
-| Spawn/restart/heartbeat/auth lifecycle, schema validation, force-kill grace | `packages/runtime-core/src/manager-core.ts` |
-| Parent-side types: `ModuleState`, `SpawnPolicy`, `MethodConfig`, `ModuleSchema`, `InitMessage`, `ResponseType` | `packages/runtime-core/src/types.ts` |
-| Child-side types: `ClientOptions`, `MethodDefinition`, `RequestContext`, `TypedRequestContext`, `MethodHandler` | `packages/runtime-core/src/client-types.ts` |
-| End-to-end type-safety primitives: `Schema`, `EmptySchema`, `ExtractSchema`, `InferCodecInput/Output`, Parent/Child request/response helpers | `packages/codecs/src/schema-types.ts` |
-| Builder schema accumulation (`AddMethod`, `AddEvent`, `SendReturn`, `MethodsWithResponseType`) | `packages/runtime-core/src/schema-types.ts` |
-| Parent error classes & factories (`ProcwireError`, `ModuleErrors`, `ManagerErrors`, `SpawnError`) | `packages/runtime-core/src/errors.ts`, `packages/core/src/manager.ts` (`SpawnError`) |
-| Child error classes & factories (`ProcwireClientError`, `ClientErrors`) | `packages/runtime-core/src/client-errors.ts` |
-| Event name constants (`ManagerEvents`, `ModuleEvents`) | `packages/runtime-core/src/events.ts` |
-| Control-plane protocol & reliability narrative | `astro-docs/src/content/docs/guides/architecture.mdx` |
-| Concepts: response types, codecs, lifecycle, backpressure, cancellation | `astro-docs/src/content/docs/guides/concepts.md` |
-| Official Rust client (the cross-language reference implementation) | crate `procwire-client` (crates.io), repo `SebastianWebdev/procwire-rust`, <https://docs.rs/procwire-client> |
-| Wire & behaviour compatibility for porting/maintaining a non-JS client | `docs/rust-client-compatibility.md` |
-| What's exported from a package (the actual public surface) | that package's `src/index.ts` |
-| Executable behaviour specs (exact expected behaviour, edge cases) | `packages/*/test/*.test.ts` (esp. `regression.test.ts`, `type-safety.test.ts`) |
+| If you need to know…                                                                                                                         | Read                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Header layout, endianness, `encodeHeader`/`decodeHeader`, `validateHeader`, constants                                                        | `packages/protocol/src/wire-format.ts` (+ `packages/protocol/README.md`)                                     |
+| Flag bits and their meaning                                                                                                                  | `packages/protocol/src/wire-format.ts` (`Flags`), README "Flags Byte" table                                  |
+| How bytes accumulate into frames / batch vs streaming / oversized-frame guard                                                                | `packages/protocol/src/frame-buffer.ts`                                                                      |
+| Send-side backpressure / drain                                                                                                               | `packages/protocol/src/drain-waiter.ts`, `src/*-socket-transport.ts`                                         |
+| Codec interface + which codec for which data                                                                                                 | `packages/codecs/src/types.ts`, `packages/codecs/README.md`                                                  |
+| MsgPack extension types (Buffer, Date), typed `msgpack<T>()` factory                                                                         | `packages/codecs/src/msgpack-codec.ts`                                                                       |
+| Arrow codec (columnar) — opt-in `@procwire/codecs/arrow` subpath                                                                             | `packages/codecs/src/arrow-codec.ts`, `src/arrow.ts`                                                         |
+| Parent builder + `send`/`stream`/`onEvent` semantics, request-id allocation, timeout precedence, stream backpressure HWM/LWM                 | `packages/runtime-core/src/module-core.ts`                                                                   |
+| Child builder + `handle`/`event`/`emitEvent`/`start`, frame dispatch, auth gate, `$ping`/`$shutdown` handling, `$init` shape                 | `packages/runtime-core/src/client-core.ts`                                                                   |
+| `ctx.respond/ack/chunk/end/error` semantics, one-shot guard, empty-payload rules                                                             | `packages/runtime-core/src/request-context.ts`                                                               |
+| Spawn/restart/heartbeat/auth lifecycle, schema validation, force-kill grace                                                                  | `packages/runtime-core/src/manager-core.ts`                                                                  |
+| Parent-side types: `ModuleState`, `SpawnPolicy`, `MethodConfig`, `ModuleSchema`, `InitMessage`, `ResponseType`                               | `packages/runtime-core/src/types.ts`                                                                         |
+| Child-side types: `ClientOptions`, `MethodDefinition`, `RequestContext`, `TypedRequestContext`, `MethodHandler`                              | `packages/runtime-core/src/client-types.ts`                                                                  |
+| End-to-end type-safety primitives: `Schema`, `EmptySchema`, `ExtractSchema`, `InferCodecInput/Output`, Parent/Child request/response helpers | `packages/codecs/src/schema-types.ts`                                                                        |
+| Builder schema accumulation (`AddMethod`, `AddEvent`, `SendReturn`, `MethodsWithResponseType`)                                               | `packages/runtime-core/src/schema-types.ts`                                                                  |
+| Parent error classes & factories (`ProcwireError`, `ModuleErrors`, `ManagerErrors`, `SpawnError`)                                            | `packages/runtime-core/src/errors.ts`, `packages/core/src/manager.ts` (`SpawnError`)                         |
+| Child error classes & factories (`ProcwireClientError`, `ClientErrors`)                                                                      | `packages/runtime-core/src/client-errors.ts`                                                                 |
+| Event name constants (`ManagerEvents`, `ModuleEvents`)                                                                                       | `packages/runtime-core/src/events.ts`                                                                        |
+| Control-plane protocol & reliability narrative                                                                                               | `astro-docs/src/content/docs/guides/architecture.mdx`                                                        |
+| Concepts: response types, codecs, lifecycle, backpressure, cancellation                                                                      | `astro-docs/src/content/docs/guides/concepts.md`                                                             |
+| Official Rust client (the cross-language reference implementation)                                                                           | crate `procwire-client` (crates.io), repo `SebastianWebdev/procwire-rust`, <https://docs.rs/procwire-client> |
+| Wire & behaviour compatibility for porting/maintaining a non-JS client                                                                       | `docs/rust-client-compatibility.md`                                                                          |
+| What's exported from a package (the actual public surface)                                                                                   | that package's `src/index.ts`                                                                                |
+| Executable behaviour specs (exact expected behaviour, edge cases)                                                                            | `packages/*/test/*.test.ts` (esp. `regression.test.ts`, `type-safety.test.ts`)                               |
 
 ## Wire format quick reference (data plane)
 
@@ -112,25 +112,25 @@ followed by the codec-encoded payload. Verify against
 
 **Flags bitfield** (bits 6–7 reserved, MUST be 0):
 
-| bit | value | name | meaning |
-| --- | --- | --- | --- |
-| 0 | `0x01` | `DIRECTION_TO_PARENT` | 0 = to child, 1 = to parent |
-| 1 | `0x02` | `IS_RESPONSE` | 0 = request/event, 1 = response |
-| 2 | `0x04` | `IS_ERROR` | 1 = error response |
-| 3 | `0x08` | `IS_STREAM` | 1 = stream chunk |
-| 4 | `0x10` | `STREAM_END` | 1 = final chunk (empty payload) |
-| 5 | `0x20` | `IS_ACK` | 1 = ack only (no full result) |
+| bit | value  | name                  | meaning                         |
+| --- | ------ | --------------------- | ------------------------------- |
+| 0   | `0x01` | `DIRECTION_TO_PARENT` | 0 = to child, 1 = to parent     |
+| 1   | `0x02` | `IS_RESPONSE`         | 0 = request/event, 1 = response |
+| 2   | `0x04` | `IS_ERROR`            | 1 = error response              |
+| 3   | `0x08` | `IS_STREAM`           | 1 = stream chunk                |
+| 4   | `0x10` | `STREAM_END`          | 1 = final chunk (empty payload) |
+| 5   | `0x20` | `IS_ACK`              | 1 = ack only (no full result)   |
 
 **Constants** (`wire-format.ts`):
 
-| Constant | Value | Meaning |
-| --- | --- | --- |
-| `HEADER_SIZE` | `11` | Fixed header size |
-| `ABORT_METHOD_ID` | `0xFFFF` | Cancellation frame (empty payload) |
-| `AUTH_METHOD_ID` | `0xFFFE` | Opt-in data-plane AUTH frame (first frame, raw token bytes) |
-| `DEFAULT_MAX_PAYLOAD_SIZE` | 1 GiB | Default receive cap |
-| `ABSOLUTE_MAX_PAYLOAD_SIZE` | 2 GiB − 1 | Hard ceiling (Buffer limit) |
-| `HEADER_POOL_SIZE` | `16` | Header ring-buffer pool |
+| Constant                    | Value     | Meaning                                                     |
+| --------------------------- | --------- | ----------------------------------------------------------- |
+| `HEADER_SIZE`               | `11`      | Fixed header size                                           |
+| `ABORT_METHOD_ID`           | `0xFFFF`  | Cancellation frame (empty payload)                          |
+| `AUTH_METHOD_ID`            | `0xFFFE`  | Opt-in data-plane AUTH frame (first frame, raw token bytes) |
+| `DEFAULT_MAX_PAYLOAD_SIZE`  | 1 GiB     | Default receive cap                                         |
+| `ABSOLUTE_MAX_PAYLOAD_SIZE` | 2 GiB − 1 | Hard ceiling (Buffer limit)                                 |
+| `HEADER_POOL_SIZE`          | `16`      | Header ring-buffer pool                                     |
 
 `FrameBuffer` enforces the full header contract on every parsed frame:
 `methodId 0` is rejected, reserved flag bits 6–7 must be zero, and
@@ -144,18 +144,28 @@ reader **ignores any line that does not start with `{`** — so never write
 non-JSON logs to stdout (use stderr). Verify in `client-core.ts`
 (`_handleControlLine`, `_sendInit`) and `manager-core.ts`.
 
-| Method | Direction | When |
-| --- | --- | --- |
-| `$init` | child → parent | once, after the pipe server is listening; carries `{ pipe, schema, version: "1.0.0" }` |
-| `$error` | child → parent | handshake/init failure (optional) |
-| `$ping` | parent → child | heartbeat tick (only when `spawnPolicy.heartbeat` enabled) |
-| `$pong` | child → parent | reply to `$ping` (stateless reflex) |
-| `$shutdown` | parent → child | graceful stop request |
+| Method      | Direction      | When                                                                                   |
+| ----------- | -------------- | -------------------------------------------------------------------------------------- |
+| `$init`     | child → parent | once, after the pipe server is listening; carries `{ pipe, schema, version: "1.0.0" }` |
+| `$error`    | child → parent | handshake/init failure (optional)                                                      |
+| `$ping`     | parent → child | heartbeat tick (only when `spawnPolicy.heartbeat` enabled)                             |
+| `$pong`     | child → parent | reply to `$ping` (stateless reflex)                                                    |
+| `$shutdown` | parent → child | graceful stop request                                                                  |
 
 `$init` shape (copy byte-for-byte; see `_sendInit`):
 
 ```jsonc
-{"jsonrpc":"2.0","method":"$init","params":{"pipe":"<pipe-path>","schema":{ /* methods+events with numeric ids */ },"version":"1.0.0"}}
+{
+  "jsonrpc": "2.0",
+  "method": "$init",
+  "params": {
+    "pipe": "<pipe-path>",
+    "schema": {
+      /* methods+events with numeric ids */
+    },
+    "version": "1.0.0",
+  },
+}
 ```
 
 ## Public API surface cheat-sheet
@@ -219,16 +229,22 @@ await ctx.error(err);      // error response
 ### Codecs — `@procwire/codecs`
 
 ```typescript
-import { rawCodec, rawChunksCodec, msgpackCodec, msgpack, codecDeserialize } from "@procwire/codecs";
+import {
+  rawCodec,
+  rawChunksCodec,
+  msgpackCodec,
+  msgpack,
+  codecDeserialize,
+} from "@procwire/codecs";
 import { arrowCodec } from "@procwire/codecs/arrow"; // opt-in; needs apache-arrow peer dep
 ```
 
-| Codec | Input → Output | Zero-copy | Use for |
-| --- | --- | --- | --- |
-| `rawCodec` | `Buffer → Buffer` | no | pre-serialized binary |
-| `rawChunksCodec` | `Buffer[] → Buffer[]` | yes | large files / streaming |
-| `msgpackCodec` | `object → object` (Buffer & Date ext types) | no | structured objects, events, errors (default) |
-| `arrowCodec` | `Table/object → Table` | yes (read) | embeddings, columnar/numeric, cross-language |
+| Codec            | Input → Output                              | Zero-copy  | Use for                                      |
+| ---------------- | ------------------------------------------- | ---------- | -------------------------------------------- |
+| `rawCodec`       | `Buffer → Buffer`                           | no         | pre-serialized binary                        |
+| `rawChunksCodec` | `Buffer[] → Buffer[]`                       | yes        | large files / streaming                      |
+| `msgpackCodec`   | `object → object` (Buffer & Date ext types) | no         | structured objects, events, errors (default) |
+| `arrowCodec`     | `Table/object → Table`                      | yes (read) | embeddings, columnar/numeric, cross-language |
 
 `Codec<TInput, TOutput>` = `{ serialize, deserialize, deserializeChunks?, name }`.
 `msgpack<TReq, TRes=TReq>()` returns a typed codec instance for compile-time
@@ -236,12 +252,12 @@ safety.
 
 ### Response types
 
-| Type | Parent API | Child sets via |
-| --- | --- | --- |
-| `result` | `await send()` → value | `ctx.respond()` |
-| `stream` | `for await (… of stream())` | `ctx.chunk()` … `ctx.end()` |
-| `ack` | `await send()` → ack value | `ctx.ack()` (then keep working) |
-| `none` | `send()` resolves immediately | (nothing) |
+| Type     | Parent API                    | Child sets via                  |
+| -------- | ----------------------------- | ------------------------------- |
+| `result` | `await send()` → value        | `ctx.respond()`                 |
+| `stream` | `for await (… of stream())`   | `ctx.chunk()` … `ctx.end()`     |
+| `ack`    | `await send()` → ack value    | `ctx.ack()` (then keep working) |
+| `none`   | `send()` resolves immediately | (nothing)                       |
 
 ## Architecture invariants (assert these when reviewing)
 
@@ -276,18 +292,18 @@ safety.
 
 ## Answering common questions — which file?
 
-- *"What does flag bit 4 mean / what's the abort method id?"* →
+- _"What does flag bit 4 mean / what's the abort method id?"_ →
   `packages/protocol/src/wire-format.ts`.
-- *"What's the default request timeout and how is precedence resolved?"* →
+- _"What's the default request timeout and how is precedence resolved?"_ →
   `runtime-core/src/module-core.ts` (`DEFAULT_REQUEST_TIMEOUT_MS`, the
   `methodConfig.timeout ?? schemaMethod.timeout ?? _defaultRequestTimeout` line).
-- *"How does the child authenticate the data plane?"* →
+- _"How does the child authenticate the data plane?"_ →
   `runtime-core/src/client-core.ts` (`_acceptConnection`, `_handleAuthFrame`,
   `_authMatches`) + `docs/rust-client-compatibility.md` §4.9.
-- *"What exactly is sent in `$init`?"* → `client-core.ts` `_sendInit`.
-- *"Is `socketBufferSize` honoured on Bun?"* → No;
+- _"What exactly is sent in `$init`?"_ → `client-core.ts` `_sendInit`.
+- _"Is `socketBufferSize` honoured on Bun?"_ → No;
   `runtime-core/src/types.ts` `SpawnPolicy.socketBufferSize` doc comment.
-- *"What's the public surface of `@procwire/core`?"* → `packages/core/src/index.ts`.
+- _"What's the public surface of `@procwire/core`?"_ → `packages/core/src/index.ts`.
 
 When the answer is behavioural, prefer the matching `test/*.test.ts` — those are
 executable specifications.
