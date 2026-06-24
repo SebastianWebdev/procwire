@@ -49,6 +49,20 @@ read it. The runtime packages (`core`, `client`, `bun-*`) are **thin adapters**
 | `astro-docs/` | Starlight docs site + `llms.txt` + TypeDoc API reference | `src/content/docs/guides/*` |
 | `docs/` | Long-form docs incl. cross-language compat | `docs/rust-client-compatibility.md` |
 
+### Official clients (child role)
+
+Three first-party clients implement the child side; all speak the same wire
+format against a `@procwire/core` / `@procwire/bun-core` parent:
+
+- **Node:** `@procwire/client` (this repo)
+- **Bun:** `@procwire/bun-client` (this repo)
+- **Rust:** [`procwire-client`](https://crates.io/crates/procwire-client) — a
+  **separate published crate** (repo `SebastianWebdev/procwire-rust`, docs at
+  <https://docs.rs/procwire-client>), not part of this monorepo. It is the
+  reference cross-language implementation. For *using* it, see the
+  `procwire-patterns` skill; `docs/rust-client-compatibility.md` is the
+  wire-compat spec for maintaining it or porting to a third language.
+
 ## Where to find each contract (routing table)
 
 Open the file in the right-hand column.
@@ -75,7 +89,8 @@ Open the file in the right-hand column.
 | Event name constants (`ManagerEvents`, `ModuleEvents`) | `packages/runtime-core/src/events.ts` |
 | Control-plane protocol & reliability narrative | `astro-docs/src/content/docs/guides/architecture.mdx` |
 | Concepts: response types, codecs, lifecycle, backpressure, cancellation | `astro-docs/src/content/docs/guides/concepts.md` |
-| Cross-language / Rust client wire & behaviour compatibility | `docs/rust-client-compatibility.md` |
+| Official Rust client (the cross-language reference implementation) | crate `procwire-client` (crates.io), repo `SebastianWebdev/procwire-rust`, <https://docs.rs/procwire-client> |
+| Wire & behaviour compatibility for porting/maintaining a non-JS client | `docs/rust-client-compatibility.md` |
 | What's exported from a package (the actual public surface) | that package's `src/index.ts` |
 | Executable behaviour specs (exact expected behaviour, edge cases) | `packages/*/test/*.test.ts` (esp. `regression.test.ts`, `type-safety.test.ts`) |
 

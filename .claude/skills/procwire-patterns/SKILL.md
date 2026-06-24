@@ -6,10 +6,11 @@ description: >-
   choosing response types (result/stream/ack/none) and codecs
   (raw/rawChunks/msgpack/arrow), lifecycle/restart/heartbeat/auth config,
   backpressure and cancellation, error handling, the stdout pitfall, Bun parity,
-  and building a wire-compatible Procwire client in another language (e.g. Rust).
-  Use when implementing, reviewing, or debugging an app that uses Procwire on
-  Node or Bun, or a non-JS Procwire data-plane client. For pure
-  contract/wire-format lookups use the procwire-contracts skill.
+  building Rust workers with the official procwire-client crate (crates.io), and
+  the wire contract for porting a client to another language. Use when
+  implementing, reviewing, or debugging an app that uses Procwire on Node or Bun,
+  or a Rust / other-language Procwire worker. For pure contract/wire-format
+  lookups use the procwire-contracts skill.
 ---
 
 # Procwire: design patterns for building apps
@@ -379,19 +380,101 @@ implement the AUTH frame to interoperate with `auth: true` (see §11).
 
 ---
 
-## 11. Building a non-JS client (e.g. Rust)
+## 11. Rust workers — use the official `procwire-client` crate
 
-A worker in another language plays the **child** role: it creates the pipe
-**server**, announces `$init`, and serves requests/streams. Node and Bun are
-byte-for-byte identical on the wire, so one implementation matches both.
+If a worker is written in Rust, **use the official client crate — do not
+re-implement the wire protocol.** The parent stays Node/Bun
+(`@procwire/core` / `@procwire/bun-core`); the Rust process is just another
+child, spawned with `.executable("./my-worker", [])`.
 
-**Authoritative spec: `docs/rust-client-compatibility.md`.** It maps each change
-to REQUIRED / RECOMMENDED / OPTIONAL and points at the source-of-truth files.
-Read it; the summary below is an index, not a replacement.
+- **Crate:** [`procwire-client`](https://crates.io/crates/procwire-client) (latest **1.1.0**)
+- **Repo / issues:** <https://github.com/SebastianWebdev/procwire-rust>
+- **API docs:** <https://docs.rs/procwire-client>
+- **Stack:** Tokio (async), Serde + MsgPack codec, MSRV Rust 1.85. Streaming,
+  ack, cancellation (`CancellationToken`), heartbeat, and the AUTH handshake are
+  built in.
 
-**Base protocol to match** (`packages/protocol/src/wire-format.ts`): the 11-byte
-big-endian header, the flag bits, codecs (raw/msgpack/arrow), and `$init` schema
-shape. See the `procwire-contracts` skill for the tables.
+```toml
+# Cargo.toml — run `cargo add procwire-client`; pin "1" (the README's "0.1" is stale)
+[dependencies]
+procwire-client = "1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+```
+
+**Minimal Rust worker** (the child):
+
+```rust
+use procwire_client::ClientBuilder;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct EchoRequest { message: String }
+#[derive(Serialize, Deserialize)]
+struct EchoResponse { message: String }
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = ClientBuilder::new()
+        .handle("echo", |payload: EchoRequest, ctx| async move {
+            ctx.respond(&EchoResponse { message: payload.message }).await
+        })
+        .start()
+        .await?;
+
+    client.wait_for_shutdown().await?; // returns on $shutdown / parent death
+    Ok(())
+}
+```
+
+**Matching Node parent** — nothing special; spawn the compiled binary:
+
+```typescript
+const worker = new Module("rust-worker")
+  .executable("./target/release/my-worker", [])    // the Rust binary
+  .method("echo", { codec: msgpackCodec, response: "result" });
+manager.register(worker);
+await manager.spawn("rust-worker");
+const r = await worker.send("echo", { message: "hi" });
+```
+
+**Rust ↔ Node concept map:**
+
+| Concept | Node child (`@procwire/client`) | Rust child (`procwire-client`) |
+| --- | --- | --- |
+| Builder | `new Client().handle(…)` | `ClientBuilder::new().handle(…)` |
+| Handler | `async (data, ctx) => {}` | `|payload: T, ctx| async move {}` (Serde-typed) |
+| Single reply | `await ctx.respond(x)` | `ctx.respond(&x).await?` |
+| Ack | `await ctx.ack(x)` | `ctx.ack().await?` |
+| Stream | `await ctx.chunk(x)` … `ctx.end()` | `ctx.chunk(&x).await?` … `ctx.end().await?` |
+| Error | `await ctx.error(e)` | `ctx.error("msg").await?` |
+| Cancellation | `ctx.aborted` / `ctx.onAbort(cb)` | `ctx.is_cancelled()` / `select! { _ = ctx.cancelled() => … }` |
+| Emit event | `await client.emitEvent(n, d)` | `client.emit(n, &d).await?` |
+| Stay alive | (kept alive by the pipe server) | `client.wait_for_shutdown().await?` |
+| Codec | `msgpackCodec` (default) | MsgPack via Serde (default) |
+
+**Correctness notes:**
+- The Node/Bun parent still **declares the contract** and validates it against
+  the Rust child's `$init` at spawn. The `response` type the parent declares per
+  method must match what the Rust handler does (`respond`→`result`,
+  `chunk`/`end`→`stream`, `ack`→`ack`); see the crate docs for how the Rust side
+  sets a handler's response type. Method/event **names** must match on both sides.
+- Serde structs must (de)serialize to the same MsgPack shape the Node side
+  sends/expects.
+- For shared hosts, the crate honours `PROCWIRE_TOKEN`, so `auth: true` on the
+  parent works with no extra Rust code.
+
+### Maintaining the crate, or porting to a third language
+
+You only need the raw wire contract below when you maintain `procwire-rust`
+itself or implement a client in **another** language. The child role: create the
+pipe **server**, listen, *then* announce `$init`, then serve frames. Node and Bun
+are byte-for-byte identical on the wire, so one implementation matches both.
+
+**Authoritative spec: `docs/rust-client-compatibility.md`** — maps each change to
+REQUIRED / RECOMMENDED / OPTIONAL with source-of-truth file pointers. Base
+protocol in `packages/protocol/src/wire-format.ts`; tables in the
+`procwire-contracts` skill.
 
 **Must-do checklist:**
 
