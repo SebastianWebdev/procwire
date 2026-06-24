@@ -45,6 +45,8 @@ const client = new Client()
   .handle(
     "process",
     async (data, ctx) => {
+      // Emit events only once the parent is connected — inside a handler is safe.
+      await client.emitEvent("progress", { percent: 50 });
       const result = await doWork(data);
       await ctx.respond(result); // always await response methods (backpressure)
     },
@@ -53,10 +55,12 @@ const client = new Client()
   .event("progress", { codec: msgpackCodec });
 
 await client.start();
-
-// later, from anywhere in the worker:
-await client.emitEvent("progress", { percent: 50 });
 ```
+
+> `emitEvent` throws `Client not connected` until the parent connects — it is
+> **not** connected the instant `start()` returns (that only listens and sends
+> `$init`). Emit from inside a handler (as above) or guard with
+> `if (client.connected)`.
 
 **`main.ts`** (parent):
 
@@ -352,9 +356,13 @@ client.handle(
 );
 ```
 
-You may also `await ctx.error({ message, code })` — a **structured** object. The
-parent derives `error.message` from `.message` and keeps the whole payload on
-`error.data` (a `ProcwireError`).
+The Node/Bun `ctx.error()` accepts only `Error | string` and sends the message
+text. On the parent, the rejection is a `ProcwireError` exposing `.message` and a
+`.data` payload. When an error frame carries a **structured** object (e.g. from a
+non-JS child such as the Rust crate, which serializes its own `{ message, code }`),
+the parent derives `.message` from the object's `message` field and preserves the
+whole object on `error.data` — a parent-side receive capability, not something the
+JS `ctx.error` API exposes.
 
 ```typescript
 // parent
