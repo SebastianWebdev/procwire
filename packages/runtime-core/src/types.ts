@@ -26,6 +26,15 @@ export interface ExecutableConfig {
   args: string[];
   cwd?: string | undefined;
   env?: Record<string, string> | undefined;
+  /**
+   * Hide the worker's console window on Windows (libuv's `CREATE_NO_WINDOW`).
+   *
+   * Defaults to `true`: a Procwire worker is a headless IPC child (stdio +
+   * socket), so a console window is never wanted in normal use. Has no effect on
+   * Linux/macOS, where the flag is ignored. Set `false` to spawn the worker with
+   * a visible console (e.g. for debugging).
+   */
+  windowsHide?: boolean | undefined;
 }
 
 /**

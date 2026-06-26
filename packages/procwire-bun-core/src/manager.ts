@@ -111,6 +111,9 @@ export class ModuleManager extends ModuleManagerCore<BunSubprocess, Module> {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "inherit",
+      // Headless IPC child: hide the console window on Windows (no-op
+      // elsewhere). Defaults to true; the builder lets a debug spawn opt out.
+      windowsHide: exe.windowsHide ?? true,
       // Exit wiring is fixed at spawn time in Bun (no attachable event);
       // _watchProcessExit below is therefore a no-op.
       onExit: (proc, exitCode, signalCode, _error) => {

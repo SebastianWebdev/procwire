@@ -91,6 +91,7 @@ describe("Module", () => {
       args: ["worker.ts"],
       cwd: undefined,
       env: undefined,
+      windowsHide: true,
     });
 
     expect(module.methods.size).toBe(2);

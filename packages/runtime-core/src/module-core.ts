@@ -166,18 +166,25 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Set executable command.
+   * Set the executable command for the worker process.
+   *
+   * `windowsHide` controls whether the worker's console window is hidden on
+   * Windows (libuv's `CREATE_NO_WINDOW`). It defaults to `true` because a
+   * Procwire worker is a headless IPC child — no console window is wanted in
+   * normal use — and has no effect on Linux/macOS. Pass `false` to spawn the
+   * worker with a visible console (e.g. for debugging).
    */
   executable(
     command: string,
     args: string[] = [],
-    options?: { cwd?: string; env?: Record<string, string> },
+    options?: { cwd?: string; env?: Record<string, string>; windowsHide?: boolean },
   ): this {
     this._executable = {
       command,
       args,
       cwd: options?.cwd,
       env: options?.env,
+      windowsHide: options?.windowsHide ?? true,
     };
     return this;
   }

@@ -21,7 +21,18 @@ describe("Module", () => {
         args: ["worker.py"],
         cwd: "/app",
         env: undefined,
+        windowsHide: true,
       });
+    });
+
+    it("should default windowsHide to true and allow opting out", () => {
+      const hidden = new Module("worker").executable("node", ["index.js"]);
+      expect(hidden.executableConfig?.windowsHide).toBe(true);
+
+      const visible = new Module("worker").executable("node", ["index.js"], {
+        windowsHide: false,
+      });
+      expect(visible.executableConfig?.windowsHide).toBe(false);
     });
 
     it("should configure executable with env", () => {

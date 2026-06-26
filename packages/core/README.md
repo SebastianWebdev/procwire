@@ -79,8 +79,13 @@ Set the command to spawn the worker process.
 module.executable("python", ["worker.py"], {
   cwd: "/path/to/working/dir",
   env: { CUSTOM_VAR: "value" },
+  windowsHide: true, // hide the worker's console window on Windows (default)
 });
 ```
+
+`windowsHide` defaults to `true` so a worker never flashes a console window on
+Windows (no effect on Linux/macOS). Set it to `false` to spawn the worker with a
+visible console for debugging.
 
 #### `.method(name, config)`
 
