@@ -1,5 +1,13 @@
 # @procwire/bench
 
+## 1.0.8
+
+### Patch Changes
+
+- Updated dependencies [[`c4ddb48`](https://github.com/SebastianWebdev/procwire/commit/c4ddb487367fbb5530bc84f2d28e699c4094816a)]:
+  - @procwire/core@1.4.0
+  - @procwire/bun-core@1.4.0
+
 ## 1.0.7
 
 ### Patch Changes

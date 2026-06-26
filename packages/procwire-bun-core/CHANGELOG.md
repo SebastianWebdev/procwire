@@ -1,5 +1,24 @@
 # @procwire/bun-core
 
+## 1.4.0
+
+### Minor Changes
+
+- [#64](https://github.com/SebastianWebdev/procwire/pull/64) [`c4ddb48`](https://github.com/SebastianWebdev/procwire/commit/c4ddb487367fbb5530bc84f2d28e699c4094816a) Thanks [@SebastianWebdev](https://github.com/SebastianWebdev)! - Hide the worker's console window on Windows by default.
+
+  `Module.executable(command, args, options)` now accepts a `windowsHide` option,
+  and the parent passes it through to the spawn (Node `child_process.spawn` and
+  `Bun.spawn`). It defaults to `true`, so a packaged app (e.g. Electron) no longer
+  flashes a console window for each spawned worker — a Procwire worker is a
+  headless IPC child, so no console is wanted in normal use. The flag has no effect
+  on Linux/macOS. Pass `windowsHide: false` to spawn a worker with a visible
+  console for debugging.
+
+### Patch Changes
+
+- Updated dependencies [[`c4ddb48`](https://github.com/SebastianWebdev/procwire/commit/c4ddb487367fbb5530bc84f2d28e699c4094816a)]:
+  - @procwire/runtime-core@1.2.0
+
 ## 1.3.0
 
 ### Minor Changes
