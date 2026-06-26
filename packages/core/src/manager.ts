@@ -82,6 +82,9 @@ export class ModuleManager extends ModuleManagerCore<ChildProcess, Module> {
       stdio: ["pipe", "pipe", "inherit"],
       cwd: exe.cwd,
       env,
+      // Headless IPC child: hide the console window on Windows (no-op
+      // elsewhere). Defaults to true; the builder lets a debug spawn opt out.
+      windowsHide: exe.windowsHide ?? true,
     });
 
     // The child's stdin can emit "error" (EPIPE) when the child dies between
