@@ -514,6 +514,169 @@ describe("ManagerCore: data-plane auth (Workstream C)", () => {
   });
 });
 
+describe("ManagerCore: unregister", () => {
+  it("register -> spawn (fails terminally) -> unregister -> register(fresh) -> spawn succeeds", async () => {
+    const manager = new FakeManager();
+    manager.failInits = 1;
+    const mod = makeModule("worker"); // maxRetries: 0 -> first failure is terminal
+    manager.register(mod);
+    manager.on(ManagerEvents.ERROR, () => {});
+
+    await expect(manager.spawn("worker")).rejects.toThrow(SpawnError);
+    expect(mod.state).toBe("closed");
+
+    // The failed module still occupies the name...
+    expect(() => manager.register(makeModule("worker"))).toThrow("already registered");
+
+    // ...until it is unregistered.
+    const unregistered = vi.fn();
+    manager.on(ManagerEvents.UNREGISTERED, unregistered);
+    await expect(manager.unregister("worker")).resolves.toBe(true);
+    expect(manager.has("worker")).toBe(false);
+    expect(unregistered).toHaveBeenCalledWith("worker");
+
+    const fresh = makeModule("worker");
+    manager.register(fresh);
+    await manager.spawn("worker");
+    expect(fresh.state).toBe("ready");
+  });
+
+  it("register -> spawn -> shutdown -> unregister -> register(fresh) -> spawn succeeds", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker");
+    manager.register(mod);
+
+    await manager.spawn("worker");
+    await manager.shutdown("worker");
+    expect(mod.state).toBe("closed");
+
+    await expect(manager.unregister("worker")).resolves.toBe(true);
+
+    const fresh = makeModule("worker");
+    manager.register(fresh);
+    await manager.spawn("worker");
+    expect(fresh.state).toBe("ready");
+  });
+
+  it("unregister of a running module throws without force; with force it shuts down and removes", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker");
+    manager.register(mod);
+    await manager.spawn("worker");
+
+    await expect(manager.unregister("worker")).rejects.toThrow(/cannot be unregistered/);
+    // The refusal changed nothing.
+    expect(manager.has("worker")).toBe(true);
+    expect(mod.state).toBe("ready");
+
+    await expect(manager.unregister("worker", { force: true })).resolves.toBe(true);
+    expect(mod.state).toBe("closed");
+    expect(manager.has("worker")).toBe(false);
+    // force went through the normal graceful shutdown ($shutdown sent).
+    expect(
+      manager.controlMessages.some((m) => m.name === "worker" && m.message.includes("$shutdown")),
+    ).toBe(true);
+  });
+
+  it("unregister is idempotent: unknown name and double unregister return false without throwing", async () => {
+    const manager = new FakeManager();
+    await expect(manager.unregister("ghost")).resolves.toBe(false);
+
+    manager.register(makeModule("worker"));
+    await expect(manager.unregister("worker")).resolves.toBe(true);
+    await expect(manager.unregister("worker")).resolves.toBe(false);
+  });
+
+  it("no crash-restart timer fires for an unregistered module", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeManager();
+      const mod = makeModule("worker", { restartOnCrash: true });
+      manager.register(mod);
+      manager.on(ManagerEvents.ERROR, () => {});
+
+      await manager.spawn("worker");
+      manager.exitHandlers.get(mod.process!.id)!(1, null); // crash -> restart pending
+      expect(mod.state).toBe("disconnected");
+
+      // Crashed-awaiting-restart is not "running": no force needed.
+      await expect(manager.unregister("worker")).resolves.toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(manager.nextProcId).toBe(2); // exactly one process ever spawned
+      expect(manager.has("worker")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a pending spawn-retry backoff cannot resurrect an unregistered name", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new FakeManager();
+      manager.failInits = 3;
+      const mod = makeModule("worker", {
+        maxRetries: 2,
+        retryDelay: { type: "fixed", delay: 1000 },
+      });
+      manager.register(mod);
+
+      const outcome = manager.spawn("worker").then(
+        () => null,
+        (err: unknown) => err,
+      );
+      // Let the first attempt fail; the retry backoff sleep is now pending.
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Mid-spawn (state "initializing"): unregister requires force.
+      await expect(manager.unregister("worker")).rejects.toThrow(/cannot be unregistered/);
+      await expect(manager.unregister("worker", { force: true })).resolves.toBe(true);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      const err = await outcome;
+
+      // The retry loop aborted instead of spawning a zombie for the removed name.
+      expect((err as Error).message).toContain("not registered");
+      expect(manager.nextProcId).toBe(2); // only the first attempt ever spawned
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unregister detaches the manager's DISCONNECTED listener from the module", async () => {
+    const manager = new FakeManager();
+    const mod = makeModule("worker");
+    manager.register(mod);
+    expect(mod.listenerCount("disconnected")).toBe(1);
+
+    await manager.unregister("worker");
+    expect(mod.listenerCount("disconnected")).toBe(0);
+  });
+
+  it("register(module, { replace: true }) swaps a non-running module, but refuses a running one", async () => {
+    const manager = new FakeManager();
+    manager.failInits = 1;
+    const mod = makeModule("worker");
+    manager.register(mod);
+    manager.on(ManagerEvents.ERROR, () => {});
+    await expect(manager.spawn("worker")).rejects.toThrow(SpawnError);
+
+    // Replace the terminally-failed module in one call.
+    const fresh = makeModule("worker");
+    manager.register(fresh, { replace: true });
+    expect(manager.get("worker")).toBe(fresh);
+    await manager.spawn("worker");
+    expect(fresh.state).toBe("ready");
+
+    // A live module cannot be replaced synchronously.
+    expect(() => manager.register(makeModule("worker"), { replace: true })).toThrow(
+      /cannot be unregistered/,
+    );
+    expect(manager.get("worker")).toBe(fresh);
+    expect(fresh.state).toBe("ready");
+  });
+});
+
 describe("ManagerCore: heartbeat", () => {
   it("pings, accepts pongs, and kills the child when a ping times out", async () => {
     vi.useFakeTimers();

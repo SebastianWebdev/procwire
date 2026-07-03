@@ -192,10 +192,12 @@ const off = module.onEvent(name, (data) => { … });
 
 // Manager
 const m = new ModuleManager();
-m.register(module); m.has(name); m.get(name); m.moduleNames;
-await m.spawn(name?);      // omit name → all registered
-await m.shutdown(name?);   // omit name → all
-m.on(ManagerEvents.READY | ERROR | RESTARTING | RETRYING | SPAWN_FAILED | CLOSED, cb);
+m.register(module, opts?);        // opts.replace: swap a non-running module
+m.has(name); m.get(name); m.moduleNames;
+await m.spawn(name?);             // omit name → all registered
+await m.shutdown(name?);          // omit name → all
+await m.unregister(name, opts?);  // free the name; opts.force: shutdown a running module first
+m.on(ManagerEvents.READY | ERROR | RESTARTING | RETRYING | SPAWN_FAILED | CLOSED | UNREGISTERED, cb);
 ```
 
 `SpawnPolicy` (`runtime-core/src/types.ts`):

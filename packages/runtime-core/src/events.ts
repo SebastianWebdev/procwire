@@ -41,6 +41,9 @@ export const ManagerEvents = {
 
   /** Module has been fully closed */
   CLOSED: "module:closed",
+
+  /** Module has been removed from the registry */
+  UNREGISTERED: "module:unregistered",
 } as const;
 
 /** Type for ManagerEvents values */

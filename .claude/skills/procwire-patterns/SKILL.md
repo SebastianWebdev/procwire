@@ -273,6 +273,12 @@ new Module("worker")
 - **Graceful shutdown**: `manager.shutdown(name?)` sends `$shutdown`; the child
   closes its pipe server and exits on its own. Only an unresponsive child is
   force-killed after 5s.
+- **Retry with a fresh Module** (supervisor pattern): a module stays registered
+  after a terminal `SpawnError` or `shutdown()`. `await manager.unregister(name)`
+  frees the name (cancelling any pending restart/retry timers) so a rebuilt
+  `Module` — e.g. with new CLI args — can be registered and spawned;
+  `{ force: true }` shuts a running module down first, and
+  `register(module, { replace: true })` swaps a non-running one in one call.
 - **Orphan prevention**: if the parent dies, the child sees stdin EOF and shuts
   itself down.
 
