@@ -26,6 +26,15 @@ const client = new Client()
     },
     { response: "stream" },
   )
+  .handle(
+    "errorStream",
+    async (data, ctx) => {
+      const { message } = data as { message?: string };
+      await ctx.chunk("partial");
+      await ctx.error(new Error(message ?? "Intentional stream error"));
+    },
+    { response: "stream" },
+  )
   .handle("emitProgress", async (data, ctx) => {
     const { count } = data as { count: number };
     for (let i = 1; i <= count; i++) {

@@ -631,7 +631,9 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     const { def, handler } = methodEntry;
     const data = codecDeserialize(def.requestCodec, frame);
 
-    // Create request context with RESPONSE codec (child→parent direction)
+    // Create request context with RESPONSE codec (child→parent direction).
+    // Pass the response type so ctx.error() can tag stream errors with IS_STREAM
+    // (otherwise the parent silently drops them and the consumer hangs).
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
@@ -639,6 +641,7 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
       def.responseCodec,
       this._transport!,
       this._abortCallbacks,
+      def.response,
     );
 
     // Track active context for abort handling

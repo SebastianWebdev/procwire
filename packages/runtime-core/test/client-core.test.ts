@@ -93,7 +93,59 @@ describe("ClientCore: dispatch", () => {
 
     const frame = transport.frames[0]!;
     expect(hasFlag(frame.header.flags, Flags.IS_ERROR)).toBe(true);
+    expect(hasFlag(frame.header.flags, Flags.IS_STREAM)).toBe(false);
     expect(msgpackCodec.deserialize(frame.payload)).toBe("handler boom");
+  });
+});
+
+describe("ClientCore: stream error frames", () => {
+  // Stream errors MUST carry IS_STREAM so the parent routes them to the stream
+  // (pending STREAMS) instead of _handleResponse (pending REQUESTS), where the
+  // lookup misses and the consumer hangs forever.
+  it("tags an explicit ctx.error() on a stream method with IS_STREAM", async () => {
+    const client = new TestClient().handle(
+      "st",
+      async (_data, ctx) => {
+        await ctx.chunk("partial");
+        await ctx.error(new Error("stream boom"));
+      },
+      { response: "stream" },
+    ) as TestClient;
+    await startedClient(client);
+
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    client.data(requestFrame(1, 9, {}));
+    await vi.waitFor(() => expect(transport.frames).toHaveLength(2));
+
+    const errFrame = transport.frames[1]!;
+    expect(hasFlag(errFrame.header.flags, Flags.IS_RESPONSE)).toBe(true);
+    expect(hasFlag(errFrame.header.flags, Flags.IS_ERROR)).toBe(true);
+    expect(hasFlag(errFrame.header.flags, Flags.IS_STREAM)).toBe(true);
+    expect(msgpackCodec.deserialize(errFrame.payload)).toBe("stream boom");
+  });
+
+  it("tags a thrown stream-handler error with IS_STREAM (fallback ctx.error path)", async () => {
+    const client = new TestClient().handle(
+      "st",
+      async () => {
+        throw new Error("thrown boom");
+      },
+      { response: "stream" },
+    ) as TestClient;
+    await startedClient(client);
+
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    client.data(requestFrame(1, 4, {}));
+    await vi.waitFor(() => expect(transport.frames).toHaveLength(1));
+
+    const frame = transport.frames[0]!;
+    expect(hasFlag(frame.header.flags, Flags.IS_ERROR)).toBe(true);
+    expect(hasFlag(frame.header.flags, Flags.IS_STREAM)).toBe(true);
+    expect(msgpackCodec.deserialize(frame.payload)).toBe("thrown boom");
   });
 });
 

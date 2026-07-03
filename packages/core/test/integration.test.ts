@@ -194,6 +194,50 @@ describe("End-to-End Integration", { timeout: 30000 }, () => {
     });
   });
 
+  describe("Stream Errors", () => {
+    // Regression: a stream handler's ctx.error() used to be sent WITHOUT
+    // IS_STREAM, so the parent routed it to _handleResponse (pending requests)
+    // instead of the stream, dropped it, and the consumer's `for await` hung
+    // forever. It must now reject promptly with the remote message.
+    it("rejects the consumer when a stream handler calls ctx.error()", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("errorStream", { response: "stream" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const chunks: unknown[] = [];
+      await expect(
+        (async () => {
+          for await (const chunk of module.stream("errorStream", { message: "boom" })) {
+            chunks.push(chunk);
+          }
+        })(),
+      ).rejects.toThrow("boom");
+
+      // The pre-error chunk still reached the consumer before the failure.
+      expect(chunks).toEqual(["partial"]);
+    });
+
+    it("rejects the consumer when a stream handler throws (fallback ctx.error path)", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("throwStream", { response: "stream" });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      await expect(
+        (async () => {
+          for await (const _chunk of module.stream("throwStream", {})) {
+            // no chunks expected - the handler throws immediately
+          }
+        })(),
+      ).rejects.toThrow("Thrown stream error");
+    });
+  });
+
   describe("Error Response", () => {
     it("should handle error from child", async () => {
       const module = new Module("echo")

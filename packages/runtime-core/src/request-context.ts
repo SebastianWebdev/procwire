@@ -11,6 +11,7 @@ import { Flags, encodeHeaderInto, HEADER_SIZE } from "@procwire/protocol";
 import type { FrameTransport } from "@procwire/protocol";
 import type { Codec } from "@procwire/codecs";
 import type { RequestContext } from "./client-types.js";
+import type { ResponseType } from "./types.js";
 import { ClientErrors } from "./client-errors.js";
 
 /**
@@ -30,6 +31,12 @@ export class RequestContextImpl implements RequestContext {
     private readonly _codec: Codec,
     private readonly _transport: FrameTransport,
     private readonly _abortCallbacks: Map<number, Set<() => void>>,
+    /**
+     * The method's response type. Only "stream" changes behaviour: it makes
+     * error() tag the error frame with IS_STREAM so the parent routes it to the
+     * stream (see error()). Defaults to "result" for older call sites.
+     */
+    private readonly _responseType: ResponseType = "result",
   ) {}
 
   get aborted(): boolean {
@@ -88,9 +95,15 @@ export class RequestContextImpl implements RequestContext {
     this._ensureNotResponded();
     this._responded = true;
     const message = err instanceof Error ? err.message : err;
+    // Stream methods must answer errors on the stream channel. Without IS_STREAM
+    // the parent routes the frame to _handleResponse (pending REQUESTS) rather
+    // than _handleStreamChunk (pending STREAMS); the lookup misses and the
+    // consumer's `for await` hangs forever. Tag stream errors so the parent's
+    // stream-chunk path (which already handles IS_ERROR) receives them.
+    const streamFlag = this._responseType === "stream" ? Flags.IS_STREAM : 0;
     await this._sendResponse(
       message,
-      Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+      Flags.IS_RESPONSE | Flags.IS_ERROR | streamFlag | Flags.DIRECTION_TO_PARENT,
     );
     this._cleanup();
   }

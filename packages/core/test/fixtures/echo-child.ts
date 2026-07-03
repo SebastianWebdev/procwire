@@ -26,6 +26,26 @@ const client = new Client()
     { response: "stream" },
   )
 
+  // Stream that emits a chunk then fails via an explicit ctx.error().
+  .handle(
+    "errorStream",
+    async (data, ctx) => {
+      const { message } = data as { message?: string };
+      await ctx.chunk("partial");
+      await ctx.error(new Error(message ?? "Intentional stream error"));
+    },
+    { response: "stream" },
+  )
+
+  // Stream whose handler throws - exercises the fallback ctx.error() path.
+  .handle(
+    "throwStream",
+    async () => {
+      throw new Error("Thrown stream error");
+    },
+    { response: "stream" },
+  )
+
   // ACK response - acknowledges receipt
   .handle(
     "echoAck",

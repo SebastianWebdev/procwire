@@ -884,6 +884,19 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   private _handleResponse(frame: Frame): void {
     const pending = this._pendingRequests.get(frame.header.requestId);
     if (!pending) {
+      // No pending REQUEST for this id. An IS_ERROR frame may still belong to a
+      // pending STREAM: an older child answers ctx.error() on a stream WITHOUT
+      // the IS_STREAM flag, so _handleFrame routes it here instead of
+      // _handleStreamChunk. Fail the stream so the consumer rejects promptly
+      // instead of hanging forever (streams have no timeout). Defensive and
+      // protocol-compatible with children that predate the IS_STREAM error fix.
+      if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
+        const stream = this._pendingStreams.get(frame.header.requestId);
+        if (stream) {
+          this._failStreamFromErrorFrame(stream, frame);
+          return;
+        }
+      }
       // Response arrived for unknown request - likely a race condition or duplicate
       return;
     }
@@ -931,14 +944,7 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     if (!stream) return;
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      let errorData: unknown;
-      try {
-        errorData = codecDeserialize(stream.responseCodec, frame);
-      } catch (decodeError) {
-        stream.error(decodeError as Error);
-        return;
-      }
-      stream.error(ModuleErrors.remoteError(errorData));
+      this._failStreamFromErrorFrame(stream, frame);
       return;
     }
 
@@ -959,6 +965,25 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
       return;
     }
     stream.push(data);
+  }
+
+  /**
+   * Fail a pending stream from an IS_ERROR frame's payload.
+   *
+   * Shared by the stream-chunk path (IS_STREAM | IS_ERROR) and the response
+   * fallback (a stream error frame that arrived without IS_STREAM). A corrupt
+   * error payload errors the stream with the decode failure rather than the
+   * remote message; either way the consumer rejects instead of hanging.
+   */
+  private _failStreamFromErrorFrame(stream: PendingStream, frame: Frame): void {
+    let errorData: unknown;
+    try {
+      errorData = codecDeserialize(stream.responseCodec, frame);
+    } catch (decodeError) {
+      stream.error(decodeError as Error);
+      return;
+    }
+    stream.error(ModuleErrors.remoteError(errorData));
   }
 
   private _handleEvent(frame: Frame): void {

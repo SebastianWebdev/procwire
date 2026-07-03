@@ -274,6 +274,32 @@ describe("ModuleCore: streams", () => {
 
     await expect(first).rejects.toThrow("stream boom");
   });
+
+  it("errors the stream from an error frame missing IS_STREAM (old-child compat)", async () => {
+    const { mod, transport } = setupStreamModule();
+
+    const gen = mod.stream("st", {});
+    const first = gen.next();
+    await vi.waitFor(() => expect(transport.frames.length).toBe(1));
+    const requestId = transport.frames[0]!.header.requestId;
+
+    // An older child answers ctx.error() on a stream WITHOUT IS_STREAM, so the
+    // frame reaches _handleResponse (pending REQUESTS), not _handleStreamChunk.
+    // The parent must still fail the stream via the _pendingStreams fallback
+    // instead of silently dropping the frame and hanging the consumer forever.
+    mod._handleTransportData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+          requestId,
+        },
+        msgpackCodec.serialize("old-child boom"),
+      ),
+    );
+
+    await expect(first).rejects.toThrow("old-child boom");
+  });
 });
 
 describe("ModuleCore: events", () => {
