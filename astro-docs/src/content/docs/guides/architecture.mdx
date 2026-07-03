@@ -59,5 +59,6 @@ The control plane is newline-delimited JSON-RPC 2.0 over the child's stdio:
 ## Reliability
 
 - **Per-module shutdown** — `manager.shutdown(name)` stops a single module: pending crash-restarts are cancelled, `$shutdown` is sent, and only a child that fails to exit within 5 seconds is force-killed.
+- **Unregister & retry** — `manager.unregister(name)` removes a module from the registry (cancelling any pending restart/retry timers) so the name can be re-registered with a freshly built `Module` — e.g. a supervisor retrying after a terminal `SpawnError` with new CLI args. A running module requires `{ force: true }`, which shuts it down first; `register(module, { replace: true })` swaps a non-running module in one call.
 - **Orphan prevention** — the child treats stdin EOF as parent death and shuts itself down, so a crashed parent never leaves worker processes running forever.
 - **Exception-safe receive path** — a framing error (e.g. an oversized payload) drops the connection instead of throwing from the socket handler, and a corrupt payload rejects only the affected request or stream. A bad frame cannot crash the parent — the supervisor of every module.

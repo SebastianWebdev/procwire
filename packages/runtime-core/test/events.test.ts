@@ -10,6 +10,7 @@ describe("ManagerEvents", () => {
       ERROR: "module:error",
       RESTARTING: "module:restarting",
       CLOSED: "module:closed",
+      UNREGISTERED: "module:unregistered",
     });
   });
 });

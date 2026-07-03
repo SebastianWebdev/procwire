@@ -126,6 +126,14 @@ export const ManagerErrors = {
         `(already running or spawn in progress)`,
     ),
 
+  /** Unregister attempted while the module is live or already spawning */
+  unregisterNotAllowed: (name: string, state: string) =>
+    new ProcwireError(
+      `Module "${name}" cannot be unregistered in state "${state}" ` +
+        `(running or spawn in progress); use unregister(name, { force: true }) ` +
+        `to shut it down first`,
+    ),
+
   /** Init timeout */
   initTimeout: (name: string, timeout: number) =>
     new ProcwireError(`Module "${name}" did not send $init within ${timeout}ms`),

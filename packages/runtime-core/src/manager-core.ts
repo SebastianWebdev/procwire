@@ -91,6 +91,7 @@ export interface ManagedModule<TProcess> {
   readonly authToken: string | null;
   /** EventEmitter subscription (modules extend EventEmitter). */
   on(event: string, listener: () => void): unknown;
+  off(event: string, listener: () => void): unknown;
   _validate(): void;
   _setState(state: ModuleState): void;
   _attachProcess(process: TProcess): void;
@@ -134,6 +135,10 @@ export abstract class ModuleManagerCore<
   // while ANY shutdown ran, and overlapping shutdowns raced on resetting it
   // (Bug W4).
   private readonly shuttingDown = new Set<string>();
+  // The DISCONNECTED listener register() attached to each module, kept so
+  // unregister() can detach it - otherwise a retained module reference would
+  // keep routing data-channel losses into a manager it no longer belongs to.
+  private readonly disconnectHandlers = new Map<string, () => void>();
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RUNTIME ADAPTER HOOKS (abstract)
@@ -228,12 +233,27 @@ export abstract class ModuleManagerCore<
   /**
    * Register a module.
    *
+   * With `replace: true` an existing module under the same name is
+   * unregistered first, provided it is not running or mid-spawn (register is
+   * synchronous, so it cannot shut a live child down for you - call
+   * `unregister(name, { force: true })` first for that).
+   *
    * @param module - Module to register
-   * @throws {Error} if module with same name already registered
+   * @param opts - `replace`: unregister an existing (non-running) module with
+   *   the same name instead of throwing
+   * @throws {Error} if module with same name already registered (without
+   *   `replace`), or registered and running/spawning (with `replace`)
    */
-  register(module: TModule): this {
-    if (this.modules.has(module.name)) {
-      throw ManagerErrors.alreadyRegistered(module.name);
+  register(module: TModule, opts?: { replace?: boolean }): this {
+    const existing = this.modules.get(module.name);
+    if (existing) {
+      if (!opts?.replace) {
+        throw ManagerErrors.alreadyRegistered(module.name);
+      }
+      if (this.isModuleActive(existing)) {
+        throw ManagerErrors.unregisterNotAllowed(module.name, existing.state);
+      }
+      this.removeModule(module.name, existing);
     }
 
     module._validate();
@@ -241,10 +261,45 @@ export abstract class ModuleManagerCore<
 
     // React to a data-channel-only loss (socket gone, process still alive):
     // without this the module would sit "disconnected" forever with a live
-    // child no path ever restarts (D3).
-    module.on(ModuleEvents.DISCONNECTED, () => this.handleDataChannelLoss(module));
+    // child no path ever restarts (D3). Kept in disconnectHandlers so
+    // unregister() can detach it.
+    const onDisconnected = () => this.handleDataChannelLoss(module);
+    this.disconnectHandlers.set(module.name, onDisconnected);
+    module.on(ModuleEvents.DISCONNECTED, onDisconnected);
 
     return this;
+  }
+
+  /**
+   * Remove a module from the registry, so the name can be re-registered with
+   * a fresh instance (e.g. retry after a terminal SpawnError with rebuilt
+   * executable config).
+   *
+   * A module that is running or mid-spawn is only removed with
+   * `force: true`, which performs a `shutdown(name)` first. Removal cancels
+   * any pending crash-restart timer and clears all per-module bookkeeping, so
+   * no restart can resurrect the unregistered name.
+   *
+   * @param name - Module name
+   * @param opts - `force`: shut a running/spawning module down before removal
+   * @returns true if the module was registered, false otherwise (idempotent)
+   * @throws {Error} if the module is running/spawning and `force` is not set
+   */
+  async unregister(name: string, opts?: { force?: boolean }): Promise<boolean> {
+    const module = this.modules.get(name);
+    if (!module) {
+      return false;
+    }
+
+    if (this.isModuleActive(module)) {
+      if (!opts?.force) {
+        throw ManagerErrors.unregisterNotAllowed(name, module.state);
+      }
+      await this.shutdown(name);
+    }
+
+    this.removeModule(name, module);
+    return true;
   }
 
   /**
@@ -347,14 +402,21 @@ export abstract class ModuleManagerCore<
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= policy.maxRetries; attempt++) {
-      try {
-        // Wait before retry (not on first attempt)
-        if (attempt > 0) {
-          const delay = this.calculateRetryDelay(attempt, policy.retryDelay);
-          this.emit(ManagerEvents.RETRYING, name, attempt, delay, lastError);
-          await this.sleep(delay);
-        }
+      // Wait before retry (not on first attempt)
+      if (attempt > 0) {
+        const delay = this.calculateRetryDelay(attempt, policy.retryDelay);
+        this.emit(ManagerEvents.RETRYING, name, attempt, delay, lastError);
+        await this.sleep(delay);
 
+        // The module can be unregistered (or replaced by a fresh instance
+        // under the same name) during the backoff sleep; retrying would
+        // spawn a zombie child for a module the registry no longer holds.
+        if (this.modules.get(name) !== module) {
+          throw ManagerErrors.notRegistered(name);
+        }
+      }
+
+      try {
         await this.spawnModuleOnce(module, policy);
         return; // Success!
       } catch (error) {
@@ -769,6 +831,46 @@ export abstract class ModuleManagerCore<
   // ═══════════════════════════════════════════════════════════════════════════
   // PRIVATE: Helpers
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * A module is "active" when it is live or mid-spawn: its state says so, or
+   * a process is still attached (e.g. "disconnected" after a data-channel
+   * loss whose kill hasn't completed yet). Inactive covers created, closed
+   * (incl. spawn-failed) and crashed-awaiting-restart modules.
+   */
+  private isModuleActive(module: TModule): boolean {
+    const state = module.state;
+    return (
+      module.process !== null ||
+      state === "initializing" ||
+      state === "connecting" ||
+      state === "ready"
+    );
+  }
+
+  /**
+   * Drop a module from the registry and clear ALL its per-module bookkeeping:
+   * pending crash-restart timer, heartbeat, control reader, restart-window
+   * timestamps, shutdown guard, and the manager-attached DISCONNECTED
+   * listener. Nothing left behind can resurrect or reference the name.
+   */
+  private removeModule(name: string, module: TModule): void {
+    this.cancelRestart(name);
+    this.stopHeartbeat(name);
+    this._disposeControlReader(name);
+
+    const onDisconnected = this.disconnectHandlers.get(name);
+    if (onDisconnected) {
+      module.off(ModuleEvents.DISCONNECTED, onDisconnected);
+      this.disconnectHandlers.delete(name);
+    }
+
+    this.restartTimestamps.delete(name);
+    this.shuttingDown.delete(name);
+    this.modules.delete(name);
+
+    this.emit(ManagerEvents.UNREGISTERED, name);
+  }
 
   /**
    * Cleanup module after failed spawn.

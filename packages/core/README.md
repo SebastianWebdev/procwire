@@ -216,7 +216,38 @@ if (manager.has("worker1")) { ... }
 // Shutdown all or specific
 await manager.shutdown();          // All
 await manager.shutdown("worker1"); // Specific
+
+// Unregister (free the name for a fresh Module instance)
+await manager.unregister("worker1");                 // created/closed/spawn-failed only
+await manager.unregister("worker1", { force: true }); // running: shutdown first, then remove
+manager.register(freshWorker1);                      // the name is available again
+
+// Or replace a non-running module in one call
+manager.register(freshWorker1, { replace: true });
 ```
+
+#### Unregister & retry after spawn failure
+
+A module stays registered after a terminal `SpawnError` or a `shutdown()`, so
+`register()` with the same name throws. `unregister()` removes it from the
+registry — cancelling any pending restart/retry timers — so a freshly built
+`Module` (e.g. with new CLI args) can take over the name:
+
+```typescript
+try {
+  await manager.spawn("worker");
+} catch (e) {
+  await manager.unregister("worker"); // spawn-failed module: no force needed
+  manager.register(buildWorker(newArgs));
+  await manager.spawn("worker");
+}
+```
+
+`unregister()` returns `true` if the module was registered, `false` otherwise
+(idempotent). A running or mid-spawn module throws unless `force: true` is
+set, which performs a graceful `shutdown()` first. `register(module, { replace: true })`
+swaps a non-running module in one call (it cannot shut a live child down —
+use `unregister(name, { force: true })` for that).
 
 #### Graceful shutdown
 
@@ -276,6 +307,7 @@ manager.on(ManagerEvents.READY, (name) => console.log(`${name} ready`));
 manager.on(ManagerEvents.ERROR, (name, err) => console.error(`${name} error:`, err));
 manager.on(ManagerEvents.RESTARTING, (name) => console.log(`${name} restarting`));
 manager.on(ManagerEvents.SPAWN_FAILED, (name, err) => console.error(`${name} spawn failed`));
+manager.on(ManagerEvents.UNREGISTERED, (name) => console.log(`${name} unregistered`));
 
 // Module events
 module.on(ModuleEvents.STATE, (state) => console.log(`State: ${state}`));

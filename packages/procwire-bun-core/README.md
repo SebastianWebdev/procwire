@@ -222,7 +222,20 @@ if (manager.has("worker1")) { ... }
 // Shutdown all or specific
 await manager.shutdown();          // All
 await manager.shutdown("worker1"); // Specific
+
+// Unregister (free the name for a fresh Module instance)
+await manager.unregister("worker1");                 // created/closed/spawn-failed only
+await manager.unregister("worker1", { force: true }); // running: shutdown first, then remove
+manager.register(freshWorker1);                      // the name is available again
+
+// Or replace a non-running module in one call
+manager.register(freshWorker1, { replace: true });
 ```
+
+`unregister()` returns `true` if the module was registered, `false` otherwise
+(idempotent). A running or mid-spawn module throws unless `force: true` is
+set, which performs a graceful `shutdown()` first — pending restart/retry
+timers are cancelled so nothing can resurrect the removed name.
 
 #### Graceful shutdown
 
