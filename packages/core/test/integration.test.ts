@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { msgpackCodec, rawCodec } from "@procwire/codecs";
 import { ModuleManager } from "../src/manager.js";
 import { Module } from "../src/module.js";
 
@@ -235,6 +236,36 @@ describe("End-to-End Integration", { timeout: 30000 }, () => {
           }
         })(),
       ).rejects.toThrow("Thrown stream error");
+    });
+
+    // Regression for the binary-codec gap: with a raw response codec, ctx.error()
+    // used to throw serializing the error STRING (rawCodec expects a Buffer); the
+    // throw was swallowed, no frame was sent, and the consumer hung forever. The
+    // error message now rides the fixed msgpack codec, so it rejects promptly.
+    it("rejects the consumer when a raw-codec stream handler calls ctx.error()", async () => {
+      const module = new Module("echo")
+        .executable(NODE_BIN, ["--import", TSX_LOADER, FIXTURE_PATH])
+        .method("rawErrorStream", {
+          response: "stream",
+          requestCodec: msgpackCodec,
+          responseCodec: rawCodec,
+        });
+
+      manager.register(module);
+      await manager.spawn("echo");
+
+      const chunks: Buffer[] = [];
+      await expect(
+        (async () => {
+          for await (const chunk of module.stream("rawErrorStream", {})) {
+            chunks.push(chunk as Buffer);
+          }
+        })(),
+      ).rejects.toThrow("raw stream boom");
+
+      // The pre-error raw chunk (a Buffer) was still delivered before the error.
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]!.toString()).toBe("partial");
     });
   });
 

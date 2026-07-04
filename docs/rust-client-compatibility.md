@@ -270,13 +270,28 @@ plain string still works.
 **Action for Rust:** none required (a serialized **string** message is still
 correct). _Optionally_, you may now send an error as a structured object
 `{ "message": "...", "code": ..., ... }`; the parent will surface `.message` and
-keep the whole object on `error.data`. Error frames carry the
-`IS_RESPONSE | IS_ERROR | DIRECTION_TO_PARENT` flags; the payload is encoded with
-the **method's response codec** (default codec is **msgpack**).
+keep the whole object on `error.data`.
 
-**Reference:** `packages/core/src/errors.ts` `extractErrorMessage`/`remoteError`;
-child send: `packages/client/src/request-context.ts` `error()`,
-`packages/client/src/client.ts` `_sendErrorResponse`.
+**Error frame flags & encoding — REQUIRED:**
+
+- Error frames carry `IS_RESPONSE | IS_ERROR | DIRECTION_TO_PARENT`.
+- For a **`stream`** method, the error frame **MUST also set `IS_STREAM`** (just
+  like a stream chunk). Without it the parent routes the frame to its
+  pending-**request** table instead of the pending-**stream** table, finds no
+  match, drops it, and — because streams have **no timeout** — the consumer hangs
+  forever. (New Node/Bun parents also accept a stream error frame _without_
+  `IS_STREAM` as a defensive fallback, but a correct child MUST set it; older and
+  other-language parents rely on it.)
+- The error payload is encoded with a **fixed msgpack codec**, independent of the
+  method's data codec — **not** the method's response codec. The payload is a
+  string message (or a structured `{ message }` object), which a binary data codec
+  (raw/rawChunks/arrow) cannot serialize; both sides therefore always use msgpack
+  for error payloads.
+
+**Reference:** `packages/runtime-core/src/errors.ts`
+`extractErrorMessage`/`remoteError`; child send:
+`packages/runtime-core/src/request-context.ts` `error()`,
+`packages/runtime-core/src/client-core.ts` `_sendErrorResponse`.
 
 ### 4.7 — Connection/disconnect robustness — **RECOMMENDED**
 

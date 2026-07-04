@@ -6,6 +6,7 @@
  */
 
 import { Client } from "@procwire/client";
+import { msgpackCodec, rawCodec } from "@procwire/codecs";
 
 const client = new Client()
   // Simple echo - returns same data
@@ -44,6 +45,18 @@ const client = new Client()
       throw new Error("Thrown stream error");
     },
     { response: "stream" },
+  )
+
+  // Stream with a BINARY response codec (raw) that emits a chunk then errors.
+  // Pins that ctx.error() encodes the message with the fixed error codec, not
+  // the data codec (rawCodec would throw on the string and strand the consumer).
+  .handle(
+    "rawErrorStream",
+    async (_data, ctx) => {
+      await ctx.chunk(Buffer.from("partial"));
+      await ctx.error(new Error("raw stream boom"));
+    },
+    { response: "stream", requestCodec: msgpackCodec, responseCodec: rawCodec },
   )
 
   // ACK response - acknowledges receipt

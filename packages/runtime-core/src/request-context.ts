@@ -9,10 +9,22 @@
 
 import { Flags, encodeHeaderInto, HEADER_SIZE } from "@procwire/protocol";
 import type { FrameTransport } from "@procwire/protocol";
-import type { Codec } from "@procwire/codecs";
+import { msgpackCodec, type Codec } from "@procwire/codecs";
 import type { RequestContext } from "./client-types.js";
 import type { ResponseType } from "./types.js";
 import { ClientErrors } from "./client-errors.js";
+
+/**
+ * Fixed codec for error-message payloads.
+ *
+ * An error is always a string message, encoded independently of the method's
+ * data codec: a binary data codec (raw/rawChunks/arrow) throws on a string, and
+ * since error() has already set `_responded`, the ClientCore catch swallows the
+ * throw — so no frame is ever sent and the consumer hangs forever (streams have
+ * no timeout). The parent decodes IS_ERROR payloads with this same codec, so the
+ * two sides MUST stay in sync (see ModuleCore's ERROR_CODEC).
+ */
+const ERROR_CODEC = msgpackCodec;
 
 /**
  * Internal implementation of RequestContext.
@@ -101,9 +113,12 @@ export class RequestContextImpl implements RequestContext {
     // consumer's `for await` hangs forever. Tag stream errors so the parent's
     // stream-chunk path (which already handles IS_ERROR) receives them.
     const streamFlag = this._responseType === "stream" ? Flags.IS_STREAM : 0;
+    // Encode the message with the fixed ERROR_CODEC, not the method's data
+    // codec: a binary codec would throw on a string and strand the consumer.
     await this._sendResponse(
       message,
       Flags.IS_RESPONSE | Flags.IS_ERROR | streamFlag | Flags.DIRECTION_TO_PARENT,
+      ERROR_CODEC,
     );
     this._cleanup();
   }
@@ -126,14 +141,16 @@ export class RequestContextImpl implements RequestContext {
    * Send response data; the transport resolves once the frame has been fully
    * handed to the OS (after any backpressure drained).
    */
-  private async _sendResponse(data: unknown, flags: number): Promise<void> {
+  private async _sendResponse(data: unknown, flags: number, codec?: Codec): Promise<void> {
     // Empty payload cases:
     // 1. STREAM_END frames (null data)
     // 2. ACK without data (null/undefined data with IS_ACK flag)
     // Don't serialize null - just use empty buffer (required for rawCodec compatibility)
     const isStreamEnd = (flags & Flags.STREAM_END) !== 0;
     const isEmptyAck = (flags & Flags.IS_ACK) !== 0 && data == null;
-    const payload = isStreamEnd || isEmptyAck ? Buffer.alloc(0) : this._codec.serialize(data);
+    // Defaults to the method's data codec; error() overrides with ERROR_CODEC.
+    const serializer = codec ?? this._codec;
+    const payload = isStreamEnd || isEmptyAck ? Buffer.alloc(0) : serializer.serialize(data);
 
     // The header buffer is owned by this call (never pooled), so the
     // transport may hold it across a backpressure wait.

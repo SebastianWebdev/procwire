@@ -723,7 +723,10 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
   private _sendErrorResponse(requestId: number, methodId: number, message: string): void {
     if (!this._transport) return;
 
-    const payload = this._defaultCodec.serialize(message);
+    // Error payloads use the fixed msgpack codec (the parent decodes IS_ERROR
+    // with the same fixed codec), never the configurable default codec — a
+    // binary default would throw serializing this string message.
+    const payload = msgpackCodec.serialize(message);
     const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {

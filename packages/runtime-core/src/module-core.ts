@@ -104,6 +104,17 @@ const STREAM_BACKPRESSURE_LOW_WATER_MARK = 64;
 
 const EMPTY_PAYLOAD = Buffer.alloc(0);
 
+/**
+ * Fixed codec for error-message payloads.
+ *
+ * An error response carries a string message, encoded independently of the
+ * method's data codec. The child serializes it with the same fixed codec (see
+ * RequestContextImpl's ERROR_CODEC); decoding IS_ERROR frames with the method's
+ * data codec instead would misread or throw for binary codecs (raw/rawChunks/
+ * arrow). The two sides MUST stay in sync.
+ */
+const ERROR_CODEC = msgpackCodec;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CORE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -917,7 +928,8 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
       let errorData: unknown;
       try {
-        errorData = codecDeserialize(pending.responseCodec, frame);
+        // Error payloads use the fixed ERROR_CODEC, not the method's data codec.
+        errorData = codecDeserialize(ERROR_CODEC, frame);
       } catch (decodeError) {
         pending.reject(decodeError as Error);
         this._cleanupRequest(frame.header.requestId);
@@ -978,7 +990,8 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   private _failStreamFromErrorFrame(stream: PendingStream, frame: Frame): void {
     let errorData: unknown;
     try {
-      errorData = codecDeserialize(stream.responseCodec, frame);
+      // Error payloads use the fixed ERROR_CODEC, not the stream's data codec.
+      errorData = codecDeserialize(ERROR_CODEC, frame);
     } catch (decodeError) {
       stream.error(decodeError as Error);
       return;

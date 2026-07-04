@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { buildFrame, encodeHeader, Flags, hasFlag, ABORT_METHOD_ID } from "@procwire/protocol";
-import { msgpackCodec } from "@procwire/codecs";
+import { msgpackCodec, rawCodec } from "@procwire/codecs";
 import { ClientCore } from "../src/client-core.js";
 import { FakeTransport } from "./fake-transport.js";
 
@@ -146,6 +146,35 @@ describe("ClientCore: stream error frames", () => {
     expect(hasFlag(frame.header.flags, Flags.IS_ERROR)).toBe(true);
     expect(hasFlag(frame.header.flags, Flags.IS_STREAM)).toBe(true);
     expect(msgpackCodec.deserialize(frame.payload)).toBe("thrown boom");
+  });
+
+  it("still sends the stream error frame when the response codec is binary (raw)", async () => {
+    // Regression: error() must encode the message with the fixed msgpack codec,
+    // NOT the method's data codec. With rawCodec, serializing the error STRING
+    // used to throw inside error() — and because error() had already set
+    // _responded, the ClientCore catch swallowed the throw, so NO frame was
+    // sent and the stream consumer hung forever (streams have no timeout).
+    const client = new TestClient().handle(
+      "st",
+      async (_data, ctx) => {
+        await ctx.error(new Error("raw boom"));
+      },
+      { response: "stream", requestCodec: msgpackCodec, responseCodec: rawCodec },
+    ) as TestClient;
+    await startedClient(client);
+
+    const transport = new FakeTransport();
+    client.accept(transport);
+
+    client.data(requestFrame(1, 12, {}));
+    await vi.waitFor(() => expect(transport.frames).toHaveLength(1));
+
+    const frame = transport.frames[0]!;
+    expect(hasFlag(frame.header.flags, Flags.IS_RESPONSE)).toBe(true);
+    expect(hasFlag(frame.header.flags, Flags.IS_ERROR)).toBe(true);
+    expect(hasFlag(frame.header.flags, Flags.IS_STREAM)).toBe(true);
+    // Decoded with msgpack (the fixed error codec), never with rawCodec.
+    expect(msgpackCodec.deserialize(frame.payload)).toBe("raw boom");
   });
 });
 
