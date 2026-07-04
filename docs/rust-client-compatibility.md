@@ -21,8 +21,10 @@
    behaviour parity), or **NONE** (internal Node/Bun detail, no Rust action).
 3. Run the **§5 interop checks** against this repo's Node parent to verify.
 
-The two **REQUIRED** items are: **`$ping`/`$pong` heartbeat (§4.1)** and
-**bounded incoming frame size (§4.4)**. Everything else is robustness/parity.
+The **REQUIRED** items are: **`$ping`/`$pong` heartbeat (§4.1)**, **bounded
+incoming frame size (§4.4)**, and — for any client that reports errors —
+**error-frame flags + payload encoding (§4.6)**. Everything else is
+robustness/parity.
 
 ---
 
@@ -260,38 +262,67 @@ id; ids never collide with the reserved `0`.
 **Reference:** `packages/core/src/module.ts` `_allocateRequestId`;
 `packages/core/test/regression.test.ts` (Bug C6).
 
-### 4.6 — Remote error payloads — **OPTIONAL (you may now send structured errors)**
+### 4.6 — Remote error responses — **REQUIRED (frame flags + payload encoding)**
 
-**What changed:** `M1` — the parent now derives a useful message from a **structured
-error payload** (an object with a string `message`) instead of producing
-`"[object Object]"`, and it preserves the original payload on `error.data`. A
-plain string still works.
+The error **frame construction is REQUIRED** for correct interop. Sending a
+**structured** error object (instead of a bare string message) is optional.
 
-**Action for Rust:** none required (a serialized **string** message is still
-correct). _Optionally_, you may now send an error as a structured object
-`{ "message": "...", "code": ..., ... }`; the parent will surface `.message` and
-keep the whole object on `error.data`.
+**How to send an error response (child → parent).** When a handler fails, emit a
+**single** frame that answers the request's `requestId`:
 
-**Error frame flags & encoding — REQUIRED:**
+| field       | value                                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `methodId`  | echo the **request's** `methodId` (the parent correlates by `requestId`; the method id is echoed for consistency, not used to route)  |
+| `requestId` | the **request's** `requestId`                                                                                                         |
+| `flags`     | non-stream method: `IS_RESPONSE\|IS_ERROR\|DIRECTION_TO_PARENT` = **`0x07`** · **`stream`** method: also set `IS_STREAM` → **`0x0F`** |
+| `payload`   | the error, **MessagePack-encoded** (see below); non-empty                                                                             |
 
-- Error frames carry `IS_RESPONSE | IS_ERROR | DIRECTION_TO_PARENT`.
-- For a **`stream`** method, the error frame **MUST also set `IS_STREAM`** (just
-  like a stream chunk). Without it the parent routes the frame to its
-  pending-**request** table instead of the pending-**stream** table, finds no
-  match, drops it, and — because streams have **no timeout** — the consumer hangs
-  forever. (New Node/Bun parents also accept a stream error frame _without_
-  `IS_STREAM` as a defensive fallback, but a correct child MUST set it; older and
-  other-language parents rely on it.)
-- The error payload is encoded with a **fixed msgpack codec**, independent of the
-  method's data codec — **not** the method's response codec. The payload is a
-  string message (or a structured `{ message }` object), which a binary data codec
-  (raw/rawChunks/arrow) cannot serialize; both sides therefore always use msgpack
-  for error payloads.
+1. **`IS_STREAM` is mandatory for `stream` methods.** Without it the parent routes
+   the frame to its pending-**request** table instead of the pending-**stream**
+   table, finds no match, drops it, and — because streams have **no timeout** — the
+   consumer hangs forever. (New Node/Bun parents also accept a stream error frame
+   _without_ `IS_STREAM` as a defensive fallback, but a correct child MUST set it;
+   older and other-language parents rely on it.)
 
-**Reference:** `packages/runtime-core/src/errors.ts`
-`extractErrorMessage`/`remoteError`; child send:
-`packages/runtime-core/src/request-context.ts` `error()`,
-`packages/runtime-core/src/client-core.ts` `_sendErrorResponse`.
+2. **The error frame is TERMINAL.** It ends the request/stream by itself: do **not**
+   set `STREAM_END` on it, and do **not** send any further chunk, `STREAM_END`, or a
+   second response for that `requestId` afterwards. A stream ends with **either** a
+   `STREAM_END` frame **or** an error frame — never both.
+
+3. **Payload is always MessagePack — never the method's data codec.** The error
+   payload is encoded with a **fixed MessagePack codec**, regardless of the method's
+   request/response codec. This is deliberate: the message is text, and a binary
+   data codec (`raw` / `rawChunks` / `arrow`) cannot encode a string — a child that
+   used the data codec here would fail to serialize and strand the consumer.
+   - **Recommended:** encode a plain **string** message → a MessagePack `str`.
+     Example: `"boom"` → payload bytes `A4 62 6F 6F 6D` (fixstr len 4), so
+     `payloadLength = 5`. A standard MessagePack encoder (`rmp-serde`, `rmpv`, …) is
+     enough — no envelope, no wrapping.
+   - **Optional (structured):** encode a **map** `{ "message": "...", "code": …, … }`
+     → a MessagePack map. The parent surfaces `.message` and keeps the whole object
+     on `error.data`; any other value is stringified.
+   - The Node msgpack codec registers two MessagePack **ext** types on the _data_
+     plane (ext 1 = Buffer, ext 2 = Date), but a plain string/map error uses
+     neither, so you do not need them to send errors.
+
+**If the Rust client ever acts as the _parent_:** decode `IS_ERROR` payloads with
+MessagePack too — independent of the method's data codec — or you reintroduce this
+exact bug in the other direction.
+
+**Acceptance:**
+
+- A `stream` handler that reports an error makes the Node parent's `for await`
+  **reject** with the message (it does not hang) — **including** when the method
+  uses a `raw` / `rawChunks` / `arrow` codec.
+- A non-stream error **rejects** the pending `send()` with the message.
+- An error frame is never followed by more frames for the same `requestId`.
+
+**Reference:** child send `packages/runtime-core/src/request-context.ts` `error()`
+(+ its `ERROR_CODEC`) and `packages/runtime-core/src/client-core.ts`
+`_sendErrorResponse`; parent decode `packages/runtime-core/src/module-core.ts`
+`_handleResponse` / `_failStreamFromErrorFrame` (+ its `ERROR_CODEC`); message
+derivation `packages/runtime-core/src/errors.ts`
+`extractErrorMessage`/`remoteError`.
 
 ### 4.7 — Connection/disconnect robustness — **RECOMMENDED**
 
