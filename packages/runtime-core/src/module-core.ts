@@ -104,6 +104,17 @@ const STREAM_BACKPRESSURE_LOW_WATER_MARK = 64;
 
 const EMPTY_PAYLOAD = Buffer.alloc(0);
 
+/**
+ * Fixed codec for error-message payloads.
+ *
+ * An error response carries a string message, encoded independently of the
+ * method's data codec. The child serializes it with the same fixed codec (see
+ * RequestContextImpl's ERROR_CODEC); decoding IS_ERROR frames with the method's
+ * data codec instead would misread or throw for binary codecs (raw/rawChunks/
+ * arrow). The two sides MUST stay in sync.
+ */
+const ERROR_CODEC = msgpackCodec;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MODULE CORE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -884,6 +895,19 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
   private _handleResponse(frame: Frame): void {
     const pending = this._pendingRequests.get(frame.header.requestId);
     if (!pending) {
+      // No pending REQUEST for this id. An IS_ERROR frame may still belong to a
+      // pending STREAM: an older child answers ctx.error() on a stream WITHOUT
+      // the IS_STREAM flag, so _handleFrame routes it here instead of
+      // _handleStreamChunk. Fail the stream so the consumer rejects promptly
+      // instead of hanging forever (streams have no timeout). Defensive and
+      // protocol-compatible with children that predate the IS_STREAM error fix.
+      if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
+        const stream = this._pendingStreams.get(frame.header.requestId);
+        if (stream) {
+          this._failStreamFromErrorFrame(stream, frame);
+          return;
+        }
+      }
       // Response arrived for unknown request - likely a race condition or duplicate
       return;
     }
@@ -904,7 +928,8 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
       let errorData: unknown;
       try {
-        errorData = codecDeserialize(pending.responseCodec, frame);
+        // Error payloads use the fixed ERROR_CODEC, not the method's data codec.
+        errorData = codecDeserialize(ERROR_CODEC, frame);
       } catch (decodeError) {
         pending.reject(decodeError as Error);
         this._cleanupRequest(frame.header.requestId);
@@ -931,14 +956,7 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
     if (!stream) return;
 
     if (hasFlag(frame.header.flags, Flags.IS_ERROR)) {
-      let errorData: unknown;
-      try {
-        errorData = codecDeserialize(stream.responseCodec, frame);
-      } catch (decodeError) {
-        stream.error(decodeError as Error);
-        return;
-      }
-      stream.error(ModuleErrors.remoteError(errorData));
+      this._failStreamFromErrorFrame(stream, frame);
       return;
     }
 
@@ -959,6 +977,26 @@ export class ModuleCore<S extends Schema = EmptySchema, TProcess = unknown> exte
       return;
     }
     stream.push(data);
+  }
+
+  /**
+   * Fail a pending stream from an IS_ERROR frame's payload.
+   *
+   * Shared by the stream-chunk path (IS_STREAM | IS_ERROR) and the response
+   * fallback (a stream error frame that arrived without IS_STREAM). A corrupt
+   * error payload errors the stream with the decode failure rather than the
+   * remote message; either way the consumer rejects instead of hanging.
+   */
+  private _failStreamFromErrorFrame(stream: PendingStream, frame: Frame): void {
+    let errorData: unknown;
+    try {
+      // Error payloads use the fixed ERROR_CODEC, not the stream's data codec.
+      errorData = codecDeserialize(ERROR_CODEC, frame);
+    } catch (decodeError) {
+      stream.error(decodeError as Error);
+      return;
+    }
+    stream.error(ModuleErrors.remoteError(errorData));
   }
 
   private _handleEvent(frame: Frame): void {

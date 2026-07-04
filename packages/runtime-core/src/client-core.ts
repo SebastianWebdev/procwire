@@ -631,7 +631,9 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
     const { def, handler } = methodEntry;
     const data = codecDeserialize(def.requestCodec, frame);
 
-    // Create request context with RESPONSE codec (child→parent direction)
+    // Create request context with RESPONSE codec (child→parent direction).
+    // Pass the response type so ctx.error() can tag stream errors with IS_STREAM
+    // (otherwise the parent silently drops them and the consumer hangs).
     const ctx = new RequestContextImpl(
       header.requestId,
       methodName,
@@ -639,6 +641,7 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
       def.responseCodec,
       this._transport!,
       this._abortCallbacks,
+      def.response,
     );
 
     // Track active context for abort handling
@@ -720,7 +723,10 @@ export abstract class ClientCore<S extends Schema = EmptySchema> extends EventEm
   private _sendErrorResponse(requestId: number, methodId: number, message: string): void {
     if (!this._transport) return;
 
-    const payload = this._defaultCodec.serialize(message);
+    // Error payloads use the fixed msgpack codec (the parent decodes IS_ERROR
+    // with the same fixed codec), never the configurable default codec — a
+    // binary default would throw serializing this string message.
+    const payload = msgpackCodec.serialize(message);
     const headerBuf = Buffer.allocUnsafe(HEADER_SIZE);
 
     encodeHeaderInto(headerBuf, {

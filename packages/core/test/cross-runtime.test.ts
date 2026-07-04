@@ -31,6 +31,7 @@ describe.skipIf(!bunAvailable)("Cross-runtime E2E: Node parent <-> Bun child", (
       .executable("bun", [FIXTURE_PATH])
       .method("echo")
       .method("echoStream", { response: "stream" })
+      .method("errorStream", { response: "stream" })
       .method("emitProgress")
       .event("progress")
       .requestTimeout(10_000);
@@ -53,6 +54,28 @@ describe.skipIf(!bunAvailable)("Cross-runtime E2E: Node parent <-> Bun child", (
         chunks.push(chunk);
       }
       expect(chunks).toEqual(["a", "b", "c"]);
+    } finally {
+      await manager.shutdown();
+    }
+  }, 30_000);
+
+  it("propagates a Bun child's stream ctx.error() to the Node parent", async () => {
+    const mod = makeModule();
+    const manager = new ModuleManager();
+    manager.register(mod);
+
+    try {
+      await manager.spawn("bun-child");
+
+      const chunks: unknown[] = [];
+      await expect(
+        (async () => {
+          for await (const chunk of mod.stream("errorStream", { message: "bun boom" })) {
+            chunks.push(chunk);
+          }
+        })(),
+      ).rejects.toThrow("bun boom");
+      expect(chunks).toEqual(["partial"]);
     } finally {
       await manager.shutdown();
     }

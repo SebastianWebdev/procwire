@@ -8,9 +8,14 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { buildFrame, encodeHeader, Flags, ABORT_METHOD_ID } from "@procwire/protocol";
-import { msgpackCodec } from "@procwire/codecs";
+import { msgpackCodec, rawCodec } from "@procwire/codecs";
 import { ModuleCore } from "../src/module-core.js";
 import { FakeTransport } from "./fake-transport.js";
+
+/** Read the private _pendingStreams map size to assert no leak after teardown. */
+function pendingStreamCount(mod: ModuleCore): number {
+  return (mod as unknown as { _pendingStreams: Map<number, unknown> })._pendingStreams.size;
+}
 
 function setupReadyModule(opts: { cancellable?: boolean; response?: "result" | "ack" } = {}): {
   mod: ModuleCore;
@@ -273,6 +278,73 @@ describe("ModuleCore: streams", () => {
     );
 
     await expect(first).rejects.toThrow("stream boom");
+    // The failed stream must not leak in _pendingStreams.
+    expect(pendingStreamCount(mod)).toBe(0);
+  });
+
+  it("errors the stream from an error frame missing IS_STREAM (old-child compat)", async () => {
+    const { mod, transport } = setupStreamModule();
+
+    const gen = mod.stream("st", {});
+    const first = gen.next();
+    await vi.waitFor(() => expect(transport.frames.length).toBe(1));
+    const requestId = transport.frames[0]!.header.requestId;
+
+    // An old child streams chunks WITH IS_STREAM but answers ctx.error() WITHOUT
+    // it. The pre-error chunk arrives on the normal stream path and must still be
+    // delivered before the error...
+    chunkTo(mod, requestId, "before-error");
+    expect((await first).value).toBe("before-error");
+
+    // ...then the error frame (lacking IS_STREAM) reaches _handleResponse, not
+    // _handleStreamChunk. The parent must still fail the stream via the
+    // _pendingStreams fallback instead of silently dropping the frame and
+    // hanging the consumer forever.
+    mod._handleTransportData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+          requestId,
+        },
+        msgpackCodec.serialize("old-child boom"),
+      ),
+    );
+
+    await expect(gen.next()).rejects.toThrow("old-child boom");
+    expect(pendingStreamCount(mod)).toBe(0);
+  });
+
+  it("decodes a stream error with the fixed error codec even when the data codec is binary (raw)", async () => {
+    // The child encodes the error message with the fixed msgpack codec even for
+    // a raw-data stream; the parent must decode IS_ERROR the same way, not with
+    // the stream's rawCodec (which would yield a Buffer, not the message).
+    const mod = new ModuleCore("worker")
+      .executable("node", ["w.js"])
+      .method("st", { response: "stream", codec: rawCodec }) as ModuleCore;
+    mod._attachSchema({ methods: { st: { id: 1, response: "stream" } }, events: {} });
+    const transport = new FakeTransport();
+    mod._attachTransport(transport);
+    mod._setState("ready");
+
+    const gen = mod.stream("st", Buffer.from("go"));
+    const first = gen.next();
+    await vi.waitFor(() => expect(transport.frames.length).toBe(1));
+    const requestId = transport.frames[0]!.header.requestId;
+
+    mod._handleTransportData(
+      buildFrame(
+        {
+          methodId: 1,
+          flags: Flags.IS_RESPONSE | Flags.IS_STREAM | Flags.IS_ERROR | Flags.DIRECTION_TO_PARENT,
+          requestId,
+        },
+        msgpackCodec.serialize("raw stream boom"),
+      ),
+    );
+
+    await expect(first).rejects.toThrow("raw stream boom");
+    expect(pendingStreamCount(mod)).toBe(0);
   });
 });
 
